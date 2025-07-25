@@ -1,0 +1,38 @@
+{
+  "REGISTRATION_SHEET_ID": "some google sheet id",
+  "REGISTRATION_SHEET_NAME": "some set code",
+  "BOOSTER_TUTOR_USER_ID": "some user id",
+  "PACKGEN_USER_ID": "some user id",
+  "OWNER_ID": "some user id",
+  "GUILD_ID": "some guild id",
+  "PACKGEN_CHANNEL_ID": "some channel id",
+  "STARTING_POOL_CHANNEL_ID": "some channel id",
+  "GENERAL_CHAT_CHANNEL_ID": "some channel id",
+  "BOT_BUNKER_CHANNEL_ID": "some channel id",
+  "NEW_PLAYER_ROLE_ID": "some role id",
+  "ELIMINATED_ROLE_ID": "some role id",
+  "LEAGUE_COMMITTEE_ROLE_ID": "some role id",
+  "LIVE_SHEET_ID": "some sheet id",
+  "LEAGUE_ROLES": [
+    {
+      "id": "some role id",
+      "name": "some league/set name"
+    }
+  ],
+  "BOT_ROLES": [
+    {
+      "id": "some role id",
+      "name": "some name"
+    }
+  ],
+  "REGISTRATION_LEAGUE_ROLE": {
+    "id": "some role id (should also be in league roles)",
+    "name": "some name"
+  },
+  "NEW_PLAYER_LEAGUE_ROLES": [
+    {
+      "id": "some role id (should also be in league roles)",
+      "name": "some name"
+    }
+  ]
+}
