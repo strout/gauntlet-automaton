@@ -15,6 +15,7 @@ export interface Config {
   readonly BOT_BUNKER_CHANNEL_ID: string;
   readonly NEW_PLAYER_ROLE_ID: string;
   readonly ELIMINATED_ROLE_ID: string;
+  readonly ELIMINATE: boolean;
   readonly LEAGUE_COMMITTEE_ROLE_ID: string;
   // TODO replace this with a record of sheet ids
   readonly LIVE_SHEET_ID: string;

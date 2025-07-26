@@ -86,7 +86,7 @@ const markRoleAdded = async (index: number, discordId: djs.Snowflake) => {
 // TODO make elimination config
 const SURVEY_COLUMN = "Z";
 const getPlayerStatuses = async () => {
-  if (!CONFIG.ELIMINATED_ROLE_ID || !CONFIG.LIVE_SHEET_ID) return null;
+  if (!CONFIG.ELIMINATED_ROLE_ID || !CONFIG.LIVE_SHEET_ID || !CONFIG.ELIMINATE) return null;
   return await getPlayers();
 };
 
