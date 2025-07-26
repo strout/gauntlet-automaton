@@ -9,8 +9,9 @@ import { z } from "zod";
 
 // TODO read column names from the header row instead of hardcoding
 
-export const ROW = Symbol("ROW");
-export const ROWNUM = Symbol("ROWNUM");
+// Would like these to be symbols but Zod eats them https://github.com/colinhacks/zod/issues/2734
+export const ROW = "ROW";
+export const ROWNUM = "ROWNUM";
 
 // TODO use this & something to assert particular columns exist, rather than relying on changing column indices over and over.
 export async function readTable(
@@ -40,24 +41,20 @@ export async function readTable(
 }
 
 export function parseTable<S extends z.ZodRawShape>(
-  rowSchema: z.ZodObject<S>,
+  rowShape: S,
   table: Awaited<ReturnType<typeof readTable>>,
 ) {
-  const schema = tableSchema(rowSchema);
+  const schema = tableSchema(rowShape);
   return schema.parse(table);
 }
 
-function tableSchema<
+export function tableSchema<
   S extends z.ZodRawShape,
-  C extends z.core.$ZodObjectConfig,
->(rowSchema: z.ZodObject<S, C>) {
-  const keys = rowSchema.keyof().options;
+>(rowShape: S) {
+  const keys = Object.keys(rowShape) as (keyof S & string)[];
   const schema = z.object({
     rows: z.array(
-      z.intersection(
-        rowSchema,
-        z.object({ [ROW]: z.array(z.any()), [ROWNUM]: z.number() }),
-      ),
+      z.object({ ...rowShape, [ROW]: z.array(z.any()), [ROWNUM]: z.number() }),
     ),
     headers: z.array(z.string()).refine((s) =>
       keys.every((k) => s.includes(k))
@@ -134,7 +131,7 @@ export async function getPoolChanges<S extends z.ZodRawShape>(
 ) {
   const table = await readTable("Pool Changes!A:F", 1, sheetId);
   return parseTable(
-    z.strictObject({
+    {
       Timestamp: z.union([z.string(), z.number()]),
       Name: z.string(),
       Type: z.string(), // TODO maybe enforce known types?
@@ -142,7 +139,7 @@ export async function getPoolChanges<S extends z.ZodRawShape>(
       Comment: z.string().nullable(),
       "Full Pool": z.string().nullable(),
       ...extras?.shape,
-    }),
+    },
     table,
   );
 }
@@ -251,7 +248,7 @@ export async function getPlayers<S extends z.ZodRawShape = Record<string, never>
 ) {
   const LAST_COLUMN = "AI";
   const table = await readTable("Player Database!A:" + LAST_COLUMN, 1, sheetId);
-  const schema = tableSchema(z.object({
+  const schema = tableSchema({
     Identification: z.string(),
     "Discord ID": z.string(),
     "Matches played": z.number(),
@@ -261,7 +258,7 @@ export async function getPlayers<S extends z.ZodRawShape = Record<string, never>
     "TOURNAMENT STATUS": z.string(),
     "Survey Sent": z.coerce.boolean(),
     ...extras as S, // this cast is safe because extras is undefined iff it's not-S and only when S is {}
-  }));
+  });
   // filter out junk rows (which show up with the identification "  - ")
   table.rows = table.rows.filter((x) =>
     typeof x.Identification !== "string" || x.Identification.length > 4
@@ -284,7 +281,7 @@ let quotas: undefined | {
 export async function getQuotas() {
   if (quotas) return quotas;
   const table = await readTable("Quotas!A7:E14", 7);
-  const parsed = parseTable(z.object({ WEEK: z.number(), FROM: z.union([z.number(), z.literal("Registration")]), TO: z.number(), MIN: z.number(), MAX: z.number() }), table);
+  const parsed = parseTable({ WEEK: z.number(), FROM: z.union([z.number(), z.literal("Registration")]), TO: z.number(), MIN: z.number(), MAX: z.number() }, table);
   quotas = parsed.rows.filter(x => x.WEEK > 0).map(x => ({ week: x.WEEK, fromDate: x.FROM === "Registration" ? 0 : x.FROM, toDate: x.TO, matchesMin: x.MIN, matchesMax: x.MAX }));
   return quotas;
 }
@@ -298,7 +295,7 @@ export const MATCHTYPE = Symbol();
 export async function getMatches<S extends z.ZodRawShape>(extras?: z.ZodObject<S>) {
   const LAST_COLUMN = "L";
   const table = await readTable("Matches!A:" + LAST_COLUMN);
-  const parsed = parseTable(z.object({
+  const parsed = parseTable({
     Timestamp: z.number(),
     "Winner Name": z.string(),
     "Loser Name": z.string(),
@@ -307,7 +304,7 @@ export async function getMatches<S extends z.ZodRawShape>(extras?: z.ZodObject<S
     "Script Handled": z.coerce.boolean(),
     "Bot Messaged": z.coerce.boolean(),
     ...extras?.shape
-  }), table);
+  }, table);
   return { ...parsed, rows: parsed.rows.map(r => ({ ...r, [MATCHTYPE]: "match" as const }))};
 }
 
@@ -318,7 +315,7 @@ export async function getMatches<S extends z.ZodRawShape>(extras?: z.ZodObject<S
 export async function getEntropy<S extends z.ZodRawShape>(extras?: z.ZodObject<S>) {
   const LAST_COLUMN = "L";
   const table = await readTable("Entropy!A4:" + LAST_COLUMN, 4);
-  const parsed = parseTable(z.object({
+  const parsed = parseTable({
     WEEK: z.number(),
     Timestamp: z.number(),
     "PLAYER 1": z.string(),
@@ -326,7 +323,7 @@ export async function getEntropy<S extends z.ZodRawShape>(extras?: z.ZodObject<S
     Result: z.string(),
     "Bot Messaged": z.string(),
     ...extras?.shape
-  }), table);
+  }, table);
   return { ...parsed, rows: parsed.rows.map(r => ({ ...r, "Script Handled": true, "Loser Name": r["PLAYER 2"], [MATCHTYPE]: "entropy" as const }))};
 }
 

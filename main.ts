@@ -25,11 +25,14 @@ import {
   getPlayers,
   getPoolChanges,
   getPools,
+  parseTable,
+  readTable,
   rebuildPoolContents,
   ROW,
   ROWNUM,
 } from "./standings.ts";
 import { pendingHandler, waitForBoosterTutor } from "./pending.ts";
+import { z } from "zod";
 
 export { CONFIG };
 
@@ -40,47 +43,24 @@ type RegistrationSheetConfig = {
   maxCol: number;
 };
 
-// TODO look up sheet config from just sheet name (e.g. look at headers)
-const sheetConfig: RegistrationSheetConfig = {
-  nameCol: columnIndex("B"),
-  arenaIdCol: columnIndex("E"),
-  discordIdCol: columnIndex("H"),
-  maxCol: columnIndex("H"),
-};
-
 const pretend = Deno.args.includes("pretend");
 
 type Role = { id: djs.Snowflake; name: string };
 
 export const getRegistrationData = async () => {
-  const ss = await sheets
-    .spreadsheetsGet(CONFIG.REGISTRATION_SHEET_ID, {
-      ranges: `${CONFIG.REGISTRATION_SHEET_NAME}!A2:${
-        String.fromCharCode("A".charCodeAt(0) + sheetConfig.maxCol)
-      }`,
-      includeGridData: true,
-    });
-
-  const rowData = ss.sheets?.[0]?.data?.[0]?.rowData;
-  if (!rowData) return [];
-  return rowData.map((rd, i) => ({
-    name: rd.values?.[sheetConfig.nameCol]?.formattedValue!,
-    arenaId: rd.values?.[sheetConfig.arenaIdCol]?.formattedValue!,
-    discordId: rd.values?.[sheetConfig.discordIdCol]?.formattedValue,
-    index: i,
-    row: rd.values!.map((x) => x.formattedValue),
-  })).filter((x) => x.name && x.arenaId && x.arenaId.includes("#"));
+  const table = await readTable(CONFIG.REGISTRATION_SHEET_NAME + "!A:M", 1, CONFIG.REGISTRATION_SHEET_ID);
+  const registrations = parseTable({ 'Full Name': z.string(), 'Arena Player ID# (e.g.: "Wins4Dayz#89045") ': z.string().includes("#"), "Discord ID": z.string().optional() }, table);
+  return registrations;
 };
 
-const markRoleAdded = async (index: number, discordId: djs.Snowflake) => {
-  const row = index + 2;
+const markRoleAdded = async (row: number, column: number, discordId: djs.Snowflake) => {
   await sheets.spreadsheetsValuesUpdate(
-    `${CONFIG.REGISTRATION_SHEET_NAME}!R${row}C${sheetConfig.discordIdCol + 1}`,
+    `${CONFIG.REGISTRATION_SHEET_NAME}!R${row}C${column}`,
     CONFIG.REGISTRATION_SHEET_ID,
     { values: [[discordId]] },
     { valueInputOption: "RAW" },
   );
-  console.log(`Marked R${row}C${sheetConfig.discordIdCol + 1}`);
+  console.log(`Marked R${row}C${column}`);
 };
 
 // TODO make elimination config
@@ -270,11 +250,12 @@ const assignLeagueRole = async (
 ) => {
   if (role === null) return;
   const sheetData = await getRegistrationData();
-  const matches = sheetData.map((s) => {
-    const m = bestMatch_djs(s, members);
+  const matches = sheetData.rows.map((s) => {
+    const matcher = { name: s["Full Name"], arenaId: s['Arena Player ID# (e.g.: "Wins4Dayz#89045") '], discordId: s['Discord ID']};
+    const m = bestMatch_djs(matcher, members);
     return {
-      index: s.index,
-      for: s,
+      rowNum: s[ROWNUM],
+      for: matcher,
       match: m &&
         {
           name: m.displayName,
@@ -290,7 +271,7 @@ const assignLeagueRole = async (
   );
 
   const summary = {
-    entries: sheetData.length,
+    entries: sheetData.rows.length,
     members: members.size,
     complete: matches.filter((m) => m.match && m.match.hasRole).length,
     manuallyMatched: matches.filter((m) => !m.match && m.for.discordId).length,
@@ -333,12 +314,12 @@ const assignLeagueRole = async (
     }
     console.log("Added role", m, role.id);
 
-    if (!pretend) await markRoleAdded(m.index, m.match!.id);
+    if (!pretend) await markRoleAdded(m.rowNum, sheetData.headerColumns["Discord ID"] + 1, m.match!.id);
     console.log("Recorded on sheet", m);
   }
 
   for (const m of matches.filter((m) => m.match?.hasRole && !m.for.discordId)) {
-    if (!pretend) await markRoleAdded(m.index, m.match!.id);
+    if (!pretend) await markRoleAdded(m.rowNum, sheetData.headerColumns["Discord ID"] + 1, m.match!.id);
     console.log("Recorded pre-matched one", m);
   }
 };
@@ -474,8 +455,7 @@ const assignEliminatedRole = async (
         if (!anySent && toSurveyDate && toSurveyDate < new Date()) {
           console.log("would survey " + player.Identification);
           console.log(
-            "Player Database!" + players.headerColumns["Survey Sent"] +
-              player[ROWNUM],
+            "Player Database!R" + player[ROWNUM] + "C" + (players.headerColumns["Survey Sent"] + 1),
           );
           // TODO covnert to a log entry; not that we'd have late joiners after surveys are being sent but still...
           await sheetsWrite(
