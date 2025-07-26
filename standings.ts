@@ -62,8 +62,7 @@ function tableSchema<
     headers: z.array(z.string()).refine((s) =>
       keys.every((k) => s.includes(k))
     ),
-    headerColumns: z.intersection(
-      z.record(rowSchema.keyof(), z.number()),
+    headerColumns: z.object(Object.fromEntries(keys.map(x => [x, z.number()]))).and(
       z.partialRecord(z.string(), z.number()),
     ),
   });
@@ -246,9 +245,9 @@ export async function rebuildPoolContents(
  * Gets all players from the Player Database sheet.
  * @returns Player records with stats and metadata
  */
-export async function getPlayers<S extends z.ZodRawShape>(
+export async function getPlayers<S extends z.ZodRawShape = Record<string, never>>(
   sheetId = CONFIG.LIVE_SHEET_ID,
-  extras?: z.ZodObject<S>,
+  ...[extras]: S extends Record<string, never> ? [S?] : [S]
 ) {
   const LAST_COLUMN = "AI";
   const table = await readTable("Player Database!A:" + LAST_COLUMN, 1, sheetId);
@@ -261,7 +260,7 @@ export async function getPlayers<S extends z.ZodRawShape>(
     "MATCHES TO PLAY STATUS": z.string(),
     "TOURNAMENT STATUS": z.string(),
     "Survey Sent": z.coerce.boolean(),
-    ...extras?.shape,
+    ...extras as S, // this cast is safe because extras is undefined iff it's not-S and only when S is {}
   }));
   // filter out junk rows (which show up with the identification "  - ")
   table.rows = table.rows.filter((x) =>
