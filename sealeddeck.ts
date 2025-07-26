@@ -21,6 +21,8 @@ export type SealedDeckEntry = {
   readonly set?: string;
 };
 
+export type SealedDeckEntryRequest = Partial<SealedDeckEntry> & Pick<SealedDeckEntry, 'name'>;
+
 /**
  * Represents a complete sealed deck pool with all card categories.
  */
@@ -35,7 +37,7 @@ export type SealedDeckPool = {
  * Request type for creating or updating a sealed deck pool.
  * All properties are optional and poolId is excluded.
  */
-export type SealedDeckPoolRequest = Partial<Omit<SealedDeckPool, "poolId">>;
+export type SealedDeckPoolRequest = Partial<Readonly<{ [K in keyof Omit<SealedDeckPool, "poolId">]: readonly SealedDeckEntryRequest[] }>>;
 
 const sealedDeckCache = new Map<string, SealedDeckPool>();
 
@@ -100,8 +102,8 @@ export function makeSealedDeck(
   });
 }
 
-function fixNames<T extends Partial<SealedDeckPool>>(json: T): T {
-  function fix(cards: readonly SealedDeckEntry[]) {
+function fixNames<T extends SealedDeckPoolRequest>(json: T): T {
+  function fix(cards: readonly SealedDeckEntryRequest[]) {
     return cards.map((x) => {
       const found = splitCardNames.get(x.name);
       return ({ ...x, name: found?.name ?? x.name, set: x.set ?? found?.set });

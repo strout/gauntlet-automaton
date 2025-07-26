@@ -22,10 +22,11 @@ export async function readTable(
   const data = await sheetsRead(sheets, sheetId, range, "UNFORMATTED_VALUE");
   const [headerRow, ...rows] = data.values!;
   const parsedRows = rows.map((r, rowOffset) => {
-    const ret: { [key: string]: unknown;[ROW]: unknown[];[ROWNUM]: number; } = {
-      [ROW]: r,
-      [ROWNUM]: rowOffset + 1 + headerRowNum,
-    };
+    const ret: { [key: string]: unknown; [ROW]: unknown[]; [ROWNUM]: number } =
+      {
+        [ROW]: r,
+        [ROWNUM]: rowOffset + 1 + headerRowNum,
+      };
     for (let i = 0; i < r.length && i < headerRow.length; i++) {
       ret[headerRow[i]] ??= r[i];
     }
@@ -59,7 +60,9 @@ export function tableSchema<
     headers: z.array(z.string()).refine((s) =>
       keys.every((k) => s.includes(k))
     ),
-    headerColumns: z.object(Object.fromEntries(keys.map(x => [x, z.number()]))).and(
+    headerColumns: z.object(
+      Object.fromEntries(keys.map((x) => [x, z.number()])),
+    ).and(
       z.partialRecord(z.string(), z.number()),
     ),
   });
@@ -71,7 +74,9 @@ export function tableSchema<
  * @returns The current week number
  */
 export async function getCurrentWeek() {
-  return z.tuple([z.tuple([z.coerce.number()])]).parse((await sheetsRead(sheets, CONFIG.LIVE_SHEET_ID, "Quotas!B2")).values)[0][0];
+  return z.tuple([z.tuple([z.coerce.number()])]).parse(
+    (await sheetsRead(sheets, CONFIG.LIVE_SHEET_ID, "Quotas!B2")).values,
+  )[0][0];
 }
 
 /**
@@ -238,33 +243,55 @@ export async function rebuildPoolContents(
   return sideboard;
 }
 
+const playerShape = {
+  Identification: z.string(),
+  "Discord ID": z.string(),
+  "Matches played": z.number(),
+  Wins: z.number(),
+  Losses: z.number(),
+  "MATCHES TO PLAY STATUS": z.string(),
+  "TOURNAMENT STATUS": z.string(),
+  "Survey Sent": z.coerce.boolean(),
+};
+
+export type Player<S extends z.ZodRawShape = Record<never, never>> = z.infer<
+  z.ZodObject<typeof playerShape & S>
+>;
+export type Table<T> = {
+  rows: (T & { [ROW]: any[]; [ROWNUM]: number })[];
+  headers: string[];
+  headerColumns: Partial<Record<string, number>> & Record<keyof T, number>;
+};
+
 /**
  * Gets all players from the Player Database sheet.
  * @returns Player records with stats and metadata
  */
-export async function getPlayers<S extends z.ZodRawShape = Record<string, never>>(
+export async function getPlayers<
+  S extends z.ZodRawShape = Record<string, never>,
+>(
   sheetId = CONFIG.LIVE_SHEET_ID,
   ...[extras]: S extends Record<string, never> ? [S?] : [S]
-) {
+): Promise<Table<Player<S>>> {
   const LAST_COLUMN = "AI";
   const table = await readTable("Player Database!A:" + LAST_COLUMN, 1, sheetId);
   const schema = tableSchema({
-    Identification: z.string(),
-    "Discord ID": z.string(),
-    "Matches played": z.number(),
-    Wins: z.number(),
-    Losses: z.number(),
-    "MATCHES TO PLAY STATUS": z.string(),
-    "TOURNAMENT STATUS": z.string(),
-    "Survey Sent": z.coerce.boolean(),
+    ...playerShape,
     ...extras as S, // this cast is safe because extras is undefined iff it's not-S and only when S is {}
   });
   // filter out junk rows (which show up with the identification "  - ")
   table.rows = table.rows.filter((x) =>
     typeof x.Identification !== "string" || x.Identification.length > 4
   );
-  return schema.parse(table);
+  // TODO why do I need this cast?
+  return schema.parse(table) as Table<Player<S>>;
 }
+
+const playerTableSchema = tableSchema({
+  ...playerShape,
+  ...{ Ship: z.string() },
+});
+type PlayerTable = z.infer<typeof playerTableSchema>;
 
 let quotas: undefined | {
   matchesMin: number;
@@ -281,18 +308,32 @@ let quotas: undefined | {
 export async function getQuotas() {
   if (quotas) return quotas;
   const table = await readTable("Quotas!A7:E14", 7);
-  const parsed = parseTable({ WEEK: z.number(), FROM: z.union([z.number(), z.literal("Registration")]), TO: z.number(), MIN: z.number(), MAX: z.number() }, table);
-  quotas = parsed.rows.filter(x => x.WEEK > 0).map(x => ({ week: x.WEEK, fromDate: x.FROM === "Registration" ? 0 : x.FROM, toDate: x.TO, matchesMin: x.MIN, matchesMax: x.MAX }));
+  const parsed = parseTable({
+    WEEK: z.number(),
+    FROM: z.union([z.number(), z.literal("Registration")]),
+    TO: z.number(),
+    MIN: z.number(),
+    MAX: z.number(),
+  }, table);
+  quotas = parsed.rows.filter((x) => x.WEEK > 0).map((x) => ({
+    week: x.WEEK,
+    fromDate: x.FROM === "Registration" ? 0 : x.FROM,
+    toDate: x.TO,
+    matchesMin: x.MIN,
+    matchesMax: x.MAX,
+  }));
   return quotas;
 }
 
-export const MATCHTYPE = Symbol();
+export const MATCHTYPE = "MATCHTYPE";
 
 /**
  * Gets all match results from the Matches sheet.
  * @returns Match records with results and metadata
  */
-export async function getMatches<S extends z.ZodRawShape>(extras?: z.ZodObject<S>) {
+export async function getMatches<S extends z.ZodRawShape>(
+  extras?: z.ZodObject<S>,
+) {
   const LAST_COLUMN = "L";
   const table = await readTable("Matches!A:" + LAST_COLUMN);
   const parsed = parseTable({
@@ -303,16 +344,21 @@ export async function getMatches<S extends z.ZodRawShape>(extras?: z.ZodObject<S
     Notes: z.string(),
     "Script Handled": z.coerce.boolean(),
     "Bot Messaged": z.coerce.boolean(),
-    ...extras?.shape
+    ...extras?.shape,
   }, table);
-  return { ...parsed, rows: parsed.rows.map(r => ({ ...r, [MATCHTYPE]: "match" as const }))};
+  return {
+    ...parsed,
+    rows: parsed.rows.map((r) => ({ ...r, [MATCHTYPE]: "match" as const })),
+  };
 }
 
 /**
  * Gets entropy data from the Entropy sheet.
  * @returns Entropy match records with timing and results
  */
-export async function getEntropy<S extends z.ZodRawShape>(extras?: z.ZodObject<S>) {
+export async function getEntropy<S extends z.ZodRawShape>(
+  extras?: z.ZodObject<S>,
+) {
   const LAST_COLUMN = "L";
   const table = await readTable("Entropy!A4:" + LAST_COLUMN, 4);
   const parsed = parseTable({
@@ -320,11 +366,19 @@ export async function getEntropy<S extends z.ZodRawShape>(extras?: z.ZodObject<S
     Timestamp: z.number(),
     "PLAYER 1": z.string(),
     "PLAYER 2": z.string(),
-    Result: z.string(),
+    RESULT: z.string(),
     "Bot Messaged": z.string(),
-    ...extras?.shape
-  }, table);
-  return { ...parsed, rows: parsed.rows.map(r => ({ ...r, "Script Handled": true, "Loser Name": r["PLAYER 2"], [MATCHTYPE]: "entropy" as const }))};
+    ...extras?.shape,
+  }, { ...table, rows: table.rows.filter((r) => r["PLAYER 2"]) });
+  return {
+    ...parsed,
+    rows: parsed.rows.map((r) => ({
+      ...r,
+      "Script Handled": true,
+      "Loser Name": r["PLAYER 2"],
+      [MATCHTYPE]: "entropy" as const,
+    })),
+  };
 }
 
 /**

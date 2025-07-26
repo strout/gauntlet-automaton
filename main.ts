@@ -32,6 +32,7 @@ import {
   ROWNUM,
 } from "./standings.ts";
 import { pendingHandler, waitForBoosterTutor } from "./pending.ts";
+import { fixPool, setup } from "./eoe.ts";
 import { z } from "zod";
 
 export { CONFIG };
@@ -48,12 +49,29 @@ const pretend = Deno.args.includes("pretend");
 type Role = { id: djs.Snowflake; name: string };
 
 export const getRegistrationData = async () => {
-  const table = await readTable(CONFIG.REGISTRATION_SHEET_NAME + "!A:M", 1, CONFIG.REGISTRATION_SHEET_ID);
-  const registrations = parseTable({ 'Full Name': z.string(), 'Arena Player ID# (e.g.: "Wins4Dayz#89045") ': z.string(), "Discord ID": z.string().optional() }, table);
-  return {...registrations, rows: registrations.rows.filter(r => r['Arena Player ID# (e.g.: "Wins4Dayz#89045") '].includes('#'))};
+  const table = await readTable(
+    CONFIG.REGISTRATION_SHEET_NAME + "!A:M",
+    1,
+    CONFIG.REGISTRATION_SHEET_ID,
+  );
+  const registrations = parseTable({
+    "Full Name": z.string(),
+    'Arena Player ID# (e.g.: "Wins4Dayz#89045") ': z.string(),
+    "Discord ID": z.string().optional(),
+  }, table);
+  return {
+    ...registrations,
+    rows: registrations.rows.filter((r) =>
+      r['Arena Player ID# (e.g.: "Wins4Dayz#89045") '].includes("#")
+    ),
+  };
 };
 
-const markRoleAdded = async (row: number, column: number, discordId: djs.Snowflake) => {
+const markRoleAdded = async (
+  row: number,
+  column: number,
+  discordId: djs.Snowflake,
+) => {
   await sheets.spreadsheetsValuesUpdate(
     `${CONFIG.REGISTRATION_SHEET_NAME}!R${row}C${column}`,
     CONFIG.REGISTRATION_SHEET_ID,
@@ -66,7 +84,9 @@ const markRoleAdded = async (row: number, column: number, discordId: djs.Snowfla
 // TODO make elimination config
 const SURVEY_COLUMN = "Z";
 const getPlayerStatuses = async () => {
-  if (!CONFIG.ELIMINATED_ROLE_ID || !CONFIG.LIVE_SHEET_ID || !CONFIG.ELIMINATE) return null;
+  if (
+    !CONFIG.ELIMINATED_ROLE_ID || !CONFIG.LIVE_SHEET_ID || !CONFIG.ELIMINATE
+  ) return null;
   return await getPlayers();
 };
 
@@ -251,7 +271,11 @@ const assignLeagueRole = async (
   if (role === null) return;
   const sheetData = await getRegistrationData();
   const matches = sheetData.rows.map((s) => {
-    const matcher = { name: s["Full Name"], arenaId: s['Arena Player ID# (e.g.: "Wins4Dayz#89045") '], discordId: s['Discord ID']};
+    const matcher = {
+      name: s["Full Name"],
+      arenaId: s['Arena Player ID# (e.g.: "Wins4Dayz#89045") '],
+      discordId: s["Discord ID"],
+    };
     const m = bestMatch_djs(matcher, members);
     return {
       rowNum: s[ROWNUM],
@@ -314,12 +338,24 @@ const assignLeagueRole = async (
     }
     console.log("Added role", m, role.id);
 
-    if (!pretend) await markRoleAdded(m.rowNum, sheetData.headerColumns["Discord ID"] + 1, m.match!.id);
+    if (!pretend) {
+      await markRoleAdded(
+        m.rowNum,
+        sheetData.headerColumns["Discord ID"] + 1,
+        m.match!.id,
+      );
+    }
     console.log("Recorded on sheet", m);
   }
 
   for (const m of matches.filter((m) => m.match?.hasRole && !m.for.discordId)) {
-    if (!pretend) await markRoleAdded(m.rowNum, sheetData.headerColumns["Discord ID"] + 1, m.match!.id);
+    if (!pretend) {
+      await markRoleAdded(
+        m.rowNum,
+        sheetData.headerColumns["Discord ID"] + 1,
+        m.match!.id,
+      );
+    }
     console.log("Recorded pre-matched one", m);
   }
 };
@@ -419,7 +455,8 @@ const assignEliminatedRole = async (
       x["TOURNAMENT STATUS"] === "Eliminated"
     );
     for (
-      const { "Discord ID": id, Identification: name } of eliminatedPlayers ?? []
+      const { "Discord ID": id, Identification: name } of eliminatedPlayers ??
+        []
     ) {
       const member = members.get(id);
       if (member?.roles.cache.has(CONFIG.ELIMINATED_ROLE_ID) === false) {
@@ -454,7 +491,8 @@ const assignEliminatedRole = async (
         if (!anySent && toSurveyDate && toSurveyDate < new Date()) {
           console.log("would survey " + player.Identification);
           console.log(
-            "Player Database!R" + player[ROWNUM] + "C" + (players!.headerColumns["Survey Sent"] + 1),
+            "Player Database!R" + player[ROWNUM] + "C" +
+              (players!.headerColumns["Survey Sent"] + 1),
           );
           // TODO covnert to a log entry; not that we'd have late joiners after surveys are being sent but still...
           await sheetsWrite(
@@ -528,11 +566,9 @@ if (import.meta.main) {
 
     const djs_client = makeClient();
 
-    // const { watch, messageHandlers, interactionHandlers } = await setup();
+    const { watch, messageHandlers, interactionHandlers } = await setup();
 
-    // configureClient(djs_client, watch, messageHandlers, interactionHandlers);
-
-    configureClient(djs_client, () => Promise.resolve(), [], []);
+    configureClient(djs_client, watch, messageHandlers, interactionHandlers);
 
     await djs_client.login(DISCORD_TOKEN);
   }
@@ -739,14 +775,32 @@ export async function populatePools(
           if (sealeddeckId) {
             const sealeddeckLink = "https://sealeddeck.tech/" + sealeddeckId;
             console.log(name, sealeddeckLink);
+            console.log("fixing...");
+            const pool = await fetchSealedDeck(sealeddeckId);
+            const actualPool = await fixPool(pool);
             await addPoolChange(
               name,
               "starting pool",
-              sealeddeckId,
+              actualPool.pool.poolId,
               msg.url,
-              sealeddeckId,
+              actualPool.pool.poolId,
               sheetId,
             );
+            if (actualPool.wasFixed) {
+              console.log(actualPool.subs);
+              const message =
+                `**Heads up**: your original starting pool had one of the invalid Special Guest cards. Here are the substitutions made (the standings sheet will have the updated values):\n\n${
+                  actualPool.subs.map((x) => `Out: ${x.out}, In: ${x.in}`).join(
+                    "\n",
+                  )
+                }`;
+              try {
+                const member = await channel.guild.members.fetch(discordId);
+                await member.send(message);
+              } catch (e) {
+                console.error("Failed to send correction message", e);
+              }
+            }
             break batches;
           }
         }
