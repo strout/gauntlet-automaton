@@ -87,7 +87,7 @@ const markRoleAdded = async (index: number, discordId: djs.Snowflake) => {
 // TODO make elimination config
 const SURVEY_COLUMN = "Z";
 const getPlayerStatuses = async () => {
-  if (!CONFIG.ELIMINATED_ROLE_ID || !CONFIG.LIVE_SHEET_ID) return [];
+  if (!CONFIG.ELIMINATED_ROLE_ID || !CONFIG.LIVE_SHEET_ID) return null;
   return await getPlayers();
 };
 
@@ -141,7 +141,10 @@ export const makeClient = () =>
     partials: [djs.Partials.Channel, /* needed for DMs */ djs.Partials.Message],
   });
 
-async function handleMessage(message: djs.Message<boolean>, messageHandlers: Handler<djs.Message<boolean>>[]) {
+async function handleMessage(
+  message: djs.Message<boolean>,
+  messageHandlers: Handler<djs.Message<boolean>>[],
+) {
   if (
     isDM(message) ||
     [CONFIG.PACKGEN_CHANNEL_ID, CONFIG.BOT_BUNKER_CHANNEL_ID].includes(
@@ -216,7 +219,10 @@ function isDM(message: djs.Message<boolean>): message is djs.Message<false> {
   return !message.inGuild();
 }
 
-async function onReady(client: djs.Client<true>, watch: (client: djs.Client<true>) => Promise<void>) {
+async function onReady(
+  client: djs.Client<true>,
+  watch: (client: djs.Client<true>) => Promise<void>,
+) {
   await restoreState(client);
   await Promise.all([manageRoles(client), watch(client)]);
 }
@@ -428,9 +434,14 @@ const assignEliminatedRole = async (
   using _ = await eliminationLock();
   try {
     const players = await getPlayerStatuses();
+    if (!players) return;
     // TODO flag players to be messaged.
-    const eliminatedPlayers = players.filter((x) => x.status === "Eliminated");
-    for (const { id, name } of eliminatedPlayers) {
+    const eliminatedPlayers = players.rows.filter((x) =>
+      x["TOURNAMENT STATUS"] === "Eliminated"
+    );
+    for (
+      const { "Discord ID": id, Identification: name } of eliminatedPlayers
+    ) {
       const member = members.get(id);
       if (member?.roles.cache.has(CONFIG.ELIMINATED_ROLE_ID) === false) {
         console.log("Eliminating " + name);
@@ -439,7 +450,7 @@ const assignEliminatedRole = async (
       }
     }
     const eliminatedIds = new Set(
-      eliminatedPlayers.map((x) => x.id),
+      eliminatedPlayers.map((x) => x["Discord ID"]),
     );
     for (const [id, member] of members.entries()) {
       if (
@@ -451,35 +462,41 @@ const assignEliminatedRole = async (
         await delay(250);
       }
     }
-    const surveyablePlayers = players.filter((x) =>
+    const surveyablePlayers = players.rows.filter((x) =>
       SENDING_SURVEY &&
-      !x.surveySent && (x.matchesPlayed == 30 || x.status === "Eliminated") // TODO change matchesPlayed back after short league is done
+      !x["Survey Sent"] &&
+      (x["Matches played"] == 30 || x["TOURNAMENT STATUS"] === "Eliminated") // TODO change matchesPlayed back after short league is done
     );
     let anySent = false;
     if (CONFIG.LIVE_SHEET_ID) {
       for (const player of surveyablePlayers) {
-        const { toSurveyDate } = surveySendDate[player.id] ??
+        const { toSurveyDate } = surveySendDate[player["Discord ID"]] ??
           [null];
         if (!anySent && toSurveyDate && toSurveyDate < new Date()) {
-          console.log("would survey " + player.name);
-          console.log("Player Database!" + SURVEY_COLUMN + player.rowNum);
+          console.log("would survey " + player.Identification);
+          console.log(
+            "Player Database!" + players.headerColumns["Survey Sent"] +
+              player[ROWNUM],
+          );
+          // TODO covnert to a log entry; not that we'd have late joiners after surveys are being sent but still...
           await sheetsWrite(
             sheets,
             CONFIG.LIVE_SHEET_ID,
-            "BotStuff!" + SURVEY_COLUMN + player.rowNum,
+            "BotStuff!" + SURVEY_COLUMN + player[ROWNUM],
             [["1"]],
           );
           await sendSurvey(client, player);
           anySent = true;
         } else if (!toSurveyDate) {
-          console.log("Will survey " + player.name);
+          console.log("Will survey " + player.Identification);
           const toSurveyDate = new Date();
           toSurveyDate.setMinutes(toSurveyDate.getMinutes() + 1);
-          surveySendDate[player.id] = { toSurveyDate };
+          surveySendDate[player["Discord ID"]] = { toSurveyDate };
+          // TODO covnert to a log entry; not that we'd have late joiners after surveys are being sent but still...
           await sheetsWrite(
             sheets,
             CONFIG.LIVE_SHEET_ID,
-            "BotStuff!" + SURVEY_COLUMN + player.rowNum,
+            "BotStuff!" + SURVEY_COLUMN + player[ROWNUM],
             [["0"]],
           );
         }
@@ -492,10 +509,11 @@ const assignEliminatedRole = async (
 
 async function sendSurvey(
   client: djs.Client<true>,
-  player: Awaited<ReturnType<typeof getPlayerStatuses>>[number],
+  player:
+    (Awaited<ReturnType<typeof getPlayerStatuses>> & object)["rows"][number],
 ) {
   const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-  const member = await guild.members.fetch(player.id);
+  const member = await guild.members.fetch(player["Discord ID"]);
   member.send(`Thank you for playing in Dragonstorm League! We hope you had fun!
 
 Design and implementation by Lotte P, Adam S, Chris Y, Jack H, Jordan M & Steve T.
@@ -578,9 +596,13 @@ async function checkPools() {
   }
 }
 
-function configureClient(djs_client: djs.Client<boolean>, watch: (client: djs.Client<true>) => Promise<void>, messageHandlers: Handler<djs.Message>[], interactionHandlers: Handler<djs.Interaction>[]) {
-
-  djs_client.once(djs.Events.ClientReady, c => onReady(c, watch));
+function configureClient(
+  djs_client: djs.Client<boolean>,
+  watch: (client: djs.Client<true>) => Promise<void>,
+  messageHandlers: Handler<djs.Message>[],
+  interactionHandlers: Handler<djs.Interaction>[],
+) {
+  djs_client.once(djs.Events.ClientReady, (c) => onReady(c, watch));
 
   djs_client.on(djs.Events.GuildMemberAdd, async (member) => {
     console.log(`Hello ${member.displayName}`);
@@ -608,8 +630,8 @@ function configureClient(djs_client: djs.Client<boolean>, watch: (client: djs.Cl
     async (interaction) => {
       const { finish } = await dispatch(interaction, interactionHandlers);
       await finish;
-    }
-  )
+    },
+  );
 }
 
 async function speakAsBot(message: djs.Message) {
@@ -677,22 +699,30 @@ function parseSay(message: djs.Message<boolean>) {
   return { args, body };
 }
 
-export async function populatePools(sheetId: string, channel: djs.GuildBasedChannel, messagePredicate: (message: djs.Message) => boolean = () => true) {
+export async function populatePools(
+  sheetId: string,
+  channel: djs.GuildBasedChannel,
+  messagePredicate: (message: djs.Message) => boolean = () => true,
+) {
   if (!channel.isTextBased() || !channel.isSendable()) {
     throw new Error("only valid for text based channels.");
   }
   console.log("read pools");
   const players = await getPlayers(sheetId);
   const poolChanges = await getPoolChanges(sheetId);
-  console.log("got players", players.length);
+  console.log("got players", players.rows.length);
   console.log("got pool changes", poolChanges.rows.length);
   let rowNum = 6;
   const batches: djs.Collection<djs.Snowflake, djs.Message<true>>[] = [];
-  for (const player of players) {
+  for (const player of players.rows) {
     rowNum++;
-    if (poolChanges.rows.some(p => p.Name === player.name && p.Type === 'starting pool')) continue; // already there
-    const discordId = player.id;
-    const name = player.name;
+    if (
+      poolChanges.rows.some((p) =>
+        p.Name === player.Identification && p.Type === "starting pool"
+      )
+    ) continue; // already there
+    const discordId = player["Discord ID"];
+    const name = player.Identification;
     if (!discordId) {
       console.warn("No discord id for " + name);
       continue;
@@ -729,7 +759,14 @@ export async function populatePools(sheetId: string, channel: djs.GuildBasedChan
           if (sealeddeckId) {
             const sealeddeckLink = "https://sealeddeck.tech/" + sealeddeckId;
             console.log(name, sealeddeckLink);
-            await addPoolChange(name, "starting pool", sealeddeckId, msg.url, sealeddeckId, sheetId);
+            await addPoolChange(
+              name,
+              "starting pool",
+              sealeddeckId,
+              msg.url,
+              sealeddeckId,
+              sheetId,
+            );
             break batches;
           }
         }
@@ -777,14 +814,18 @@ async function clearChoiceHandler(
   using _ = await choiceLock();
   const msg = await fetchMessageByUrl(message.client, url);
   const user = msg?.mentions.users.first();
-  if (msg && user && outstandingChoices[msg.channel.id]?.[user.id].myMessage.id === msg.id) {
+  if (
+    msg && user &&
+    outstandingChoices[msg.channel.id]?.[user.id].myMessage.id === msg.id
+  ) {
     delete outstandingChoices[msg.channel.id][user.id];
     await saveState();
     await msg.react("❌");
     await message.reply("Done.");
   } else if (user) {
     await message.reply(
-      "Couldn't find a pending choice for " + user.displayName + " in that message.",
+      "Couldn't find a pending choice for " + user.displayName +
+        " in that message.",
     );
   } else await message.reply("Couldn't find a user mentioned in " + url);
 }
@@ -848,11 +889,16 @@ export async function initiateChoice(
         ? `!pool ${set.replaceAll("+", "|").replace(/^.*:/, "")}`
         : `!${set.replace(/^.*:/, "").replace(/^cube-/, "cube ")}`;
       pack = await waitForBoosterTutor(channel.send(
-        `${cmd} - choice ${message ? "for " + message.url : "for <@!" + userId + "> in " + destChannel.url}`,
+        `${cmd} - choice ${
+          message
+            ? "for " + message.url
+            : "for <@!" + userId + "> in " + destChannel.url
+        }`,
       ));
     }
     if ("error" in pack) {
-      const error = "Error generating packs for <@!" + userId + ">:\n> " + pack.error;
+      const error = "Error generating packs for <@!" + userId + ">:\n> " +
+        pack.error;
       await (message?.reply(error) ?? destChannel.send(error));
     } else {
       packs[set.replace(/:.*$/, "")] = pack.success;
@@ -865,11 +911,13 @@ export async function initiateChoice(
       formatPool(packs[set])
     }`
   );
-  const text = `<@!${userId}> Choose which pack to ${type === "!choose"
+  const text = `<@!${userId}> Choose which pack to ${
+    type === "!choose"
       ? "keep"
       : type === "!discard"
-        ? "discard"
-        : type satisfies never}. Your choices are:\n\n${opts.join("\n")}`;
+      ? "discard"
+      : type satisfies never
+  }. Your choices are:\n\n${opts.join("\n")}`;
   const myMessage = await (message?.reply(text) ?? destChannel.send(text));
   if (userId) {
     outstandingChoices[channelId] ??= {};
@@ -1027,9 +1075,11 @@ async function restoreState(client: djs.Client<true>) {
       for (
         const [uid, choice] of Object.entries(choices)
       ) {
-        const originalMessage = choice.originalMessage === undefined ? undefined : await channel.messages.fetch(
-          choice.originalMessage,
-        );
+        const originalMessage = choice.originalMessage === undefined
+          ? undefined
+          : await channel.messages.fetch(
+            choice.originalMessage,
+          );
         const myMessage = await channel.messages.fetch(
           choice.myMessage,
         );
@@ -1180,11 +1230,20 @@ export const deckCheckHandler: Handler<djs.Message> = async (
       await delay(1000);
     }
     const currentPools = await getPools();
-    const currentPool = currentPools.find(x => x.id === message.author.id);
-    const currentPoolContent = currentPool && await fetchSealedDeck(currentPool.currentPoolLink.split('/').slice(-1)[0]);
+    const currentPool = currentPools.find((x) => x.id === message.author.id);
+    const currentPoolContent = currentPool &&
+      await fetchSealedDeck(
+        currentPool.currentPoolLink.split("/").slice(-1)[0],
+      );
     const cards = new Map<string, number>();
-    for (const ent of [...currentPoolContent?.deck ?? [], ...currentPoolContent?.hidden ?? [], ...currentPoolContent?.sideboard ?? []]) {
-      cards.set(ent.name, (cards.get(ent.name) ?? 0) + ent.count)
+    for (
+      const ent of [
+        ...currentPoolContent?.deck ?? [],
+        ...currentPoolContent?.hidden ?? [],
+        ...currentPoolContent?.sideboard ?? [],
+      ]
+    ) {
+      cards.set(ent.name, (cards.get(ent.name) ?? 0) + ent.count);
     }
     const cardsWithSb = new Map(cards);
     for (const ent of [...pool.deck, ...pool.sideboard]) {
@@ -1193,8 +1252,14 @@ export const deckCheckHandler: Handler<djs.Message> = async (
     for (const ent of [...pool.deck]) {
       cards.set(ent.name, (cards.get(ent.name) ?? 0) - ent.count);
     }
-    const extraCardsMain = currentPool && [...cards.entries()].filter(x => x[1] < 0).map(x => Math.abs(x[1]) + " " + x[0]).join(", ");
-    const extraCardsWithSb = currentPool && [...cardsWithSb.entries()].filter(x => x[1] < 0).map(x => Math.abs(x[1]) + " " + x[0]).join(", ");
+    const extraCardsMain = currentPool &&
+      [...cards.entries()].filter((x) => x[1] < 0).map((x) =>
+        Math.abs(x[1]) + " " + x[0]
+      ).join(", ");
+    const extraCardsWithSb = currentPool &&
+      [...cardsWithSb.entries()].filter((x) => x[1] < 0).map((x) =>
+        Math.abs(x[1]) + " " + x[0]
+      ).join(", ");
     const colorIdentity = (cards: readonly SealedDeckEntry[]) =>
       [
         ...new Set(
@@ -1210,7 +1275,11 @@ export const deckCheckHandler: Handler<djs.Message> = async (
         colorIdentity(pool.deck)
       } main deck\n* ${
         colorIdentity([...pool.deck, ...pool.sideboard])
-      } including sidebaord\n\nCards not in pool:\n* main deck: ${extraCardsMain || 'none'}\n* including sidebaord: ${extraCardsWithSb || 'none'}\n\n*Please tell <@${CONFIG.OWNER_ID}> if this seems wrong. This tool may give incorrect information, and you are ultimately responsible for ensuring your deck meets league requirements.*`,
+      } including sidebaord\n\nCards not in pool:\n* main deck: ${
+        extraCardsMain || "none"
+      }\n* including sidebaord: ${
+        extraCardsWithSb || "none"
+      }\n\n*Please tell <@${CONFIG.OWNER_ID}> if this seems wrong. This tool may give incorrect information, and you are ultimately responsible for ensuring your deck meets league requirements.*`,
     );
   } catch (e) {
     console.error(e);
@@ -1226,35 +1295,70 @@ function cardCount(deck: readonly SealedDeckEntry[]) {
   return deck.reduce((a, b) => a + b.count, 0);
 }
 
-async function fullRebuild(client: djs.Client<true>, poolChanges: Awaited<ReturnType<typeof getPoolChanges>>) {
+async function fullRebuild(
+  client: djs.Client<true>,
+  poolChanges: Awaited<ReturnType<typeof getPoolChanges>>,
+) {
   // go through each and every entry, identify what's different, and DM CONFIG.OWNER_ID with differences as a table with row number | cards different (+ or -) | old id | new id
-  const pools = new Map<string, { sideboard: readonly SealedDeckEntry[], poolId: string, unsaved: Awaited<ReturnType<typeof getPoolChanges>>['rows'] }>();
+  const pools = new Map<
+    string,
+    {
+      sideboard: readonly SealedDeckEntry[];
+      poolId: string;
+      unsaved: Awaited<ReturnType<typeof getPoolChanges>>["rows"];
+    }
+  >();
   const changes = await getPoolChanges();
-  let differences: string = " Row | Name | Type | Value | Comment | Full Pool | Difference\n" +
+  let differences: string =
+    " Row | Name | Type | Value | Comment | Full Pool | Difference\n" +
     "-----|------|------|-------|---------|-----------|-----------\n";
   console.log(differences);
   for (const change of changes.rows) {
     console.log("...");
-    if (change['Full Pool']) {
-      const actual = await fetchSealedDeck(change['Full Pool']);
-      const baseId = change.Type === "starting pool" ? undefined : pools.get(change.Name)!.poolId;
+    if (change["Full Pool"]) {
+      const actual = await fetchSealedDeck(change["Full Pool"]);
+      const baseId = change.Type === "starting pool"
+        ? undefined
+        : pools.get(change.Name)!.poolId;
       const expected = change.Type === "starting pool"
         ? (await fetchSealedDeck(change.Value)).sideboard
-        : await rebuildPoolContents([[change.Timestamp, change.Name, "starting pool", baseId], ...[...pools.get(change.Name)!.unsaved, change].map(c => c[ROW] as [any,any,any,any])]);
+        : await rebuildPoolContents([
+          [change.Timestamp, change.Name, "starting pool", baseId],
+          ...[...pools.get(change.Name)!.unsaved, change].map((c) =>
+            c[ROW] as [any, any, any, any]
+          ),
+        ]);
       const difference = diffPools(actual.sideboard, expected);
       if (difference) {
-        const expectedPoolId = await makeSealedDeck({sideboard: expected });
-        pools.set(change.Name, { sideboard: expected, poolId: expectedPoolId, unsaved: [] });
-        const row = ` ${change[ROWNUM]} | ${change.Name} | ${change.Type} | ${change.Value} | ${change.Comment} | ${expectedPoolId} | ${actual.poolId} | ${formatPoolDiffs(difference)}\n`;
+        const expectedPoolId = await makeSealedDeck({ sideboard: expected });
+        pools.set(change.Name, {
+          sideboard: expected,
+          poolId: expectedPoolId,
+          unsaved: [],
+        });
+        const row = ` ${
+          change[ROWNUM]
+        } | ${change.Name} | ${change.Type} | ${change.Value} | ${change.Comment} | ${expectedPoolId} | ${actual.poolId} | ${
+          formatPoolDiffs(difference)
+        }\n`;
         console.log(row);
         // save the new value to the sheet; put the old one in column G just in case
-        await sheetsWrite(sheets, CONFIG.LIVE_SHEET_ID, "Pool Changes!F" + change[ROWNUM] + ":G" + change[ROWNUM], [[
-          expectedPoolId,
-          actual.poolId,
-        ]]);
+        await sheetsWrite(
+          sheets,
+          CONFIG.LIVE_SHEET_ID,
+          "Pool Changes!F" + change[ROWNUM] + ":G" + change[ROWNUM],
+          [[
+            expectedPoolId,
+            actual.poolId,
+          ]],
+        );
         differences += row;
       } else {
-        pools.set(change.Name, { sideboard: actual.sideboard, poolId: actual.poolId, unsaved: [] });
+        pools.set(change.Name, {
+          sideboard: actual.sideboard,
+          poolId: actual.poolId,
+          unsaved: [],
+        });
       }
     } else {
       const entry = pools.get(change.Name);
@@ -1266,9 +1370,12 @@ async function fullRebuild(client: djs.Client<true>, poolChanges: Awaited<Return
   await user.send(differences);
 }
 
-type PoolDiffRow = { name: string, expectedCount: number, actualCount: number };
+type PoolDiffRow = { name: string; expectedCount: number; actualCount: number };
 
-function diffPools(actual: readonly SealedDeckEntry[], expected: readonly SealedDeckEntry[]) {
+function diffPools(
+  actual: readonly SealedDeckEntry[],
+  expected: readonly SealedDeckEntry[],
+) {
   // note that in "actual" and "expected" there *may* be duplicate entries (same card, different set) and we want to sum those together
   // Also we should normalize names by stripping off anything after " //" and lowercasing
   const actualCounts = new Map<string, number>();
@@ -1298,5 +1405,6 @@ function diffPools(actual: readonly SealedDeckEntry[], expected: readonly Sealed
 }
 
 function formatPoolDiffs(diffs: PoolDiffRow[]) {
-  return diffs.map((x) => `${x.name}: ${x.expectedCount} vs ${x.actualCount}`).join(", ");
+  return diffs.map((x) => `${x.name}: ${x.expectedCount} vs ${x.actualCount}`)
+    .join(", ");
 }

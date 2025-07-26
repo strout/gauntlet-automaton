@@ -1,7 +1,11 @@
 import { CONFIG } from "./main.ts";
-import { fetchSealedDeck, makeSealedDeck, splitCardNames } from "./sealeddeck.ts";
+import {
+  fetchSealedDeck,
+  makeSealedDeck,
+  splitCardNames,
+} from "./sealeddeck.ts";
 import { columnIndex, sheets, sheetsAppend, sheetsRead } from "./sheets.ts";
-import { z } from 'zod';
+import { z } from "zod";
 
 // TODO read column names from the header row instead of hardcoding
 
@@ -9,14 +13,19 @@ export const ROW = Symbol("ROW");
 export const ROWNUM = Symbol("ROWNUM");
 
 // TODO use this & something to assert particular columns exist, rather than relying on changing column indices over and over.
-export async function readTable(range: string, headerRowNum = 1, sheetId = CONFIG.LIVE_SHEET_ID) {
+export async function readTable(
+  range: string,
+  headerRowNum = 1,
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
   const data = await sheetsRead(sheets, sheetId, range);
   const [headerRow, ...rows] = data.values!.slice(headerRowNum - 1);
   const parsedRows = rows.map((r, rowOffset) => {
-    const ret: { [key: string]: unknown, [ROW]: unknown[], [ROWNUM]: number } = {
-      [ROW]: r,
-      [ROWNUM]: rowOffset + 1 + headerRowNum,
-    };
+    const ret: { [key: string]: unknown; [ROW]: unknown[]; [ROWNUM]: number } =
+      {
+        [ROW]: r,
+        [ROWNUM]: rowOffset + 1 + headerRowNum,
+      };
     for (let i = 0; i < r.length && i < headerRow.length; i++) {
       ret[headerRow[i]] ??= r[i];
     }
@@ -31,18 +40,33 @@ export async function readTable(range: string, headerRowNum = 1, sheetId = CONFI
   return { rows: parsedRows, headers, headerColumns };
 }
 
-
-export function parseTable<S extends z.ZodRawShape>(rowSchema: z.ZodObject<S>, table: Awaited<ReturnType<typeof readTable>>) {
+export function parseTable<S extends z.ZodRawShape>(
+  rowSchema: z.ZodObject<S>,
+  table: Awaited<ReturnType<typeof readTable>>,
+) {
   const schema = tableSchema(rowSchema);
   return schema.parse(table);
 }
 
-function tableSchema<S extends z.ZodRawShape, C extends z.core.$ZodObjectConfig>(rowSchema: z.ZodObject<S, C>) {
+function tableSchema<
+  S extends z.ZodRawShape,
+  C extends z.core.$ZodObjectConfig,
+>(rowSchema: z.ZodObject<S, C>) {
   const keys = rowSchema.keyof().options;
   const schema = z.object({
-    rows: z.array(z.intersection(rowSchema, z.object({ [ROW]: z.array(z.any()), [ROWNUM]: z.number() }))),
-    headers: z.array(z.string()).refine(s => keys.every(k => s.includes(k))),
-    headerColumns: z.intersection(z.record(rowSchema.keyof(), z.number()), z.partialRecord(z.string(), z.number())),
+    rows: z.array(
+      z.intersection(
+        rowSchema,
+        z.object({ [ROW]: z.array(z.any()), [ROWNUM]: z.number() }),
+      ),
+    ),
+    headers: z.array(z.string()).refine((s) =>
+      keys.every((k) => s.includes(k))
+    ),
+    headerColumns: z.intersection(
+      z.record(rowSchema.keyof(), z.number()),
+      z.partialRecord(z.string(), z.number()),
+    ),
   });
   return schema;
 }
@@ -71,14 +95,27 @@ export const addPoolChange = (
   comment: string,
   newPoolId?: string,
   sheetId = CONFIG.LIVE_SHEET_ID,
-) => addPoolChanges([[name, type, value, comment, ...[newPoolId].filter(Boolean) as [newPoolId?: string]]], sheetId);
+) =>
+  addPoolChanges([[
+    name,
+    type,
+    value,
+    comment,
+    ...[newPoolId].filter(Boolean) as [newPoolId?: string],
+  ]], sheetId);
 
 /**
  * Adds multiple pool changes to the spreadsheet with timestamps.
  * @param changes - Array of pool changes to add
  */
 export async function addPoolChanges(
-  changes: [name: string, type: string, value: string, comment: string, newPoolId?: string][],
+  changes: [
+    name: string,
+    type: string,
+    value: string,
+    comment: string,
+    newPoolId?: string,
+  ][],
   sheetId = CONFIG.LIVE_SHEET_ID,
 ) {
   const timestamp = new Date().toISOString();
@@ -94,17 +131,23 @@ export async function addPoolChanges(
  * Retrieves all pool changes from the spreadsheet.
  * @returns Pool change records with metadata and original row data
  */
-export async function getPoolChanges<S extends z.ZodRawShape>(sheetId = CONFIG.LIVE_SHEET_ID, extras?: z.ZodObject<S>) {
+export async function getPoolChanges<S extends z.ZodRawShape>(
+  sheetId = CONFIG.LIVE_SHEET_ID,
+  extras?: z.ZodObject<S>,
+) {
   const table = await readTable("Pool Changes!A:F", 1, sheetId);
-  return parseTable(z.strictObject({
-    Timestamp: z.union([z.string(), z.number()]),
-    Name: z.string(),
-    Type: z.string(), // TODO maybe enforce known types?
-    Value: z.string(),
-    Comment: z.string().nullable(),
-    'Full Pool': z.string().nullable(),
-    ...extras?.shape
-  }), table);
+  return parseTable(
+    z.strictObject({
+      Timestamp: z.union([z.string(), z.number()]),
+      Name: z.string(),
+      Type: z.string(), // TODO maybe enforce known types?
+      Value: z.string(),
+      Comment: z.string().nullable(),
+      "Full Pool": z.string().nullable(),
+      ...extras?.shape,
+    }),
+    table,
+  );
 }
 
 /**
@@ -153,12 +196,16 @@ export async function rebuildPoolContents(
         break;
       }
       case "add card": {
-        const name = splitCardNames.has(e[3].split(" //")[0]) ? e[3] : e[3].split(" //")[0];
+        const name = splitCardNames.has(e[3].split(" //")[0])
+          ? e[3]
+          : e[3].split(" //")[0];
         cards.set(name, (cards.get(name) ?? 0) + 1);
         break;
       }
       case "remove card": {
-        const name = splitCardNames.has(e[3].split(" //")[0]) ? e[3] : e[3].split(" //")[0];
+        const name = splitCardNames.has(e[3].split(" //")[0])
+          ? e[3]
+          : e[3].split(" //")[0];
         cards.set(name, (cards.get(name) ?? 0) - 1);
         break;
       }
@@ -201,25 +248,28 @@ export async function rebuildPoolContents(
  * Gets all players from the Player Database sheet.
  * @returns Player records with stats and metadata
  */
-export async function getPlayers(sheetId = CONFIG.LIVE_SHEET_ID) {
+export async function getPlayers<S extends z.ZodRawShape>(
+  sheetId = CONFIG.LIVE_SHEET_ID,
+  extras?: z.ZodObject<S>,
+) {
   const LAST_COLUMN = "AI";
-  const range = await sheetsRead(
-    sheets,
-    sheetId,
-    "Player Database!A2:" + LAST_COLUMN,
+  const table = await readTable("Player Database!A:" + LAST_COLUMN, 1, sheetId);
+  const schema = tableSchema(z.object({
+    Identification: z.string(),
+    "Discord ID": z.string(),
+    "Matches played": z.number(),
+    Wins: z.number(),
+    Losses: z.number(),
+    "MATCHES TO PLAY STATUS": z.string(),
+    "TOURNAMENT STATUS": z.string(),
+    "Survey Sent": z.coerce.boolean(),
+    ...extras?.shape,
+  }));
+  // filter out junk rows (which show up with the identification "  - ")
+  table.rows = table.rows.filter((x) =>
+    typeof x.Identification !== "string" || x.Identification.length > 4
   );
-  return range.values?.map((row, i) => ({
-    rowNum: i + 2,
-    name: row[columnIndex("B")] as string,
-    id: row[columnIndex("D")] as string,
-    matchesPlayed: +row[columnIndex("G")],
-    wins: +row[columnIndex("H")],
-    losses: +row[columnIndex("I")],
-    matchesToPlay: row[columnIndex("W")] as string,
-    status: row[columnIndex("V")] as string,
-    surveySent: !!+row[columnIndex("Z")],
-    row,
-  })).filter((x) => x.id) ?? [];
+  return schema.parse(table);
 }
 
 let quotas: undefined | {
@@ -272,7 +322,7 @@ export async function getMatches() {
       notes: row[columnIndex("G")] as string,
       scriptHandled: row[columnIndex("F")] == "1",
       botMessaged: row[columnIndex("G")] == "1",
-      matchType: 'match' as const,
+      matchType: "match" as const,
       row,
     })).filter((x) => x.winner && x.loser) ?? [];
 }
@@ -297,7 +347,7 @@ export async function getEntropy() {
       result: row[columnIndex("G")] as string,
       timestamp: +row[columnIndex("I")],
       botMessaged: row[columnIndex("J")] == "1",
-      matchType: 'entropy' as const,
+      matchType: "entropy" as const,
       scriptHandled: true,
       row,
     })).filter((x) => x.winner && x.loser) ?? [];
