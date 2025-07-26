@@ -18,14 +18,13 @@ export async function readTable(
   headerRowNum = 1,
   sheetId = CONFIG.LIVE_SHEET_ID,
 ) {
-  const data = await sheetsRead(sheets, sheetId, range);
-  const [headerRow, ...rows] = data.values!.slice(headerRowNum - 1);
+  const data = await sheetsRead(sheets, sheetId, range, "UNFORMATTED_VALUE");
+  const [headerRow, ...rows] = data.values!;
   const parsedRows = rows.map((r, rowOffset) => {
-    const ret: { [key: string]: unknown; [ROW]: unknown[]; [ROWNUM]: number } =
-      {
-        [ROW]: r,
-        [ROWNUM]: rowOffset + 1 + headerRowNum,
-      };
+    const ret: { [key: string]: unknown;[ROW]: unknown[];[ROWNUM]: number; } = {
+      [ROW]: r,
+      [ROWNUM]: rowOffset + 1 + headerRowNum,
+    };
     for (let i = 0; i < r.length && i < headerRow.length; i++) {
       ret[headerRow[i]] ??= r[i];
     }
@@ -76,8 +75,7 @@ function tableSchema<
  * @returns The current week number
  */
 export async function getCurrentWeek() {
-  return +(await sheetsRead(sheets, CONFIG.LIVE_SHEET_ID, "Quotas!B2"))
-    .values![0][0];
+  return z.tuple([z.tuple([z.coerce.number()])]).parse((await sheetsRead(sheets, CONFIG.LIVE_SHEET_ID, "Quotas!B2")).values)[0][0];
 }
 
 /**
@@ -285,72 +283,52 @@ let quotas: undefined | {
  * @returns Weekly quota configurations with match requirements and date ranges
  */
 export async function getQuotas() {
-  return quotas ??= (await sheetsRead(
-    sheets,
-    CONFIG.LIVE_SHEET_ID,
-    "Quotas!A9:E14",
-    "UNFORMATTED_VALUE",
-  )).values?.map(
-    (x) => ({
-      week: +x[columnIndex("A")],
-      fromDate: x[columnIndex("B")],
-      toDate: x[columnIndex("C")],
-      matchesMin: +x[columnIndex("D")],
-      matchesMax: +x[columnIndex("E")],
-    }),
-  ) ?? [];
+  if (quotas) return quotas;
+  const table = await readTable("Quotas!A7:E14", 7);
+  const parsed = parseTable(z.object({ WEEK: z.number(), FROM: z.union([z.number(), z.literal("Registration")]), TO: z.number(), MIN: z.number(), MAX: z.number() }), table);
+  quotas = parsed.rows.filter(x => x.WEEK > 0).map(x => ({ week: x.WEEK, fromDate: x.FROM === "Registration" ? 0 : x.FROM, toDate: x.TO, matchesMin: x.MIN, matchesMax: x.MAX }));
+  return quotas;
 }
+
+export const MATCHTYPE = Symbol();
 
 /**
  * Gets all match results from the Matches sheet.
  * @returns Match records with results and metadata
  */
-export async function getMatches() {
+export async function getMatches<S extends z.ZodRawShape>(extras?: z.ZodObject<S>) {
   const LAST_COLUMN = "L";
-  return (await sheetsRead(
-    sheets,
-    CONFIG.LIVE_SHEET_ID,
-    "Matches!A2:" + LAST_COLUMN,
-    "UNFORMATTED_VALUE",
-  ))
-    .values?.map((row, i) => ({
-      matchRowNum: i + 2,
-      timestamp: +row[columnIndex("A")],
-      winner: row[columnIndex("B")] as string,
-      loser: row[columnIndex("C")] as string,
-      result: row[columnIndex("D")] as string,
-      notes: row[columnIndex("G")] as string,
-      scriptHandled: row[columnIndex("F")] == "1",
-      botMessaged: row[columnIndex("G")] == "1",
-      matchType: "match" as const,
-      row,
-    })).filter((x) => x.winner && x.loser) ?? [];
+  const table = await readTable("Matches!A:" + LAST_COLUMN);
+  const parsed = parseTable(z.object({
+    Timestamp: z.number(),
+    "Winner Name": z.string(),
+    "Loser Name": z.string(),
+    Result: z.string(),
+    Notes: z.string(),
+    "Script Handled": z.coerce.boolean(),
+    "Bot Messaged": z.coerce.boolean(),
+    ...extras?.shape
+  }), table);
+  return { ...parsed, rows: parsed.rows.map(r => ({ ...r, [MATCHTYPE]: "match" as const }))};
 }
 
 /**
  * Gets entropy data from the Entropy sheet.
  * @returns Entropy match records with timing and results
  */
-export async function getEntropy() {
-  const LAST_COLUMN = "J";
-  return (await sheetsRead(
-    sheets,
-    CONFIG.LIVE_SHEET_ID,
-    "Entropy!A5:" + LAST_COLUMN,
-    "UNFORMATTED_VALUE",
-  ))
-    .values?.map((row, i) => ({
-      entropyRowNum: i + 5,
-      week: +row[columnIndex("B")],
-      winner: row[columnIndex("C")] as string,
-      loser: row[columnIndex("D")] as string,
-      result: row[columnIndex("G")] as string,
-      timestamp: +row[columnIndex("I")],
-      botMessaged: row[columnIndex("J")] == "1",
-      matchType: "entropy" as const,
-      scriptHandled: true,
-      row,
-    })).filter((x) => x.winner && x.loser) ?? [];
+export async function getEntropy<S extends z.ZodRawShape>(extras?: z.ZodObject<S>) {
+  const LAST_COLUMN = "L";
+  const table = await readTable("Entropy!A4:" + LAST_COLUMN, 4);
+  const parsed = parseTable(z.object({
+    WEEK: z.number(),
+    Timestamp: z.number(),
+    "PLAYER 1": z.string(),
+    "PLAYER 2": z.string(),
+    Result: z.string(),
+    "Bot Messaged": z.string(),
+    ...extras?.shape
+  }), table);
+  return { ...parsed, rows: parsed.rows.map(r => ({ ...r, "Script Handled": true, "Loser Name": r["PLAYER 2"], [MATCHTYPE]: "entropy" as const }))};
 }
 
 /**
