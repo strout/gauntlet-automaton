@@ -414,13 +414,12 @@ const assignEliminatedRole = async (
   using _ = await eliminationLock();
   try {
     const players = await getPlayerStatuses();
-    if (!players) return;
     // TODO flag players to be messaged.
-    const eliminatedPlayers = players.rows.filter((x) =>
+    const eliminatedPlayers = players?.rows.filter((x) =>
       x["TOURNAMENT STATUS"] === "Eliminated"
     );
     for (
-      const { "Discord ID": id, Identification: name } of eliminatedPlayers
+      const { "Discord ID": id, Identification: name } of eliminatedPlayers ?? []
     ) {
       const member = members.get(id);
       if (member?.roles.cache.has(CONFIG.ELIMINATED_ROLE_ID) === false) {
@@ -430,7 +429,7 @@ const assignEliminatedRole = async (
       }
     }
     const eliminatedIds = new Set(
-      eliminatedPlayers.map((x) => x["Discord ID"]),
+      eliminatedPlayers?.map((x) => x["Discord ID"]),
     );
     for (const [id, member] of members.entries()) {
       if (
@@ -442,11 +441,11 @@ const assignEliminatedRole = async (
         await delay(250);
       }
     }
-    const surveyablePlayers = players.rows.filter((x) =>
+    const surveyablePlayers = players?.rows.filter((x) =>
       SENDING_SURVEY &&
       !x["Survey Sent"] &&
       (x["Matches played"] == 30 || x["TOURNAMENT STATUS"] === "Eliminated") // TODO change matchesPlayed back after short league is done
-    );
+    ) ?? [];
     let anySent = false;
     if (CONFIG.LIVE_SHEET_ID) {
       for (const player of surveyablePlayers) {
@@ -455,7 +454,7 @@ const assignEliminatedRole = async (
         if (!anySent && toSurveyDate && toSurveyDate < new Date()) {
           console.log("would survey " + player.Identification);
           console.log(
-            "Player Database!R" + player[ROWNUM] + "C" + (players.headerColumns["Survey Sent"] + 1),
+            "Player Database!R" + player[ROWNUM] + "C" + (players!.headerColumns["Survey Sent"] + 1),
           );
           // TODO covnert to a log entry; not that we'd have late joiners after surveys are being sent but still...
           await sheetsWrite(
