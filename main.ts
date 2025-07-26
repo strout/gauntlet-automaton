@@ -30,7 +30,6 @@ import {
   ROWNUM,
 } from "./standings.ts";
 import { pendingHandler, waitForBoosterTutor } from "./pending.ts";
-import { setup } from "./fin.ts";
 
 export { CONFIG };
 
@@ -550,9 +549,11 @@ if (import.meta.main) {
 
     const djs_client = makeClient();
 
-    const { watch, messageHandlers, interactionHandlers } = await setup();
+    // const { watch, messageHandlers, interactionHandlers } = await setup();
 
-    configureClient(djs_client, watch, messageHandlers, interactionHandlers);
+    // configureClient(djs_client, watch, messageHandlers, interactionHandlers);
+
+    configureClient(djs_client, () => Promise.resolve(), [], []);
 
     await djs_client.login(DISCORD_TOKEN);
   }
