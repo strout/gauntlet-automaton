@@ -1,6 +1,7 @@
 import { CONFIG } from "./main.ts";
 import { fetchSealedDeck, makeSealedDeck, splitCardNames } from "./sealeddeck.ts";
 import { columnIndex, sheets, sheetsAppend, sheetsRead } from "./sheets.ts";
+import { z } from 'zod';
 
 // TODO read column names from the header row instead of hardcoding
 
@@ -28,6 +29,22 @@ export async function readTable(range: string, headerRowNum = 1, sheetId = CONFI
     headerColumns[headerRow[i]] ??= i;
   }
   return { rows: parsedRows, headers, headerColumns };
+}
+
+
+export function parseTable<S extends z.ZodRawShape>(rowSchema: z.ZodObject<S>, table: Awaited<ReturnType<typeof readTable>>) {
+  const schema = tableSchema(rowSchema);
+  return schema.parse(table);
+}
+
+function tableSchema<S extends z.ZodRawShape, C extends z.core.$ZodObjectConfig>(rowSchema: z.ZodObject<S, C>) {
+  const keys = rowSchema.keyof().options;
+  const schema = z.object({
+    rows: z.array(z.intersection(rowSchema, z.object({ [ROW]: z.array(z.any()), [ROWNUM]: z.number() }))),
+    headers: z.array(z.string()).refine(s => keys.every(k => s.includes(k))),
+    headerColumns: z.intersection(z.record(rowSchema.keyof(), z.number()), z.partialRecord(z.string(), z.number())),
+  });
+  return schema;
 }
 
 /**
@@ -77,22 +94,17 @@ export async function addPoolChanges(
  * Retrieves all pool changes from the spreadsheet.
  * @returns Pool change records with metadata and original row data
  */
-export async function getPoolChanges(sheetId = CONFIG.LIVE_SHEET_ID) {
-  return (await sheetsRead(sheets, sheetId, "Pool Changes!A2:F"))
-    .values
-    ?.map((
-      row,
-      index,
-    ) => ({
-      rowNum: index + 2,
-      timestamp: row[0] as string | number,
-      name: row[1] as string,
-      type: row[2] as string,
-      value: row[3] as string,
-      comment: row[4] as string,
-      fullPool: row[5] as string | undefined,
-      row,
-    })) ?? [];
+export async function getPoolChanges<S extends z.ZodRawShape>(sheetId = CONFIG.LIVE_SHEET_ID, extras?: z.ZodObject<S>) {
+  const table = await readTable("Pool Changes!A:F", 1, sheetId);
+  return parseTable(z.strictObject({
+    Timestamp: z.union([z.string(), z.number()]),
+    Name: z.string(),
+    Type: z.string(), // TODO maybe enforce known types?
+    Value: z.string(),
+    Comment: z.string().nullable(),
+    'Full Pool': z.string().nullable(),
+    ...extras?.shape
+  }), table);
 }
 
 /**
@@ -329,11 +341,11 @@ export async function getExpectedPool(
 ) {
   poolsSheet ??= await getPools();
   poolsChangesSheet ??= await getPoolChanges();
-  const changesForName = poolsChangesSheet.filter((x) => x.name === name);
+  const changesForName = poolsChangesSheet.rows.filter((x) => x.Name === name);
   const currentPoolId = poolsSheet.find((row) => row.name === name)
     ?.currentPoolLink.split(".tech/")[1];
   const expected = await rebuildPoolContents(
-    changesForName.map((x) => [x.timestamp, x.name, x.type, x.value]),
+    changesForName.map((x) => [x.Timestamp, x.Name, x.Type, x.Value]),
   );
   const actual = currentPoolId ? await fetchSealedDeck(currentPoolId) : null;
   const expectedMap = Map.groupBy(

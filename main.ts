@@ -26,6 +26,8 @@ import {
   getPoolChanges,
   getPools,
   rebuildPoolContents,
+  ROW,
+  ROWNUM,
 } from "./standings.ts";
 import { pendingHandler, waitForBoosterTutor } from "./pending.ts";
 import { setup } from "./fin.ts";
@@ -683,12 +685,12 @@ export async function populatePools(sheetId: string, channel: djs.GuildBasedChan
   const players = await getPlayers(sheetId);
   const poolChanges = await getPoolChanges(sheetId);
   console.log("got players", players.length);
-  console.log("got pool changes", poolChanges.length);
+  console.log("got pool changes", poolChanges.rows.length);
   let rowNum = 6;
   const batches: djs.Collection<djs.Snowflake, djs.Message<true>>[] = [];
   for (const player of players) {
     rowNum++;
-    if (poolChanges.some(p => p.name === player.name && p.type === 'starting pool')) continue; // already there
+    if (poolChanges.rows.some(p => p.Name === player.name && p.Type === 'starting pool')) continue; // already there
     const discordId = player.id;
     const name = player.name;
     if (!discordId) {
@@ -1226,36 +1228,36 @@ function cardCount(deck: readonly SealedDeckEntry[]) {
 
 async function fullRebuild(client: djs.Client<true>, poolChanges: Awaited<ReturnType<typeof getPoolChanges>>) {
   // go through each and every entry, identify what's different, and DM CONFIG.OWNER_ID with differences as a table with row number | cards different (+ or -) | old id | new id
-  const pools = new Map<string, { sideboard: readonly SealedDeckEntry[], poolId: string, unsaved: Awaited<ReturnType<typeof getPoolChanges>> }>();
+  const pools = new Map<string, { sideboard: readonly SealedDeckEntry[], poolId: string, unsaved: Awaited<ReturnType<typeof getPoolChanges>>['rows'] }>();
   const changes = await getPoolChanges();
   let differences: string = " Row | Name | Type | Value | Comment | Full Pool | Difference\n" +
     "-----|------|------|-------|---------|-----------|-----------\n";
   console.log(differences);
-  for (const change of changes) {
+  for (const change of changes.rows) {
     console.log("...");
-    if (change.fullPool) {
-      const actual = await fetchSealedDeck(change.fullPool);
-      const baseId = change.type === "starting pool" ? undefined : pools.get(change.name)!.poolId;
-      const expected = change.type === "starting pool"
-        ? (await fetchSealedDeck(change.value)).sideboard
-        : await rebuildPoolContents([[change.timestamp, change.name, "starting pool", baseId], ...[...pools.get(change.name)!.unsaved, change].map(c => c.row as [any,any,any,any])]);
+    if (change['Full Pool']) {
+      const actual = await fetchSealedDeck(change['Full Pool']);
+      const baseId = change.Type === "starting pool" ? undefined : pools.get(change.Name)!.poolId;
+      const expected = change.Type === "starting pool"
+        ? (await fetchSealedDeck(change.Value)).sideboard
+        : await rebuildPoolContents([[change.Timestamp, change.Name, "starting pool", baseId], ...[...pools.get(change.Name)!.unsaved, change].map(c => c[ROW] as [any,any,any,any])]);
       const difference = diffPools(actual.sideboard, expected);
       if (difference) {
         const expectedPoolId = await makeSealedDeck({sideboard: expected });
-        pools.set(change.name, { sideboard: expected, poolId: expectedPoolId, unsaved: [] });
-        const row = ` ${change.rowNum} | ${change.name} | ${change.type} | ${change.value} | ${change.comment} | ${expectedPoolId} | ${actual.poolId} | ${formatPoolDiffs(difference)}\n`;
+        pools.set(change.Name, { sideboard: expected, poolId: expectedPoolId, unsaved: [] });
+        const row = ` ${change[ROWNUM]} | ${change.Name} | ${change.Type} | ${change.Value} | ${change.Comment} | ${expectedPoolId} | ${actual.poolId} | ${formatPoolDiffs(difference)}\n`;
         console.log(row);
         // save the new value to the sheet; put the old one in column G just in case
-        await sheetsWrite(sheets, CONFIG.LIVE_SHEET_ID, "Pool Changes!F" + change.rowNum + ":G" + change.rowNum, [[
+        await sheetsWrite(sheets, CONFIG.LIVE_SHEET_ID, "Pool Changes!F" + change[ROWNUM] + ":G" + change[ROWNUM], [[
           expectedPoolId,
           actual.poolId,
         ]]);
         differences += row;
       } else {
-        pools.set(change.name, { sideboard: actual.sideboard, poolId: actual.poolId, unsaved: [] });
+        pools.set(change.Name, { sideboard: actual.sideboard, poolId: actual.poolId, unsaved: [] });
       }
     } else {
-      const entry = pools.get(change.name);
+      const entry = pools.get(change.Name);
       entry?.unsaved.push(change);
     }
   }
