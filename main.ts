@@ -49,8 +49,8 @@ type Role = { id: djs.Snowflake; name: string };
 
 export const getRegistrationData = async () => {
   const table = await readTable(CONFIG.REGISTRATION_SHEET_NAME + "!A:M", 1, CONFIG.REGISTRATION_SHEET_ID);
-  const registrations = parseTable({ 'Full Name': z.string(), 'Arena Player ID# (e.g.: "Wins4Dayz#89045") ': z.string().includes("#"), "Discord ID": z.string().optional() }, table);
-  return registrations;
+  const registrations = parseTable({ 'Full Name': z.string(), 'Arena Player ID# (e.g.: "Wins4Dayz#89045") ': z.string(), "Discord ID": z.string().optional() }, table);
+  return {...registrations, rows: registrations.rows.filter(r => r['Arena Player ID# (e.g.: "Wins4Dayz#89045") '].includes('#'))};
 };
 
 const markRoleAdded = async (row: number, column: number, discordId: djs.Snowflake) => {
