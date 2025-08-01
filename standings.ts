@@ -341,7 +341,7 @@ export async function getMatches<S extends z.ZodRawShape>(
     "Winner Name": z.string(),
     "Loser Name": z.string(),
     Result: z.string(),
-    Notes: z.string(),
+    Notes: z.string().optional(),
     "Script Handled": z.coerce.boolean(),
     "Bot Messaged": z.coerce.boolean(),
     ...extras?.shape,
