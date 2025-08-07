@@ -245,7 +245,7 @@ export async function rebuildPoolContents(
 
 const playerShape = {
   Identification: z.string(),
-  "Discord ID": z.string(),
+  "Discord ID": z.coerce.string(),
   "Matches played": z.number(),
   Wins: z.number(),
   Losses: z.number(),
