@@ -1,3 +1,4 @@
+import { extend } from "zod";
 import { CONFIG } from "./main.ts";
 import {
   fetchSealedDeck,
@@ -333,7 +334,9 @@ export const MATCHTYPE = "MATCHTYPE";
  */
 export async function getMatches<S extends z.ZodRawShape>(
   extras?: z.ZodObject<S>,
+  quotas?: Awaited<ReturnType<typeof getQuotas>>,
 ) {
+  const quotaTask = quotas ?? getQuotas();
   const LAST_COLUMN = "L";
   const table = await readTable("Matches!A:" + LAST_COLUMN);
   const parsed = parseTable({
@@ -346,9 +349,10 @@ export async function getMatches<S extends z.ZodRawShape>(
     "Bot Messaged": z.coerce.boolean(),
     ...extras?.shape,
   }, table);
+  quotas = await quotaTask;
   return {
     ...parsed,
-    rows: parsed.rows.map((r) => ({ ...r, [MATCHTYPE]: "match" as const })),
+    rows: parsed.rows.map((r) => ({ ...r, [MATCHTYPE]: "match" as const, WEEK: quotas.findLast(q => q.fromDate <= r.Timestamp)?.week ?? 0 })),
   };
 }
 
@@ -380,6 +384,39 @@ export async function getEntropy<S extends z.ZodRawShape>(
     })),
   };
 }
+
+/**
+ * Get all matches and entropy, sorted by timestamp
+ */
+export async function getAllMatches<SM extends z.ZodRawShape, SE extends z.ZodRawShape>(
+  matchExtras?: z.ZodObject<SM>,
+  entropyExtras?: z.ZodObject<SE>,
+  quotas?: Awaited<ReturnType<typeof getQuotas>>,
+) {
+  const [matches, entropy] = await Promise.all([
+    getMatches(matchExtras, quotas),
+    getEntropy(entropyExtras),
+  ]);
+  const rows = [...matches.rows, ...entropy.rows].sort((a, b) =>
+    a.Timestamp - b.Timestamp
+  );
+  return {
+    rows,
+    headers: {
+      entropy: entropy.headers,
+      match: matches.headers,
+    },
+    headerColumns: {
+      entropy: entropy.headerColumns,
+      match: matches.headerColumns,
+    },
+    sheetName: {
+      match: "Matches",
+      entropy: "Entropy",
+    }
+  };
+}
+
 
 /**
  * Gets all pools from the Pools sheet.

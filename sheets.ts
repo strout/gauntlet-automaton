@@ -154,7 +154,7 @@ export function readSheetsDate(date: number, offsetMs: number) {
   );
 }
 
-function utcOffsetMs(timeZone: string, date?: Date) {
+export function utcOffsetMs(timeZone: string, date?: Date) {
   // TODO is it just coincidental that en-UK produces offsets of GMT or is it reliable?
   const dtf = Intl.DateTimeFormat("en-UK", { timeZoneName: "short", timeZone });
   const parts = dtf.formatToParts(date);

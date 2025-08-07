@@ -1,19 +1,26 @@
-import { makeClient, DISCORD_TOKEN } from './main.ts';
-import { CONFIG } from './config.ts';
-import { buildMoveMessage, buildMapState, readMapState } from './eoe.ts';
-import { initSheets } from "./sheets.ts";
+import { readMapState } from "./eoe.ts";
+import { initSheets, readSheetsDate, utcOffsetMs } from "./sheets.ts";
+import { getQuotas } from "./standings.ts";
 
 await initSheets();
 
-const mapState = await readMapState("18atT4Xd_GdWl8YpX2qjCKNyxJ_MeCvMtJaH9sRQGurw");
+// read quotas and planets; determine week each planet was discovered
 
-const client = makeClient();
-client.once('ready', async client => {
-  const owner = await client.users.fetch(CONFIG.OWNER_ID);
-  await owner.send(buildMoveMessage(mapState, "Ahoy"));
-  await owner.send(buildMoveMessage(mapState, "Not-Ahoy"));
-  await client.destroy();
-  Deno.exit(0);
-});
+const quotas = await getQuotas();
 
-await client.login(DISCORD_TOKEN);
+console.log(quotas);
+
+const mapState = await readMapState();
+
+const planets = mapState.planets;
+
+for (const [name, { discoveredAt }] of planets) {
+  console.log(`${name}: ${discoveredAt}`);
+  const offset = utcOffsetMs("America/New_York");
+  const { week } = quotas.findLast(q => {
+    const weekStart = readSheetsDate(q.fromDate, offset);
+    console.log(`Week ${q.week} starts ${weekStart}`);
+    return weekStart <= discoveredAt;
+  }) ?? { week: 0 };
+  console.log(`  discovered in week ${week}`);
+}
