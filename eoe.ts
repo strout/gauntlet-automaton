@@ -715,7 +715,7 @@ export async function readMapState(
       "add_planet",
       "reveal",
       "exhaust_planet",
-      "week"
+      "advance_week"
     ]),
     Param1: paramSchema,
     Param2: paramSchema,
@@ -737,7 +737,7 @@ export async function buildMapState(
       | "move_ship"
       | "add_planet"
       | "exhaust_planet"
-      | "week"
+      | "advance_week"
       | "reveal";
     Param1?: string | number;
     Param2?: string | number;
@@ -839,8 +839,8 @@ export async function buildMapState(
         }
         break;
       }
-      case "week": {
-        // for display only; changes exhausted planets to desroyed
+      case "advance_week": {
+        // for display only; changes exhausted planets to destroyed on the live map, does nothing in this program
         break;
       }
     }
