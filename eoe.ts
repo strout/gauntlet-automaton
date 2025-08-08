@@ -92,7 +92,7 @@ import { extractPool } from "./pending.ts";
 
 const mapLock = mutex();
 
-const playerExtra = { Ship: z.string(), "EOE Packs Opened": z.number() };
+export const playerExtra = { Ship: z.string(), "EOE Packs Opened": z.number() };
 type EOEPlayer = Player<typeof playerExtra>;
 
 async function makeChangesToAddPack(
@@ -242,7 +242,7 @@ async function checkForMatches(client: Client<boolean>) {
       CONFIG.LIVE_SHEET_ID,
       m[MATCHTYPE] === "match"
         ? `Matches!R${m[ROWNUM]}C${matches.headerColumns["Bot Messaged"] + 1}`
-        : `Entropy!R${m[ROWNUM]}C${entropy.headerColumns["Bot Messaged"]}`,
+        : `Entropy!R${m[ROWNUM]}C${entropy.headerColumns["Bot Messaged"] + 1}`,
       [[true]],
     );
   }
@@ -617,16 +617,20 @@ export async function rewardPlanet(
 }
 
 export async function getRewardCard(planet: string) {
-  const cards = await searchCards(
-    `set:${planet} ${(["PIO", "SIR"].includes(planet)
-      ? ""
-      : "is:booster ")}(-kw:meld or o:'melds with') game:arena r>=r`,
-  );
+  const cards = await getRewardOptions(planet);
   const card = cards[Math.random() * cards.length | 0];
   return card;
 }
 
-async function announceRewardCard(
+export async function getRewardOptions(planet: string) {
+  return await searchCards(
+    `set:${planet} ${(["PIO", "SIR"].includes(planet)
+      ? ""
+      : "is:booster ")}(-kw:meld or o:'melds with') game:arena r>=r`
+  );
+}
+
+export async function announceRewardCard(
   client: Client,
   planet: string,
   card: ScryfallCard,
@@ -638,6 +642,7 @@ async function announceRewardCard(
   const channel = await guild.channels.fetch(
     CONFIG.EOE.ANNOUNCE_CHANNEL_ID,
   ) as TextChannel;
+  const imageUrl = card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal;
   await channel.send(
     {
       content: `The crew of ${
@@ -651,7 +656,7 @@ async function announceRewardCard(
           description: message?.Blurb ?? "???",
           footer: { text: `Written by ${message?.Writer ?? "???"}` },
         },
-        { title: card.name, image: { url: card.image_uris!.normal } },
+        { title: card.name, image: imageUrl ? { url: imageUrl } : undefined },
       ],
     },
   );
@@ -693,6 +698,10 @@ async function askForPack(
   >["rows"][number],
   currentLosses: number
 ) {
+  if (player["Matches played"] >= 30 || player.Losses >= 11) {
+    console.log("Player finished", player.Identification);
+    return;
+  }
   const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
   const member = await guild.members.fetch(player["Discord ID"]);
   const includeEoe = player["EOE Packs Opened"] * 2 < currentLosses;

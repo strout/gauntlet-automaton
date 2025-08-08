@@ -371,7 +371,7 @@ export async function getEntropy<S extends z.ZodRawShape>(
     "PLAYER 1": z.string(),
     "PLAYER 2": z.string(),
     RESULT: z.string(),
-    "Bot Messaged": z.string(),
+    "Bot Messaged": z.coerce.boolean(),
     ...extras?.shape,
   }, { ...table, rows: table.rows.filter((r) => r["PLAYER 2"]) });
   return {
