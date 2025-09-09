@@ -1,6 +1,7 @@
 import { CONFIG } from "./config.ts";
 
 import { delay } from "@std/async";
+import { parseArgs } from "@std/cli/parse-args";
 import * as djs from "discord.js";
 import {
   columnIndex,
@@ -44,7 +45,34 @@ type RegistrationSheetConfig = {
   maxCol: number;
 };
 
-const pretend = Deno.args.includes("pretend");
+// Parse command line arguments
+const args = parseArgs(Deno.args, {
+  boolean: ["pretend", "once", "help"],
+  string: ["_"], // Positional arguments
+  default: { pretend: false, once: false, help: false }
+});
+
+// Show help if requested
+  if (args.help) {
+    console.log(`Usage: deno task start <command> [options]
+   or: deno run main.ts <command> [options]
+
+Commands:
+  bot      Run the Discord bot
+  pop      Populate pools
+  check    Check pools
+  rebuild  Rebuild pools
+
+Options:
+  --pretend  Run in pretend mode (prevent actual Discord role modifications)
+  --once     Run role management once and exit (instead of looping)
+  --help     Show this help message
+  `);
+    Deno.exit(0);
+  }
+
+const { pretend, once } = args;
+const command = args._[0]; // First positional argument is the command
 
 type Role = { id: djs.Snowflake; name: string };
 
@@ -242,9 +270,9 @@ async function manageRoles(client: djs.Client<true>) {
         }
       }
     }
-    if (Deno.args.includes("once")) {
+    if (once) {
       console.log([
-        Deno.args.includes("once"),
+        once,
         client.rest.globalRemaining,
         client.rest.globalReset,
         Date.now(),
@@ -561,7 +589,7 @@ async function handleRebuild(input: string) {
 }
 
 if (import.meta.main) {
-  if (Deno.args.includes("bot")) {
+  if (command === "bot") {
     await initSheets();
 
     const djs_client = makeClient();
@@ -572,7 +600,7 @@ if (import.meta.main) {
 
     await djs_client.login(DISCORD_TOKEN);
   }
-  if (Deno.args.includes("pop")) {
+  if (command === "pop") {
     console.log("init sheets");
     await initSheets();
     console.log("login");
@@ -584,11 +612,11 @@ if (import.meta.main) {
       .fetch(CONFIG.STARTING_POOL_CHANNEL_ID);
     await populatePools(CONFIG.LIVE_SHEET_ID, channel!);
   }
-  if (Deno.args.includes("check")) {
+  if (command === "check") {
     await initSheets();
     await checkPools();
   }
-  if (Deno.args.includes("rebuild")) {
+  if (command === "rebuild") {
     await initSheets();
     const poolChanges = await getPoolChanges();
     const client = makeClient();
