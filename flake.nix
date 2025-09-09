@@ -7,7 +7,7 @@
     {
       devShells = forAllSystems ({ pkgs }: {
         default = pkgs.mkShell {
-          buildInputs = [ pkgs.deno pkgs.moreutils ];
+          buildInputs = [ pkgs.deno ];
         };
       });
       apps = forAllSystems ({ pkgs }: {
