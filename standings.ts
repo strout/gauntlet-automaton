@@ -1,4 +1,3 @@
-import { extend } from "zod";
 import { CONFIG } from "./main.ts";
 import {
   fetchSealedDeck,
@@ -259,7 +258,7 @@ export type Player<S extends z.ZodRawShape = Record<never, never>> = z.infer<
   z.ZodObject<typeof playerShape & S>
 >;
 export type Table<T> = {
-  rows: (T & { [ROW]: any[]; [ROWNUM]: number })[];
+  rows: (T & { [ROW]: unknown[]; [ROWNUM]: number })[];
   headers: string[];
   headerColumns: Partial<Record<string, number>> & Record<keyof T, number>;
 };

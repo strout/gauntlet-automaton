@@ -592,7 +592,7 @@ const handleMoveChoice: Handler<Interaction> = async (interaction, handle) => {
   }
 };
 
-function findLossAndPrevious(matches: { rows: ({ MATCHTYPE: "match"; WEEK: number; Timestamp: number; "Winner Name": string; "Loser Name": string; Result: string; "Script Handled": boolean; "Bot Messaged": boolean; ROW: any[]; ROWNUM: number; Notes?: string | undefined; } | { "Script Handled": boolean; "Loser Name": string; MATCHTYPE: "entropy"; WEEK: number; Timestamp: number; "PLAYER 1": string; "PLAYER 2": string; RESULT: string; "Bot Messaged": string; ROW: any[]; ROWNUM: number; })[]; headers: { entropy: string[]; match: string[]; }; headerColumns: { entropy: Record<string, number> & Partial<Record<string, number>>; match: Record<string, number> & Partial<Record<string, number>>; }; }, matchRowStamp: number, player: { Identification: string; "Discord ID": string; "Matches played": number; Wins: number; Losses: number; "MATCHES TO PLAY STATUS": string; "TOURNAMENT STATUS": string; "Survey Sent": boolean; Ship: string; "EOE Packs Opened": number; } & { ROW: any[]; ROWNUM: number; }) {
+function findLossAndPrevious(matches: Awaited<ReturnType<typeof getAllMatches>>, matchRowStamp: number, player: EOEPlayer) {
   const matchIndex = matches.rows.findIndex((m) => Math.abs(m.Timestamp - matchRowStamp) < /* must be the same second */ (1 / 24 / 60 / 60 / 1000)
     && m["Loser Name"] === player.Identification
   );
@@ -788,7 +788,7 @@ export async function buildMapState(
               await loadImage(url),
             );
           } catch (e) {
-            console.error("bad image", url, e.message ?? e);
+            console.error("bad image", url, e);
           }
         }
         visible.add(`${row.Param2},${row.Param3}`);

@@ -12,6 +12,7 @@ export interface ScryfallCard {
   readonly collector_number: string;
   readonly rarity: 'common' | 'uncommon' | 'rare' | 'mythic' | 'special' | 'bonus';
   readonly colors?: readonly string[];
+  readonly color_identity: readonly string[];
   readonly mana_cost: string;
   readonly cmc: number;
   readonly type_line: string;

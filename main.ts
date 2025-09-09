@@ -35,15 +35,9 @@ import {
 import { pendingHandler, waitForBoosterTutor } from "./pending.ts";
 import { fixPool, setup } from "./eoe.ts";
 import { z } from "zod";
+import { ScryfallCard } from "./scryfall.ts";
 
 export { CONFIG };
-
-type RegistrationSheetConfig = {
-  nameCol: number;
-  arenaIdCol: number;
-  discordIdCol: number;
-  maxCol: number;
-};
 
 // Parse command line arguments
 const args = parseArgs(Deno.args, {
@@ -493,7 +487,7 @@ const assignEliminatedRole = async (
         await delay(250); // TODO be smarter about rate limit maybe?
       }
     }
-    const eliminatedIds = new Set(
+    const eliminatedIds = new Set<string>(
       eliminatedPlayers?.map((x) => x["Discord ID"]),
     );
     for (const [id, member] of members.entries()) {
@@ -1252,7 +1246,7 @@ export const deckCheckHandler: Handler<djs.Message> = async (
         (x) => [x.name, { name: x.name.split(" //")[0], set: x.set }],
       ),
     );
-    const cardEntries = new Map<string, any>();
+    const cardEntries = new Map<string, ScryfallCard>();
     let warned = false;
     for (let i = 0; i < cardIds.size; i += 75) {
       const ents = [...cardIds.entries()].slice(i, i + 75);
@@ -1273,7 +1267,7 @@ export const deckCheckHandler: Handler<djs.Message> = async (
       const body = await resp.json();
       for (
         const newEnt of ents.filter(([, ident]) =>
-          !body.not_found?.some((x: any) =>
+          !body.not_found?.some((x: { name: string, set?: string }) =>
             x.name === ident.name && x.set === ident.set
           )
         ).map(([name], i) => [name, body.data[i]] as const)
@@ -1325,9 +1319,7 @@ export const deckCheckHandler: Handler<djs.Message> = async (
     const colorIdentity = (cards: readonly SealedDeckEntry[]) =>
       [
         ...new Set(
-          cards.map((x) => cardEntries.get(x.name)).flatMap((
-            x: { color_identity: string[] } | undefined,
-          ) => x?.color_identity ?? []),
+          cards.map((x) => cardEntries.get(x.name)).flatMap((x) => x?.color_identity ?? []),
         ),
       ].join("") || "no colors";
     await message.reply(
@@ -1359,7 +1351,7 @@ function cardCount(deck: readonly SealedDeckEntry[]) {
 
 async function fullRebuild(
   client: djs.Client<true>,
-  poolChanges: Awaited<ReturnType<typeof getPoolChanges>>,
+  _poolChanges: Awaited<ReturnType<typeof getPoolChanges>>,
 ) {
   // go through each and every entry, identify what's different, and DM CONFIG.OWNER_ID with differences as a table with row number | cards different (+ or -) | old id | new id
   const pools = new Map<
@@ -1385,9 +1377,9 @@ async function fullRebuild(
       const expected = change.Type === "starting pool"
         ? (await fetchSealedDeck(change.Value)).sideboard
         : await rebuildPoolContents([
-          [change.Timestamp, change.Name, "starting pool", baseId],
+          [change.Timestamp, change.Name, "starting pool", baseId!],
           ...[...pools.get(change.Name)!.unsaved, change].map((c) =>
-            c[ROW] as [any, any, any, any]
+            c[ROW] as [number | string, string, string, string]
           ),
         ]);
       const difference = diffPools(actual.sideboard, expected);
