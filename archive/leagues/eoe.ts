@@ -53,7 +53,7 @@ import {
   ROW,
   ROWNUM,
   Table,
-} from "./standings.ts";
+} from "../../standings.ts";
 import { z } from "zod";
 import {
   ActionRowBuilder,
@@ -70,7 +70,7 @@ import {
   StringSelectMenuBuilder,
   TextChannel,
 } from "discord.js";
-import { CONFIG } from "./config.ts";
+import { CONFIG } from "../../config.ts";
 import {
   CanvasRenderingContext2D,
   createCanvas,
@@ -78,17 +78,17 @@ import {
   loadImage,
 } from "@gfx/canvas-wasm";
 import { Buffer } from "node:buffer";
-import { Handler } from "./dispatch.ts";
-import { initSheets, readSheetsDate, sheets, sheetsAppend, sheetsWrite, utcOffsetMs } from "./sheets.ts";
-import { ScryfallCard, searchCards } from "./scryfall.ts";
+import { Handler } from "../../dispatch.ts";
+import { initSheets, readSheetsDate, sheets, sheetsAppend, sheetsWrite, utcOffsetMs } from "../../sheets.ts";
+import { ScryfallCard, searchCards } from "../../scryfall.ts";
 import {
   fetchSealedDeck,
   makeSealedDeck,
   SealedDeckPool,
-} from "./sealeddeck.ts";
-import { mutex } from "./mutex.ts";
-import { DISCORD_TOKEN, makeClient } from "./main.ts";
-import { extractPool } from "./pending.ts";
+} from "../../sealeddeck.ts";
+import { mutex } from "../../mutex.ts";
+import { DISCORD_TOKEN, makeClient } from "../../main.ts";
+import { extractPool } from "../../pending.ts";
 
 const mapLock = mutex();
 
