@@ -382,61 +382,17 @@ const assignLeagueRole = async (
   }
 };
 
-// Function to remove ELIMINATED role from all users
-const removeEliminatedRoleFromAll = async (guild: djs.Guild) => {
-  try {
-    console.log("Fetching all members to remove ELIMINATED role...");
-    const members = await guild.members.fetch({ limit: 1000 });
-    
-    const eliminatedMembers = members.filter(member => 
-      member.roles.cache.has(CONFIG.ELIMINATED_ROLE_ID)
-    );
-    
-    if (eliminatedMembers.size === 0) {
-      console.log("No members found with ELIMINATED role.");
-      return;
-    }
-    
-    console.log(`Found ${eliminatedMembers.size} members with ELIMINATED role. Removing...`);
-    
-    for (const [id, member] of eliminatedMembers) {
-      try {
-        if (!pretend) {
-          await removeRole(member, CONFIG.ELIMINATED_ROLE_ID);
-        }
-        console.log(`Removed ELIMINATED role from ${member.displayName}`);
-        await delay(250); // Rate limiting
-      } catch (error) {
-        console.error(`Error removing ELIMINATED role from ${member.displayName}:`, error);
-      }
-    }
-    
-    console.log(`Successfully processed ${eliminatedMembers.size} members.`);
-  } catch (error) {
-    console.error("Error removing ELIMINATED roles:", error);
-  }
-};
-
 const assignNewPlayerRole = async (
   members: djs.Collection<djs.Snowflake, djs.GuildMember>,
 ) => {
-  const shouldHaveNewPlayerRole = (m: djs.GuildMember) => {
-    // Skip bots
-    if ([...m.roles.cache.keys()].some((r) =>
+  const shouldHaveNewPlayerRole = (m: djs.GuildMember) =>
+    ![...m.roles.cache.keys()].some((r) =>
       CONFIG.BOT_ROLES.some((br) => br.id === r)
-    )) {
-      return false;
-    }
-    
-    // Check if user has any league role that is NOT a new player league role
-    const hasOldLeagueRole = [...m.roles.cache.keys()].some((r) =>
+    ) && // not a bot
+    ![...m.roles.cache.keys()].some((r) =>
       CONFIG.LEAGUE_ROLES.some((lr) => lr.id === r) &&
-      !CONFIG.NEW_PLAYER_LEAGUE_ROLES.some((nlr) => nlr.id === r)
-    );
-    
-    // User should have New Player role if they don't have any old league roles
-    return !hasOldLeagueRole;
-  };
+      !CONFIG.NEW_PLAYER_LEAGUE_ROLES.some((nlr) => nlr.id == r)
+    ); // not in a previous league
   const ms = [...members.values()].sort((a, z) =>
     (a.joinedTimestamp ?? 0) - (z.joinedTimestamp ?? 0)
   );
@@ -509,85 +465,85 @@ const surveySendDate: Record<djs.Snowflake, { toSurveyDate: Date }> = {};
 const SENDING_SURVEY = false;
 
 const eliminationLock = mutex();
-// const assignEliminatedRole = async (
-//   members: djs.Collection<djs.Snowflake, djs.GuildMember>,
-//   client: djs.Client<true>,
-// ) => {
-//   using _ = await eliminationLock();
-//   try {
-//     const players = await getPlayerStatuses();
-//     // TODO flag players to be messaged.
-//     const eliminatedPlayers = players?.rows.filter((x) =>
-//       x["TOURNAMENT STATUS"] === "Eliminated"
-//     );
-//     for (
-//       const { "Discord ID": id, Identification: name } of eliminatedPlayers ??
-//         []
-//     ) {
-//       const member = members.get(id);
-//       if (member?.roles.cache.has(CONFIG.ELIMINATED_ROLE_ID) === false) {
-//         console.log("Eliminating " + name);
-//         if (!pretend) await addRole(member, CONFIG.ELIMINATED_ROLE_ID);
-//         await delay(250); // TODO be smarter about rate limit maybe?
-//       }
-//     }
-//     const eliminatedIds = new Set<string>(
-//       eliminatedPlayers?.map((x) => x["Discord ID"]),
-//     );
-//     for (const [id, member] of members.entries()) {
-//       if (
-//         member.roles.cache.has(CONFIG.ELIMINATED_ROLE_ID) &&
-//         !eliminatedIds.has(id)
-//       ) {
-//         console.log("Un-eliminating " + member.displayName);
-//         if (!pretend) await removeRole(member, CONFIG.ELIMINATED_ROLE_ID);
-//         await delay(250);
-//       }
-//     }
-//     const surveyablePlayers = players?.rows.filter((x) =>
-//       SENDING_SURVEY &&
-//       !x["Survey Sent"] &&
-//       (x["Matches played"] == 30 || x["TOURNAMENT STATUS"] === "Eliminated") // TODO change matchesPlayed back after short league is done
-//     ) ?? [];
-//     let anySent = false;
-//     if (CONFIG.LIVE_SHEET_ID) {
-//       for (const player of surveyablePlayers) {
-//         const { toSurveyDate } = surveySendDate[player["Discord ID"]] ??
-//           [null];
-//         if (!anySent && toSurveyDate && toSurveyDate < new Date()) {
-//           console.log("would survey " + player.Identification);
-//           console.log(
-//             "Player Database!R" + player[ROWNUM] + "C" +
-//               (players!.headerColumns["Survey Sent"] + 1),
-//           );
-//           // TODO covnert to a log entry; not that we'd have late joiners after surveys are being sent but still...
-//           await sheetsWrite(
-//             sheets,
-//             CONFIG.LIVE_SHEET_ID,
-//             "BotStuff!" + SURVEY_COLUMN + player[ROWNUM],
-//             [["1"]],
-//           );
-//           await sendSurvey(client, player);
-//           anySent = true;
-//         } else if (!toSurveyDate) {
-//           console.log("Will survey " + player.Identification);
-//           const toSurveyDate = new Date();
-//           toSurveyDate.setMinutes(toSurveyDate.getMinutes() + 1);
-//           surveySendDate[player["Discord ID"]] = { toSurveyDate };
-//           // TODO covnert to a log entry; not that we'd have late joiners after surveys are being sent but still...
-//           await sheetsWrite(
-//             sheets,
-//             CONFIG.LIVE_SHEET_ID,
-//             "BotStuff!" + SURVEY_COLUMN + player[ROWNUM],
-//             [["0"]],
-//           );
-//         }
-//       }
-//     }
-//   } catch (e) {
-//     console.error(e);
-//   }
-// };
+const assignEliminatedRole = async (
+  members: djs.Collection<djs.Snowflake, djs.GuildMember>,
+  client: djs.Client<true>,
+) => {
+  using _ = await eliminationLock();
+  try {
+    const players = await getPlayerStatuses();
+    // TODO flag players to be messaged.
+    const eliminatedPlayers = players?.rows.filter((x) =>
+      x["TOURNAMENT STATUS"] === "Eliminated"
+    );
+    for (
+      const { "Discord ID": id, Identification: name } of eliminatedPlayers ??
+        []
+    ) {
+      const member = members.get(id);
+      if (member?.roles.cache.has(CONFIG.ELIMINATED_ROLE_ID) === false) {
+        console.log("Eliminating " + name);
+        if (!pretend) await addRole(member, CONFIG.ELIMINATED_ROLE_ID);
+        await delay(250); // TODO be smarter about rate limit maybe?
+      }
+    }
+    const eliminatedIds = new Set<string>(
+      eliminatedPlayers?.map((x) => x["Discord ID"]),
+    );
+    for (const [id, member] of members.entries()) {
+      if (
+        member.roles.cache.has(CONFIG.ELIMINATED_ROLE_ID) &&
+        !eliminatedIds.has(id)
+      ) {
+        console.log("Un-eliminating " + member.displayName);
+        if (!pretend) await removeRole(member, CONFIG.ELIMINATED_ROLE_ID);
+        await delay(250);
+      }
+    }
+    const surveyablePlayers = players?.rows.filter((x) =>
+      SENDING_SURVEY &&
+      !x["Survey Sent"] &&
+      (x["Matches played"] == 30 || x["TOURNAMENT STATUS"] === "Eliminated") // TODO change matchesPlayed back after short league is done
+    ) ?? [];
+    let anySent = false;
+    if (CONFIG.LIVE_SHEET_ID) {
+      for (const player of surveyablePlayers) {
+        const { toSurveyDate } = surveySendDate[player["Discord ID"]] ??
+          [null];
+        if (!anySent && toSurveyDate && toSurveyDate < new Date()) {
+          console.log("would survey " + player.Identification);
+          console.log(
+            "Player Database!R" + player[ROWNUM] + "C" +
+              (players!.headerColumns["Survey Sent"] + 1),
+          );
+          // TODO covnert to a log entry; not that we'd have late joiners after surveys are being sent but still...
+          await sheetsWrite(
+            sheets,
+            CONFIG.LIVE_SHEET_ID,
+            "BotStuff!" + SURVEY_COLUMN + player[ROWNUM],
+            [["1"]],
+          );
+          await sendSurvey(client, player);
+          anySent = true;
+        } else if (!toSurveyDate) {
+          console.log("Will survey " + player.Identification);
+          const toSurveyDate = new Date();
+          toSurveyDate.setMinutes(toSurveyDate.getMinutes() + 1);
+          surveySendDate[player["Discord ID"]] = { toSurveyDate };
+          // TODO covnert to a log entry; not that we'd have late joiners after surveys are being sent but still...
+          await sheetsWrite(
+            sheets,
+            CONFIG.LIVE_SHEET_ID,
+            "BotStuff!" + SURVEY_COLUMN + player[ROWNUM],
+            [["0"]],
+          );
+        }
+      }
+    }
+  } catch (e) {
+    console.error(e);
+  }
+};
 
 async function sendSurvey(
   client: djs.Client<true>,
@@ -687,32 +643,10 @@ function configureClient(
   djs_client.once(djs.Events.ClientReady, (c) => onReady(c, watch));
 
   djs_client.on(djs.Events.GuildMemberAdd, async (member) => {
-    // console.log(`Hello ${member.displayName}`);
-    // if (!pretend && member.guild.id === CONFIG.GUILD_ID) {
-    //   // Use the same logic as assignNewPlayerRole to determine if they should get the role
-    //   const shouldHaveNewPlayerRole = (m: djs.GuildMember) => {
-    //     // Skip bots
-    //     if ([...m.roles.cache.keys()].some((r) =>
-    //       CONFIG.BOT_ROLES.some((br) => br.id === r)
-    //     )) {
-    //       return false;
-    //     }
-        
-    //     // Check if user has any league role that is NOT a new player league role
-    //     const hasOldLeagueRole = [...m.roles.cache.keys()].some((r) =>
-    //       CONFIG.LEAGUE_ROLES.some((lr) => lr.id === r) &&
-    //       !CONFIG.NEW_PLAYER_LEAGUE_ROLES.some((nlr) => nlr.id === r)
-    //     );
-        
-    //     // User should have New Player role if they don't have any old league roles
-    //     return !hasOldLeagueRole;
-    //   };
-      
-    //   if (shouldHaveNewPlayerRole(member)) {
-    //     await addRole(member, CONFIG.NEW_PLAYER_ROLE_ID);
-    //     console.log(`Added New Player role to new member: ${member.displayName}`);
-    //   }
-    // }
+    console.log(`Hello ${member.displayName}`);
+    if (!pretend && member.guild.id === CONFIG.GUILD_ID) {
+        await addRole(member, CONFIG.NEW_PLAYER_ROLE_ID);
+    }
   });
 
   // whenever we receive a message, log it and what channel it came from
@@ -736,7 +670,6 @@ function configureClient(
       await finish;
     },
   );
-
 }
 
 async function speakAsBot(message: djs.Message) {
