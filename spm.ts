@@ -68,15 +68,8 @@ const poolHandler: Handler<djs.Message> = async (message, handle) => {
       return;
     }
     
-    // Check if user has permission (league committee, webhook users, or mentioned themselves)
-    const isLeagueCommittee = message.member?.roles.cache.has(CONFIG.LEAGUE_COMMITTEE_ROLE_ID);
-    const isWebhookUser = message.author.id === CONFIG.BOOSTER_TUTOR_USER_ID || 
-                         message.author.id === CONFIG.CRAYTH_BOT_USER_ID || 
-                         message.author.id === CONFIG.PACKGEN_USER_ID;
-    const isSelfTarget = targetUser.id === message.author.id;
-    
-    if (!isLeagueCommittee && !isWebhookUser && !isSelfTarget) {
-      await message.reply("You can only generate pools for yourself!");
+    if (message.member?.roles.cache.has(CONFIG.LEAGUE_COMMITTEE_ROLE_ID)) {
+      await message.reply("Only LC can generate pools for others!");
       return;
     }
     
@@ -118,9 +111,7 @@ const packChoiceHandler: Handler<djs.Message> = async (message, handle) => {
   
     // Check if user has permission (league committee, webhook users, or mentioned themselves)
     const isLeagueCommittee = message.member?.roles.cache.has(CONFIG.LEAGUE_COMMITTEE_ROLE_ID);
-    const isWebhookUser = message.author.id === CONFIG.BOOSTER_TUTOR_USER_ID || 
-                         message.author.id === CONFIG.CRAYTH_BOT_USER_ID || 
-                         message.author.id === CONFIG.PACKGEN_USER_ID;
+    const isWebhookUser = message.author.id === CONFIG.PACKGEN_USER_ID;
     const isSelfTarget = targetUser.id === message.author.id;
     
     if (!isLeagueCommittee && !isWebhookUser && !isSelfTarget) {
@@ -555,19 +546,68 @@ export async function rollStartingPool(): Promise<ScryfallCard[]> {
       if (randomCard) pool.push(randomCard);
     }
 
-    // Roll 20 uncommons
-    for (let i = 0; i < 20; i++) {
-      const randomCard = choice(uncommons);
-      if (randomCard) pool.push(randomCard);
+    // Roll 20 uncommons in 5 batches of 4 with no duplicates per batch
+    for (let batch = 0; batch < 5; batch++) {
+      const batchUncommons: ScryfallCard[] = [];
+      const usedInBatch = new Set<string>();
+      
+      for (let i = 0; i < 4; i++) {
+        let randomCard: ScryfallCard | undefined;
+        let attempts = 0;
+        const maxAttempts = 100; // Prevent infinite loops
+        
+        do {
+          randomCard = choice(uncommons);
+          attempts++;
+        } while (randomCard && usedInBatch.has(randomCard.name) && attempts < maxAttempts);
+        
+        if (randomCard) {
+          batchUncommons.push(randomCard);
+          usedInBatch.add(randomCard.name);
+        }
+      }
+      
+      pool.push(...batchUncommons);
     }
 
-    // Roll 50 commons with deduplication logic
+    // Roll 50 commons with deduplication logic and color requirements
     // Roll 5 batches of 10, no replacement within a batch, yes replacement between batches
+    // Each batch must have at least 1 of each color (W, U, B, R, G)
     for (let batch = 0; batch < 5; batch++) {
       const batchCommons: ScryfallCard[] = [];
       const usedInBatch = new Set<string>();
+      const colorsInBatch = new Set<string>();
       
-      for (let i = 0; i < 10; i++) {
+      // First, ensure we get at least one card of each color
+      const requiredColors = ['W', 'U', 'B', 'R', 'G'];
+      for (const color of requiredColors) {
+        let randomCard: ScryfallCard | undefined;
+        let attempts = 0;
+        const maxAttempts = 200; // More attempts for color requirement
+        
+        do {
+          randomCard = choice(commons);
+          attempts++;
+        } while (
+          randomCard && 
+          (usedInBatch.has(randomCard.name) || 
+           !randomCard.colors?.includes(color)) && 
+          attempts < maxAttempts
+        );
+        
+        if (randomCard) {
+          batchCommons.push(randomCard);
+          usedInBatch.add(randomCard.name);
+          if (randomCard.colors) {
+            for (const cardColor of randomCard.colors) {
+              colorsInBatch.add(cardColor);
+            }
+          }
+        }
+      }
+      
+      // Fill the remaining 5 slots with any commons (no duplicates)
+      for (let i = 0; i < 5; i++) {
         let randomCard: ScryfallCard | undefined;
         let attempts = 0;
         const maxAttempts = 100; // Prevent infinite loops
