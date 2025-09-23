@@ -6,7 +6,7 @@ export interface Config {
   readonly REGISTRATION_SHEET_ID: string;
   readonly REGISTRATION_SHEET_NAME: string;
   readonly BOOSTER_TUTOR_USER_ID: string;
-  readonly CRAYTH_USER_ID: string;
+  readonly CRAYTH_BOT_USER_ID: string;
   readonly PACKGEN_USER_ID: string;
   readonly OWNER_ID: string;
   readonly GUILD_ID: string;

@@ -1,14 +1,4 @@
-/* Spider-Man: Through the Omenpath
-
- * Notes:
- * * There's a starmap, which is a hex grid with radius ~44 (exact # to be determined), planets,
- *   and ships. Planets might be randomly discovered (i.e. created) when a player moves to an
- *   unseen space. Planets can also be destroyed.
- * * Grid configuration, planet creation/destruction, ship positioning all exist in a log in
- *   the league's sheet. That is the source of truth.
- * 
- * 
- */
+/* Spider-Man: Through the Omenpath */
 
 /* TODO
   * [ ] starting pool packs
@@ -31,56 +21,6 @@ import { choice, weightedChoice } from "./random.ts";
 import { Handler } from "./dispatch.ts";
 import { addPoolChange } from "./standings.ts";
 import { Buffer } from "node:buffer";
-
-// Remove eliminated role handler
-const removeEliminatedHandler: Handler<djs.Message> = async (message, handle) => {
-  if (!message.content.startsWith("!remove-eliminated")) return;
-  if (message.author.id !== CONFIG.OWNER_ID) {
-    await message.reply("Only the bot owner can use this command.");
-    return;
-  }
-  
-  handle.claim();
-  
-  try {
-    const guild = message.client.guilds.cache.get(CONFIG.GUILD_ID);
-    if (!guild) {
-      await message.reply("Guild not found.");
-      return;
-    }
-    
-    await message.reply("Starting to remove ELIMINATED role from all users...");
-    
-    console.log("Fetching all members to remove ELIMINATED role...");
-    const members = await guild.members.fetch({ limit: 1000 });
-    
-    const eliminatedMembers = members.filter(member => 
-      member.roles.cache.has(CONFIG.ELIMINATED_ROLE_ID)
-    );
-    
-    if (eliminatedMembers.size === 0) {
-      await message.reply("No members found with ELIMINATED role.");
-      return;
-    }
-    
-    console.log(`Found ${eliminatedMembers.size} members with ELIMINATED role. Removing...`);
-    
-    for (const [, member] of eliminatedMembers) {
-      try {
-        await member.roles.remove(CONFIG.ELIMINATED_ROLE_ID);
-        console.log(`Removed ELIMINATED role from ${member.displayName}`);
-        await delay(250); // Rate limiting
-      } catch (error) {
-        console.error(`Error removing ELIMINATED role from ${member.displayName}:`, error);
-      }
-    }
-    
-    await message.reply(`Successfully removed ELIMINATED role from ${eliminatedMembers.size} members.`);
-  } catch (error) {
-    console.error("Error in remove-eliminated handler:", error);
-    await message.reply("An error occurred while removing ELIMINATED roles.");
-  }
-};
 
 // Pool generation handler
 const poolHandler: Handler<djs.Message> = async (message, handle) => {
@@ -128,6 +68,18 @@ const poolHandler: Handler<djs.Message> = async (message, handle) => {
       return;
     }
     
+    // Check if user has permission (league committee, webhook users, or mentioned themselves)
+    const isLeagueCommittee = message.member?.roles.cache.has(CONFIG.LEAGUE_COMMITTEE_ROLE_ID);
+    const isWebhookUser = message.author.id === CONFIG.BOOSTER_TUTOR_USER_ID || 
+                         message.author.id === CONFIG.CRAYTH_BOT_USER_ID || 
+                         message.author.id === CONFIG.PACKGEN_USER_ID;
+    const isSelfTarget = targetUser.id === message.author.id;
+    
+    if (!isLeagueCommittee && !isWebhookUser && !isSelfTarget) {
+      await message.reply("You can only generate pools for yourself!");
+      return;
+    }
+    
     // Generate and post the starting pool
     await generateAndPostStartingPool(targetUser, message.channel as djs.TextChannel, message);
     
@@ -143,7 +95,7 @@ export async function setup(): Promise<{
   interactionHandlers: Handler<djs.Interaction>[];
 }> {
     await Promise.resolve();
-    const messageHandlers: Handler<djs.Message>[] = [packChoiceHandler, heroChoiceHandler, villainChoiceHandler, poolHandler, removeEliminatedHandler];
+    const messageHandlers: Handler<djs.Message>[] = [packChoiceHandler, heroChoiceHandler, villainChoiceHandler, poolHandler];
     return {
       watch: async (client: Client) => {
         while (true) {
@@ -164,11 +116,17 @@ const packChoiceHandler: Handler<djs.Message> = async (message, handle) => {
   const mentionedUser = message.mentions.users.first();
   const targetUser = mentionedUser || message.author;
   
-  // Check if user has permission (owner or mentioned themselves)
-  if (message.author.id !== CONFIG.OWNER_ID && targetUser.id !== message.author.id) {
-    await message.reply("You can only generate pack choices for yourself!");
-    return;
-  }
+    // Check if user has permission (league committee, webhook users, or mentioned themselves)
+    const isLeagueCommittee = message.member?.roles.cache.has(CONFIG.LEAGUE_COMMITTEE_ROLE_ID);
+    const isWebhookUser = message.author.id === CONFIG.BOOSTER_TUTOR_USER_ID || 
+                         message.author.id === CONFIG.CRAYTH_BOT_USER_ID || 
+                         message.author.id === CONFIG.PACKGEN_USER_ID;
+    const isSelfTarget = targetUser.id === message.author.id;
+    
+    if (!isLeagueCommittee && !isWebhookUser && !isSelfTarget) {
+      await message.reply("You can only generate pack choices for yourself!");
+      return;
+    }
   
   handle.claim();
   
@@ -714,9 +672,6 @@ export async function generateAndPostStartingPool(
 
     // Roll the starting pool
     const pool = await rollStartingPool();
-    if (pool.length === 0) {
-      throw new Error("Failed to generate starting pool");
-    }
 
     // Create pool content text
     const poolContent = pool
@@ -770,7 +725,6 @@ export async function generateAndPostStartingPool(
       });
 
     // Generate SealedDeck in background
-    console.log("Creating SealedDeck.tech pool...");
     const sealedDeckResult = await makeSealedDeck({
       sideboard: pool.map((card) => ({
         name: card.name,

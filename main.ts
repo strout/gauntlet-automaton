@@ -590,7 +590,7 @@ if (import.meta.main) {
 
     const { watch, messageHandlers, interactionHandlers } = await setup();
 
-    configureClient(djs_client, watch, messageHandlers as Handler<djs.Message>[], interactionHandlers);
+    configureClient(djs_client, watch, messageHandlers, interactionHandlers);
 
     await djs_client.login(DISCORD_TOKEN);
   }
