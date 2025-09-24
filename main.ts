@@ -41,9 +41,10 @@ export { CONFIG };
 
 // Parse command line arguments
 const args = parseArgs(Deno.args, {
-  boolean: ["pretend", "once", "help"],
+  boolean: ["pretend", "once", "help", "roles"],
   string: ["_"], // Positional arguments
-  default: { pretend: false, once: false, help: false }
+  negatable: ["roles"],
+  default: { pretend: false, once: false, help: false, roles: true }
 });
 
 // Show help if requested
@@ -59,13 +60,14 @@ Commands:
 
 Options:
   --pretend  Run in pretend mode (prevent actual Discord role modifications)
+  --no-roles Disable role management
   --once     Run role management once and exit (instead of looping)
   --help     Show this help message
   `);
     Deno.exit(0);
   }
 
-const { pretend, once } = args;
+const { pretend, once, roles: doRoles } = args;
 const command = args._[0]; // First positional argument is the command
 
 type Role = { id: djs.Snowflake; name: string };
@@ -245,7 +247,12 @@ async function onReady(
   watch: (client: djs.Client<true>) => Promise<void>,
 ) {
   await restoreState(client);
-  await Promise.all([manageRoles(client), watch(client)]);
+
+  const tasks = [watch(client)];
+  if (doRoles) {
+    tasks.push(manageRoles(client));
+  }
+  await Promise.all(tasks);
 }
 
 async function manageRoles(client: djs.Client<true>) {
@@ -644,7 +651,7 @@ function configureClient(
 
   djs_client.on(djs.Events.GuildMemberAdd, async (member) => {
     console.log(`Hello ${member.displayName}`);
-    if (!pretend && member.guild.id === CONFIG.GUILD_ID) {
+    if (!pretend && member.guild.id === CONFIG.GUILD_ID && doRoles) {
         await addRole(member, CONFIG.NEW_PLAYER_ROLE_ID);
     }
   });
