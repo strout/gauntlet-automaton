@@ -1,7 +1,7 @@
 /* Spider-Man: Through the Omenpath */
 
 /* TODO
-  * [ ] starting pool packs
+  * [x] starting pool packs
   * [ ] distribution of packs (DMs)
   * [ ] pack selection & generation for civilians
   * [ ] pack selection & generation for heroes
@@ -12,8 +12,7 @@
 import { CONFIG } from "./main.ts";
 import * as djs from "discord.js";
 import {
-  getEntropy,
-  getMatches,
+  getAllMatches,
   getPlayers,
   MATCHTYPE,
   ROWNUM,
@@ -45,31 +44,7 @@ const poolHandler: Handler<djs.Message> = async (message, handle) => {
     }
 
     // Get the mentioned user or try to parse the username
-    let targetUser: djs.User | undefined;
-
-    if (message.mentions.users.size > 0) {
-      targetUser = message.mentions.users.first();
-    } else {
-      // Try to find user by username in the guild
-      const guild = message.guild;
-      if (guild) {
-        const username = args[1].replace(/[<>@!]/g, ""); // Remove mention formatting
-        try {
-          const member = await guild.members.fetch(username);
-          targetUser = member.user;
-        } catch {
-          // Try searching by display name
-          const members = await guild.members.fetch();
-          const member = members.find((m) =>
-            m.displayName.toLowerCase().includes(username.toLowerCase()) ||
-            m.user.username.toLowerCase().includes(username.toLowerCase())
-          );
-          if (member) {
-            targetUser = member.user;
-          }
-        }
-      }
-    }
+    const targetUser = message.mentions.users.first();
 
     if (!targetUser) {
       await message.reply(
@@ -78,8 +53,8 @@ const poolHandler: Handler<djs.Message> = async (message, handle) => {
       return;
     }
 
-    if (message.member?.roles.cache.has(CONFIG.LEAGUE_COMMITTEE_ROLE_ID)) {
-      await message.reply("Only LC can generate pools for others!");
+    if (!message.member?.roles.cache.has(CONFIG.LEAGUE_COMMITTEE_ROLE_ID)) {
+      await message.reply("Only LC can generate pools!");
       return;
     }
 
@@ -296,18 +271,15 @@ const villainChoiceHandler: Handler<djs.Message> = async (message, handle) => {
 };
 
 async function checkForMatches(client: Client<boolean>) {
-  const matches = await getMatches();
-  const entropy = await getEntropy();
-  const players = await getPlayers();
-
-  const records = [...matches.rows, ...entropy.rows].sort((a, b) =>
-    a.Timestamp - b.Timestamp
-  );
+  const [records, players] = await Promise.all([
+    getAllMatches(),
+    getPlayers()
+  ]);
 
   // Track players we've already messaged in this batch
   const messagedThisBatch = new Set<string>();
 
-  for (const record of records) {
+  for (const record of records.rows) {
     if (record["Bot Messaged"] || !record["Script Handled"]) continue;
 
     // Find losing player
@@ -329,8 +301,8 @@ async function checkForMatches(client: Client<boolean>) {
       continue;
     }
 
-    // Skip if they're dead.
-    if (loser["TOURNAMENT STATUS"] === "Eliminated") {
+    // Skip if they're done.
+    if (loser["TOURNAMENT STATUS"] === "Eliminated" || loser["Matches Played"] >= 30) {
       continue;
     }
 
@@ -358,6 +330,7 @@ async function checkForMatches(client: Client<boolean>) {
       messagedThisBatch.add(loser["Discord ID"]);
 
       // Build the complete cell reference based on record type
+      // TODO build based on type like eoe
       const cellRef = record[MATCHTYPE] === "entropy"
         ? `Entropy!J${record[ROWNUM]}`
         : `Matches!G${record[ROWNUM]}`;
@@ -385,6 +358,7 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
 
   try {
     // Generate both pack options
+    // TODO share cards for non-differentiated slots
     const heroPack = await generatePackFromSlots(getCitizenHeroBoosterSlots());
     const villainPack = await generatePackFromSlots(
       getCitizenVillainBoosterSlots(),
@@ -528,9 +502,11 @@ interface PackChoice {
 }
 
 // Store pending pack choices by Discord ID
+// TODO find a way to not depend on memory for this; it won't persist.
 const pendingPackChoices = new Map<string, PackChoice>();
 
 // Mutex to prevent race conditions when processing pack choices
+// TODO use real locks (mutex.ts)
 const packChoiceLocks = new Set<string>();
 
 // booster slots for citizens - hero pack
@@ -674,34 +650,6 @@ export async function rollStartingPool(): Promise<ScryfallCard[]> {
       const usedInBatch = new Set<string>();
       const colorsInBatch = new Set<string>();
 
-      // First, ensure we get at least one card of each color
-      const requiredColors = ["W", "U", "B", "R", "G"];
-      for (const color of requiredColors) {
-        let randomCard: ScryfallCard | undefined;
-        let attempts = 0;
-        const maxAttempts = 200; // More attempts for color requirement
-
-        do {
-          randomCard = choice(commons);
-          attempts++;
-        } while (
-          randomCard &&
-          (usedInBatch.has(randomCard.name) ||
-            !randomCard.colors?.includes(color)) &&
-          attempts < maxAttempts
-        );
-
-        if (randomCard) {
-          batchCommons.push(randomCard);
-          usedInBatch.add(randomCard.name);
-          if (randomCard.colors) {
-            for (const cardColor of randomCard.colors) {
-              colorsInBatch.add(cardColor);
-            }
-          }
-        }
-      }
-
       // Fill the remaining 5 slots with any commons (no duplicates)
       for (let i = 0; i < 5; i++) {
         let randomCard: ScryfallCard | undefined;
@@ -719,7 +667,16 @@ export async function rollStartingPool(): Promise<ScryfallCard[]> {
         if (randomCard) {
           batchCommons.push(randomCard);
           usedInBatch.add(randomCard.name);
+          for (const color of randomCard.colors || []) {
+            colorsInBatch.add(color);
+          }
         }
+      }
+
+      if (colorsInBatch.size < 5) {
+        // If we're missing a color, abandon the batch
+        batch--;
+        continue;
       }
 
       pool.push(...batchCommons);
