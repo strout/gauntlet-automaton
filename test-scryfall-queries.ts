@@ -8,18 +8,17 @@ function getAllScryfallQueries() {
   const villainSlots = getCitizenVillainBoosterSlots();
   const queries = new Set<string>();
   for (const slot of [...heroSlots, ...villainSlots]) {
-    if (slot.scryfall) queries.add(slot.scryfall);
-    else queries.add("set:spm");
     if (slot.rarity && slot.rarity !== "rare/mythic") {
-      queries.add(`${slot.scryfall || "set:spm"} rarity:${slot.rarity}`);
-    }
-    if (slot.rarity === "rare/mythic") {
-      queries.add(`${slot.scryfall || "set:spm"} rarity:rare`);
-      queries.add(`${slot.scryfall || "set:spm"} rarity:mythic`);
+      queries.add(`${slot.scryfall || "set:om1"} rarity:${slot.rarity}`);
+    } else if (slot.rarity === "rare/mythic") {
+      queries.add(`${slot.scryfall || "set:om1"} rarity:rare`);
+      queries.add(`${slot.scryfall || "set:om1"} rarity:mythic`);
+    } else {
+      queries.add(slot.scryfall || "set:om1");
     }
   }
   // Add queries from rollStartingPool
-  const SPM_BASE_POOL_SEARCH = "in:paper in:arena is:booster set:SPM -type:basic";
+  const SPM_BASE_POOL_SEARCH = "set:om1";
   queries.add(`${SPM_BASE_POOL_SEARCH} rarity:rare`);
   queries.add(`${SPM_BASE_POOL_SEARCH} rarity:mythic`);
   queries.add(`${SPM_BASE_POOL_SEARCH} rarity:uncommon`);

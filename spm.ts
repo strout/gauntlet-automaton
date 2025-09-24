@@ -428,7 +428,7 @@ async function generatePackFromSlots(
   for (const slot of slots) {
     try {
       // Build Scryfall query
-      let query = slot.scryfall || "set:spm";
+      let query = slot.scryfall || "set:om1";
 
       // Add rarity filter if specified
       if (slot.rarity) {
@@ -513,7 +513,7 @@ const packChoiceLocks = new Set<string>();
 // booster slots for citizens - hero pack
 export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
   return [
-    { rarity: "rare/mythic", scryfall: "s:spm r>u -(-t:hero t:villain)" },
+    { rarity: "rare/mythic", scryfall: "s:om1 r>u -(-t:hero t:villain)" },
     {
       rarity: "uncommon",
       scryfall:
@@ -546,7 +546,7 @@ export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
 // booster slots for citizens - villain pack
 export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
   return [
-    { rarity: "rare/mythic", scryfall: "s:spm r>u -(t:hero -t:villain)" },
+    { rarity: "rare/mythic", scryfall: "s:om1 r>u -(t:hero -t:villain)" },
     {
       rarity: "uncommon",
       scryfall:
@@ -578,7 +578,7 @@ export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
 
 // SPM Starting Pool Generation
 
-const SPM_BASE_POOL_SEARCH = "in:paper in:arena is:booster set:SPM -type:basic";
+const SPM_BASE_POOL_SEARCH = "set:om1";
 
 /**
  * Rolls a starting SPM pool for a new player
