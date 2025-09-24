@@ -510,13 +510,13 @@ const pendingPackChoices = new Map<string, PackChoice>();
 const packChoiceLocks = new Set<string>();
 
 // booster slots for citizens - hero pack
-function getCitizenHeroBoosterSlots(): BoosterSlot[] {
+export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
   return [
     { rarity: "rare/mythic", scryfall: "s:spm r>u -(-t:hero t:villain)" },
     {
       rarity: "uncommon",
       scryfall:
-        "game:arena -s:spm ((t:legendary AND t:creature AND legal:standard) OR (oracletag:synergy-legendary AND legal:pioneer)) -ragnarok r:u",
+        "game:arena -s:spm -s:om1 ((t:legendary AND t:creature AND legal:standard) OR (oracletag:synergy-legendary AND legal:pioneer)) -ragnarok r:u",
     },
     { rarity: "uncommon" },
     { rarity: "uncommon" },
@@ -528,7 +528,7 @@ function getCitizenHeroBoosterSlots(): BoosterSlot[] {
     {
       rarity: "common",
       scryfall:
-        '(o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm legal:pioneer',
+        '(o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm -s:om1 legal:pioneer',
     },
     {
       rarity: "common",
@@ -543,7 +543,7 @@ function getCitizenHeroBoosterSlots(): BoosterSlot[] {
 }
 
 // booster slots for citizens - villain pack
-function getCitizenVillainBoosterSlots(): BoosterSlot[] {
+export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
   return [
     { rarity: "rare/mythic", scryfall: "s:spm r>u -(t:hero -t:villain)" },
     {
@@ -556,7 +556,7 @@ function getCitizenVillainBoosterSlots(): BoosterSlot[] {
     {
       rarity: "common",
       scryfall:
-        "legal:pioneer game:arena r:c -s:spm -o:learn oracletag:discard-outlet",
+        "legal:pioneer game:arena r:c -s:spm -s:om1 -o:learn oracletag:discard-outlet",
     },
     {
       rarity: "common",
@@ -684,7 +684,7 @@ export async function rollStartingPool(): Promise<ScryfallCard[]> {
     // Add one spider card from the special query
     try {
       const spiderCards = await searchCards(
-        "in:arena in:paper -s:spm t:spider r<r",
+        "in:arena in:paper -s:spm -s:om1 t:spider r<r",
         {
           unique: "cards",
         },
