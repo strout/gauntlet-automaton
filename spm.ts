@@ -650,8 +650,7 @@ export async function rollStartingPool(): Promise<ScryfallCard[]> {
       const usedInBatch = new Set<string>();
       const colorsInBatch = new Set<string>();
 
-      // Fill the remaining 5 slots with any commons (no duplicates)
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 10; i++) {
         let randomCard: ScryfallCard | undefined;
         let attempts = 0;
         const maxAttempts = 100; // Prevent infinite loops
