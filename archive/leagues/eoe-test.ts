@@ -1,6 +1,6 @@
-import { readMapState } from "./eoe.ts";
-import { initSheets, readSheetsDate, utcOffsetMs } from "./sheets.ts";
-import { getQuotas } from "./standings.ts";
+import { readMapState } from "../../archive/leagues/eoe.ts";
+import { initSheets, readSheetsDate, utcOffsetMs } from "../../sheets.ts";
+import { getQuotas } from "../../standings.ts";
 
 await initSheets();
 

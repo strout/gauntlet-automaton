@@ -33,7 +33,7 @@ import {
   ROWNUM,
 } from "./standings.ts";
 import { pendingHandler, waitForBoosterTutor } from "./pending.ts";
-import { fixPool, setup } from "./eoe.ts";
+import { setup } from "./spm.ts"
 import { z } from "zod";
 import { ScryfallCard } from "./scryfall.ts";
 
@@ -645,7 +645,7 @@ function configureClient(
   djs_client.on(djs.Events.GuildMemberAdd, async (member) => {
     console.log(`Hello ${member.displayName}`);
     if (!pretend && member.guild.id === CONFIG.GUILD_ID) {
-      await addRole(member, CONFIG.NEW_PLAYER_ROLE_ID);
+        await addRole(member, CONFIG.NEW_PLAYER_ROLE_ID);
     }
   });
 
@@ -799,30 +799,14 @@ export async function populatePools(
             console.log(name, sealeddeckLink);
             console.log("fixing...");
             const pool = await fetchSealedDeck(sealeddeckId);
-            const actualPool = await fixPool(pool);
             await addPoolChange(
               name,
               "starting pool",
-              actualPool.pool.poolId,
+              pool.poolId,
               msg.url,
-              actualPool.pool.poolId,
+              pool.poolId,
               sheetId,
             );
-            if (actualPool.wasFixed) {
-              console.log(actualPool.subs);
-              const message =
-                `**Heads up**: your original starting pool had one of the invalid Special Guest cards. Here are the substitutions made (the standings sheet will have the updated values):\n\n${
-                  actualPool.subs.map((x) => `Out: ${x.out}, In: ${x.in}`).join(
-                    "\n",
-                  )
-                }`;
-              try {
-                const member = await channel.guild.members.fetch(discordId);
-                await member.send(message);
-              } catch (e) {
-                console.error("Failed to send correction message", e);
-              }
-            }
             break batches;
           }
         }
