@@ -2,7 +2,7 @@
   "version": "4",
   "specifiers": {
     "jsr:@matmen/imagescript@^1.3.1": "1.3.1",
-    "jsr:@std/async@^1.0.9": "1.0.13",
+    "jsr:@std/async@^1.0.9": "1.0.14",
     "jsr:@std/cli@^1.0.22": "1.0.22",
     "jsr:@std/dotenv@~0.225.3": "0.225.5",
     "npm:discord.js@^14.19.3": "14.22.1",
@@ -12,8 +12,8 @@
     "@matmen/imagescript@1.3.1": {
       "integrity": "8b3d4fc6a4597259ede419497c7dce9cc523bfdc0fa25f95a33dfab2135cc59b"
     },
-    "@std/async@1.0.13": {
-      "integrity": "1d76ca5d324aef249908f7f7fe0d39aaf53198e5420604a59ab5c035adc97c96"
+    "@std/async@1.0.14": {
+      "integrity": "62e954a418652c704d37563a3e54a37d4cf0268a9dcaeac1660cc652880b5326"
     },
     "@std/cli@1.0.22": {
       "integrity": "50d1e4f87887cb8a8afa29b88505ab5081188f5cad3985460c3b471fa49ff21a"
@@ -240,7 +240,7 @@
     "https://googleapis.deno.dev/_/base@v1/auth/mod.ts": "2564c92422e18c3e714ad829af89ac3c28ae3021c7230fcb6ca3a46edf7efe25",
     "https://googleapis.deno.dev/_/base@v1/mod.ts": "dac57a0707677eab2dc10f7d9f620b08c61fe052fb97a26309de4d43e4420180",
     "https://googleapis.deno.dev/_/base@v1/util.ts": "255693bf0ffbcaa62b4a20f87057254ed439f32cc50084e01c6fd760c1ddf2ab",
-    "https://googleapis.deno.dev/v1/sheets:v4.ts": "84cd3ad72b92428c4a79e2ff90d4925aebf7dd8833bd6e8fda038333486b0b6c"
+    "https://googleapis.deno.dev/v1/sheets:v4.ts": "d7d2afec232653cd01eb2ff5a9f1c8de17c4b21137ae2bd79967fd94a0b83f9b"
   },
   "workspace": {
     "dependencies": [

@@ -22,6 +22,7 @@ import { delay } from "@std/async/delay";
 import { Client } from "discord.js";
 import { ScryfallCard, searchCards } from "./scryfall.ts";
 import { makeSealedDeck, SealedDeckEntry } from "./sealeddeck.ts";
+import { tileCardImages } from "./scryfall.ts";
 import { choice, weightedChoice } from "./random.ts";
 import { Handler } from "./dispatch.ts";
 import { addPoolChange } from "./standings.ts";
@@ -822,25 +823,55 @@ export async function generateAndPostStartingPool(
         files: [poolAttachment],
       });
 
-    // Generate SealedDeck in background
-    const sealedDeckResult = await makeSealedDeck({
-      sideboard: pool.map((card) => ({
-        name: card.name,
-        count: 1,
-        set: card.set,
-      })),
-    });
+
+    // Generate SealedDeck and rare+spider card image in background (concurrent)
+    console.log("Creating SealedDeck.tech pool and rare+spider card image...");
+    // Find rare/mythic cards and the extra spider card (last card in pool)
+    const rareMythicCards = pool.filter(
+      (card) => card.rarity === "rare" || card.rarity === "mythic"
+    );
+    let spiderCard: ScryfallCard | undefined = undefined;
+    if (pool.length > 0) {
+      const lastCard = pool[pool.length - 1];
+      // Heuristic: the spider card is the last card and not from OM1
+      spiderCard = lastCard;
+    }
+    const rareImageCards = spiderCard ? [...rareMythicCards, spiderCard] : rareMythicCards;
+    const [sealedDeckResult, rareImageResult] = await Promise.allSettled([
+      makeSealedDeck({
+        sideboard: pool.map((card) => ({
+          name: card.name,
+          count: 1,
+          set: card.set,
+        })),
+      }),
+      tileCardImages(rareImageCards, "small"),
+    ]);
 
     // Handle SealedDeck result
     let poolId: string;
     let sealedDeckLink: string;
-    if (sealedDeckResult) {
-      poolId = sealedDeckResult;
+    if (sealedDeckResult.status === "fulfilled") {
+      poolId = sealedDeckResult.value;
       sealedDeckLink = `https://sealeddeck.tech/${poolId}`;
     } else {
-      console.error("SealedDeck generation failed");
+      console.error("SealedDeck generation failed:", sealedDeckResult.reason);
       poolId = "Error";
       sealedDeckLink = "Failed to generate";
+    }
+
+    // Handle rare image result
+    let rareImageAttachment: djs.AttachmentBuilder | undefined;
+    if (rareImageResult.status === "fulfilled") {
+      const rareImageBuffer = Buffer.from(
+        await rareImageResult.value.arrayBuffer(),
+      );
+      rareImageAttachment = new djs.AttachmentBuilder(rareImageBuffer, {
+        name: "rares.png",
+        description: "Rare and mythic cards from starting pool",
+      });
+    } else {
+      console.error("Rare image generation failed:", rareImageResult.reason);
     }
 
     // Update message with final content
@@ -869,10 +900,19 @@ export async function generateAndPostStartingPool(
       ])
       .setTimestamp();
 
+    // Only set image if we have the attachment
+    if (rareImageAttachment) {
+      finalEmbed.setImage("attachment://rares.png");
+    }
+
+    const finalFiles = rareImageAttachment
+      ? [poolAttachment, rareImageAttachment]
+      : [poolAttachment];
+
     try {
       await message.edit({
         embeds: [finalEmbed],
-        files: [poolAttachment],
+        files: finalFiles,
       });
     } catch (editError) {
       console.error("Failed to edit starting pool message:", editError);
