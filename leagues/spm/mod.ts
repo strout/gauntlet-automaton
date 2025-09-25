@@ -28,6 +28,7 @@ import { Handler } from "../../dispatch.ts";
 import { addPoolChange } from "../../standings.ts";
 import { Buffer } from "node:buffer";
 import { generatePackFromSlots, getCitizenHeroBoosterSlots, getCitizenVillainBoosterSlots } from "./packs.ts";
+import { buildHeroVillainChoice } from "./packs.ts";
 
 // Pool generation handler
 const poolHandler: Handler<djs.Message> = async (message, handle) => {
@@ -173,15 +174,14 @@ const heroChoiceHandler: Handler<djs.Message> = async (message, handle) => {
       return;
     }
 
-    // Use the stored hero pack
-    const { heroPack, heroPoolId } = packChoice;
+    const { heroCards, heroPoolId } = packChoice;
 
     await message.reply({
       content: `You chose the **Hero Pack**! Here's your pack:`,
       embeds: [{
         title: "🦸 Hero Pack",
         description: `[View Pack](https://sealeddeck.tech/${heroPoolId})\n${
-          formatPackCards(heroPack)
+          formatPackCards(heroCards)
         }`,
         color: 0x00BFFF,
       }],
@@ -241,15 +241,14 @@ const villainChoiceHandler: Handler<djs.Message> = async (message, handle) => {
       return;
     }
 
-    // Use the stored villain pack
-    const { villainPack, villainPoolId } = packChoice;
+    const { villainCards, villainPoolId } = packChoice;
 
     await message.reply({
       content: `You chose the **Villain Pack**! Here's your pack:`,
       embeds: [{
         title: "🦹 Villain Pack",
         description: `[View Pack](https://sealeddeck.tech/${villainPoolId})\n${
-          formatPackCards(villainPack)
+          formatPackCards(villainCards)
         }`,
         color: 0x8B0000,
       }],
@@ -361,52 +360,43 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
   try {
     // Generate both pack options
     // TODO share cards for non-differentiated slots
-    const heroPack = await generatePackFromSlots(getCitizenHeroBoosterSlots());
-    const villainPack = await generatePackFromSlots(
-      getCitizenVillainBoosterSlots(),
-    );
+    const heroCards = await generatePackFromSlots(getCitizenHeroBoosterSlots());
+    const villainCards = await generatePackFromSlots(getCitizenVillainBoosterSlots());
+
+    // Convert ScryfallCard[] -> SealedDeckEntry[] for sealed-deck creation
+    const heroSideboard: SealedDeckEntry[] = heroCards.map((c) => ({
+      name: c.name,
+      count: 1,
+      set: (c.set ?? undefined),
+    }));
+    const villainSideboard: SealedDeckEntry[] = villainCards.map((c) => ({
+      name: c.name,
+      count: 1,
+      set: (c.set ?? undefined),
+    }));
 
     // Create SealedDeck pools for both packs
-    const heroPoolId = await makeSealedDeck({ sideboard: heroPack });
-    const villainPoolId = await makeSealedDeck({ sideboard: villainPack });
+    const heroPoolId = await makeSealedDeck({ sideboard: heroSideboard });
+    const villainPoolId = await makeSealedDeck({ sideboard: villainSideboard });
 
     // Store the pack choices for this user
     pendingPackChoices.set(member.id, {
-      heroPack,
-      villainPack,
+      heroCards,
+      villainCards,
       heroPoolId,
       villainPoolId,
       timestamp: Date.now(),
     });
 
-    // Create embed with pack choices
-    const embed = new djs.EmbedBuilder()
-      .setTitle("🕷️ Spider-Man: Pack Choice")
-      .setDescription("Choose your path - Hero or Villain?")
-      .setColor(0xFF6B35)
-      .addFields([
-        {
-          name: "🦸 Hero Pack",
-          value: `[View Pack](https://sealeddeck.tech/${heroPoolId})\n${
-            formatPackCards(heroPack)
-          }`,
-          inline: true,
-        },
-        {
-          name: "🦹 Villain Pack",
-          value: `[View Pack](https://sealeddeck.tech/${villainPoolId})\n${
-            formatPackCards(villainPack)
-          }`,
-          inline: true,
-        },
-      ])
-      .setFooter({ text: "Reply with !hero or !villain to choose" })
-      .setTimestamp();
-
-    await member.send({
-      content: "You have a new pack choice! Choose your path:",
-      embeds: [embed],
-    });
+    const guild = member.guild;
+    const channel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as djs.TextChannel;
+    await channel.send(await buildHeroVillainChoice(
+      member,
+      heroCards,
+      heroPoolId,
+      villainCards,
+      villainPoolId,
+    ));
 
     console.log(
       `Sent pack choice to ${member.displayName} with pools ${heroPoolId} and ${villainPoolId}`,
@@ -421,7 +411,7 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
 }
 
 // Format pack cards for display
-function formatPackCards(cards: SealedDeckEntry[]): string {
+function formatPackCards(cards: ScryfallCard[]): string {
   return cards
     .slice(0, 5) // Show first 5 cards
     .map((card) => `• ${card.name}`)
@@ -431,8 +421,8 @@ function formatPackCards(cards: SealedDeckEntry[]): string {
 
 // Pack choice tracking
 interface PackChoice {
-  heroPack: SealedDeckEntry[];
-  villainPack: SealedDeckEntry[];
+  heroCards: ScryfallCard[];
+  villainCards: ScryfallCard[];
   heroPoolId: string;
   villainPoolId: string;
   timestamp: number;
