@@ -9,23 +9,23 @@
   * [ ] hero/villain tracking
   */
 
-import { CONFIG } from "./main.ts";
+import { CONFIG } from "../../main.ts";
 import * as djs from "discord.js";
 import {
   getAllMatches,
   getPlayers,
   MATCHTYPE,
   ROWNUM,
-} from "./standings.ts";
-import { sheets, sheetsWrite } from "./sheets.ts";
+} from "../../standings.ts";
+import { sheets, sheetsWrite } from "../../sheets.ts";
 import { delay } from "@std/async/delay";
 import { Client } from "discord.js";
-import { ScryfallCard, searchCards } from "./scryfall.ts";
-import { makeSealedDeck, SealedDeckEntry } from "./sealeddeck.ts";
-import { tileCardImages } from "./scryfall.ts";
-import { choice, weightedChoice } from "./random.ts";
-import { Handler } from "./dispatch.ts";
-import { addPoolChange } from "./standings.ts";
+import { ScryfallCard, searchCards } from "../../scryfall.ts";
+import { makeSealedDeck, SealedDeckEntry } from "../../sealeddeck.ts";
+import { tileCardImages } from "../../scryfall.ts";
+import { choice, weightedChoice } from "../../random.ts";
+import { Handler } from "../../dispatch.ts";
+import { addPoolChange } from "../../standings.ts";
 import { Buffer } from "node:buffer";
 
 // Pool generation handler

@@ -33,7 +33,7 @@ import {
   ROWNUM,
 } from "./standings.ts";
 import { pendingHandler, waitForBoosterTutor } from "./pending.ts";
-import { setup } from "./spm.ts"
+import { setup } from "./leagues/spm/mod.ts"
 import { z } from "zod";
 import { ScryfallCard } from "./scryfall.ts";
 
