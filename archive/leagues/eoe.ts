@@ -215,7 +215,7 @@ async function checkForMatches(client: Client<boolean>) {
     if (!loser) throw new Error("Can't find loser for " + m[ROW]);
     let winner;
     if (m[MATCHTYPE] === "match") {
-      winner = players.rows.find((p) => p.Identification === m["Winner Name"]);
+      winner = players.rows.find((p) => p.Identification === m["Your Name"]);
       if (!winner) throw new Error("Can't find winner for " + m[ROW]);
     } else {
       winner = null;
