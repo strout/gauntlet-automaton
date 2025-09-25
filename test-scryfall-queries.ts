@@ -1,6 +1,6 @@
 import { searchCards } from "./scryfall.ts";
 import { makeSealedDeck } from "./sealeddeck.ts";
-import { getCitizenHeroBoosterSlots, getCitizenVillainBoosterSlots } from "./leagues/spm/mod.ts";
+import { getCitizenHeroBoosterSlots, getCitizenVillainBoosterSlots } from "./leagues/spm/packs.ts";
 
 // Helper to extract all unique Scryfall queries from booster slots
 function getAllScryfallQueries() {
