@@ -2,8 +2,8 @@
 
 /* TODO
   * [x] starting pool packs
-  * [ ] distribution of packs (DMs)
-  * [ ] pack selection & generation for civilians
+  * [x] distribution of packs (DMs)
+  * [x] pack selection & generation for civilians
   * [ ] pack selection & generation for heroes
   * [ ] pack selection & generation for villains
   * [ ] hero/villain tracking
@@ -27,7 +27,7 @@ import { choice, weightedChoice } from "../../random.ts";
 import { Handler } from "../../dispatch.ts";
 import { addPoolChange } from "../../standings.ts";
 import { Buffer } from "node:buffer";
-import { generatePackFromSlots, getCitizenHeroBoosterSlots, getCitizenVillainBoosterSlots } from "./packs.ts";
+import { generatePackFromSlots, getCitizenBoosterSlots, getCitizenHeroBoosterSlots, getCitizenVillainBoosterSlots } from "./packs.ts";
 import { buildHeroVillainChoice } from "./packs.ts";
 import { mutex } from "../../mutex.ts";
 
@@ -174,15 +174,59 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (interactio
         return;
       }
 
-      await interaction.reply({
-        content: `You chose the **Hero Pack**! Here's your pack:`,
-        embeds: [{
-          title: "🦸 Hero Pack",
-          description: `[View Pack](https://sealeddeck.tech/${packChoice.heroPoolId})\n${formatPackCards(packChoice.heroCards)}`,
-          color: 0x00BFFF,
-        }],
-        ephemeral: true,
+      // Update the original message to remove buttons
+      await interaction.update({
+        content: `<@!${interaction.user.id}> chose the **Hero Pack**!`,
+        embeds: interaction.message.embeds,
+        components: [], // Remove all buttons
       });
+
+      // Send public message to channel with card images
+      const channel = interaction.channel;
+      if (channel && channel.isTextBased() && 'send' in channel) {
+        // Generate card image
+        let cardImageAttachment: djs.AttachmentBuilder | undefined;
+        try {
+          const cardImageBlob = await tileCardImages(packChoice.heroCards, "normal");
+          const cardImageBuffer = Buffer.from(await cardImageBlob.arrayBuffer());
+          cardImageAttachment = new djs.AttachmentBuilder(cardImageBuffer, {
+            name: `hero_pack_${packChoice.heroPoolId}.png`,
+            description: "Hero pack cards",
+          });
+        } catch (error) {
+          console.error("Failed to generate hero pack image:", error);
+        }
+
+        const embed = new djs.EmbedBuilder()
+          .setTitle(`🦸 Hero Pack - ${interaction.user.displayName}`)
+          .setColor(0x00BFFF)
+          .setThumbnail(interaction.user.displayAvatarURL({ size: 256 }))
+          .addFields([
+            {
+              name: "🔗 SealedDeck Link",
+              value: `[View Pack](https://sealeddeck.tech/${packChoice.heroPoolId})`,
+              inline: false,
+            },
+            {
+              name: "🆔 SealedDeck ID",
+              value: `\`${packChoice.heroPoolId}\``,
+              inline: true,
+            }
+          ])
+          .setTimestamp();
+
+        if (cardImageAttachment) {
+          embed.setImage(`attachment://${cardImageAttachment.name}`);
+        }
+
+        const files = cardImageAttachment ? [cardImageAttachment] : [];
+        
+        await channel.send({
+          content: `<@!${interaction.user.id}> chose the **Hero Pack**!`,
+          embeds: [embed],
+          files,
+        });
+      }
 
       pendingPackChoices.delete(userId);
       console.log(`${interaction.user.username} chose Hero pack: ${packChoice.heroPoolId}`);
@@ -196,15 +240,59 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (interactio
         return;
       }
 
-      await interaction.reply({
-        content: `You chose the **Villain Pack**! Here's your pack:`,
-        embeds: [{
-          title: "🦹 Villain Pack",
-          description: `[View Pack](https://sealeddeck.tech/${packChoice.villainPoolId})\n${formatPackCards(packChoice.villainCards)}`,
-          color: 0x8B0000,
-        }],
-        ephemeral: true,
+      // Update the original message to remove buttons
+      await interaction.update({
+        content: `<@!${interaction.user.id}> chose the **Villain Pack**!`,
+        embeds: interaction.message.embeds,
+        components: [], // Remove all buttons
       });
+
+      // Send public message to channel with card images
+      const channel = interaction.channel;
+      if (channel && channel.isTextBased() && 'send' in channel) {
+        // Generate card image
+        let cardImageAttachment: djs.AttachmentBuilder | undefined;
+        try {
+          const cardImageBlob = await tileCardImages(packChoice.villainCards, "normal");
+          const cardImageBuffer = Buffer.from(await cardImageBlob.arrayBuffer());
+          cardImageAttachment = new djs.AttachmentBuilder(cardImageBuffer, {
+            name: `villain_pack_${packChoice.villainPoolId}.png`,
+            description: "Villain pack cards",
+          });
+        } catch (error) {
+          console.error("Failed to generate villain pack image:", error);
+        }
+
+        const embed = new djs.EmbedBuilder()
+          .setTitle(`🦹 Villain Pack - ${interaction.user.displayName}`)
+          .setColor(0x8B0000)
+          .setThumbnail(interaction.user.displayAvatarURL({ size: 256 }))
+          .addFields([
+            {
+              name: "🔗 SealedDeck Link",
+              value: `[View Pack](https://sealeddeck.tech/${packChoice.villainPoolId})`,
+              inline: false,
+            },
+            {
+              name: "🆔 SealedDeck ID",
+              value: `\`${packChoice.villainPoolId}\``,
+              inline: true,
+            }
+          ])
+          .setTimestamp();
+
+        if (cardImageAttachment) {
+          embed.setImage(`attachment://${cardImageAttachment.name}`);
+        }
+
+        const files = cardImageAttachment ? [cardImageAttachment] : [];
+        
+        await channel.send({
+          content: `<@!${interaction.user.id}> chose the **Villain Pack**!`,
+          embeds: [embed],
+          files,
+        });
+      }
 
       pendingPackChoices.delete(userId);
       console.log(`${interaction.user.username} chose Villain pack: ${packChoice.villainPoolId}`);
@@ -325,17 +413,22 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
 
   try {
     // Generate both pack options
-    // TODO share cards for non-differentiated slots
-    const heroCards = await generatePackFromSlots(getCitizenHeroBoosterSlots());
-    const villainCards = await generatePackFromSlots(getCitizenVillainBoosterSlots());
+    // Share citizen cards between both packs
+    const citizenCards = await generatePackFromSlots(getCitizenBoosterSlots());
+    const heroCards = await generatePackFromSlots(getCitizenHeroBoosterSlots(), { minColors: 3, requireUniqueCards: true });
+    const villainCards = await generatePackFromSlots(getCitizenVillainBoosterSlots(), { minColors: 3, requireUniqueCards: true });
+
+    // Combine citizen cards with each pack's specific cards
+    const allHeroCards = [...citizenCards, ...heroCards];
+    const allVillainCards = [...citizenCards, ...villainCards];
 
     // Convert ScryfallCard[] -> SealedDeckEntry[] for sealed-deck creation
-    const heroSideboard: SealedDeckEntry[] = heroCards.map((c) => ({
+    const heroSideboard: SealedDeckEntry[] = allHeroCards.map((c) => ({
       name: c.name,
       count: 1,
       set: (c.set ?? undefined),
     }));
-    const villainSideboard: SealedDeckEntry[] = villainCards.map((c) => ({
+    const villainSideboard: SealedDeckEntry[] = allVillainCards.map((c) => ({
       name: c.name,
       count: 1,
       set: (c.set ?? undefined),
@@ -347,8 +440,8 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
 
     // Store the pack choices for this user
     pendingPackChoices.set(member.id, {
-      heroCards,
-      villainCards,
+      heroCards: allHeroCards,
+      villainCards: allVillainCards,
       heroPoolId,
       villainPoolId,
       timestamp: Date.now(),
@@ -358,9 +451,9 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
     const channel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as djs.TextChannel;
     await channel.send(await buildHeroVillainChoice(
       member,
-      heroCards,
+      allHeroCards,
       heroPoolId,
-      villainCards,
+      allVillainCards,
       villainPoolId,
     ));
 

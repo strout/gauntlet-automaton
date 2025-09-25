@@ -21,60 +21,103 @@ export interface BoosterSlot {
 // Generate pack cards from booster slots
 export async function generatePackFromSlots(
   slots: BoosterSlot[],
+  options: { minColors?: number; requireUniqueCards?: boolean } = {},
 ): Promise<ScryfallCard[]> {
+  const { minColors, requireUniqueCards = false } = options;
   const packCards: ScryfallCard[] = [];
+  const usedCardNames = new Set<string>();
+  const colorsInPack = new Set<string>();
+  const maxAttempts = 200; // Prevent infinite loops
 
   for (const slot of slots) {
-    try {
-      // Build Scryfall query
-      let query = slot.scryfall || "set:om1";
+    let attempts = 0;
+    let selectedCard: ScryfallCard | undefined;
 
-      // Add rarity filter if specified
-      if (slot.rarity) {
-        if (slot.rarity === "rare/mythic") {
-          // Handle rare/mythic with proper weighting
-          const rareQuery = `${query} rarity:rare`;
-          const mythicQuery = `${query} rarity:mythic`;
+    do {
+      try {
+        // Build Scryfall query
+        let query = slot.scryfall || "set:om1";
 
-          const [rares, mythics] = await Promise.all([
-            searchCards(rareQuery, { unique: "cards" }),
-            searchCards(mythicQuery, { unique: "cards" }),
-          ]);
+        // Add rarity filter if specified
+        if (slot.rarity) {
+          if (slot.rarity === "rare/mythic") {
+            // Handle rare/mythic with proper weighting
+            const rareQuery = `${query} rarity:rare`;
+            const mythicQuery = `${query} rarity:mythic`;
 
-          // Weight rares 2:1 over mythics
-          const weightedCards = [
-            ...rares.map((card): [ScryfallCard, number] => [card, 2]),
-            ...mythics.map((card): [ScryfallCard, number] => [card, 1]),
-          ];
+            const [rares, mythics] = await Promise.all([
+              searchCards(rareQuery, { unique: "cards" }),
+              searchCards(mythicQuery, { unique: "cards" }),
+            ]);
 
-          const selectedCard = weightedChoice(weightedCards);
-          if (selectedCard) {
-            packCards.push(selectedCard);
+            // Weight rares 2:1 over mythics
+            const weightedCards = [
+              ...rares.map((card): [ScryfallCard, number] => [card, 2]),
+              ...mythics.map((card): [ScryfallCard, number] => [card, 1]),
+            ];
+
+            selectedCard = weightedChoice(weightedCards);
+          } else {
+            query += ` rarity:${slot.rarity}`;
+            const cards = await searchCards(query, { unique: "cards" });
+            selectedCard = choice(cards);
           }
         } else {
-          query += ` rarity:${slot.rarity}`;
+          // No rarity specified, search all rarities
           const cards = await searchCards(query, { unique: "cards" });
-          const selectedCard = choice(cards);
-          if (selectedCard) {
-            packCards.push(selectedCard);
-          }
+          selectedCard = choice(cards);
         }
-      } else {
-        // No rarity specified, search all rarities
-        const cards = await searchCards(query, { unique: "cards" });
-        const selectedCard = choice(cards);
-        if (selectedCard) {
-          packCards.push(selectedCard);
+
+        attempts++;
+      } catch (error) {
+        console.error(`Error generating card for slot:`, slot, error);
+        attempts++;
+        selectedCard = undefined;
+      }
+    } while (
+      selectedCard && 
+      requireUniqueCards && 
+      usedCardNames.has(selectedCard.name) && 
+      attempts < maxAttempts
+    );
+
+    if (selectedCard) {
+      packCards.push(selectedCard);
+      
+      if (requireUniqueCards) {
+        usedCardNames.add(selectedCard.name);
+      }
+      
+      // Track colors if color requirements are specified
+      if (minColors && selectedCard.colors) {
+        for (const color of selectedCard.colors) {
+          colorsInPack.add(color);
         }
       }
-    } catch (error) {
-      console.error(`Error generating card for slot:`, slot, error);
+    } else {
       // Add a fallback minimal ScryfallCard if generation fails
       packCards.push({ name: "Unknown Card" } as ScryfallCard);
     }
   }
 
+  // Check if we have enough colors, if not, try to regenerate the pack
+  if (minColors && colorsInPack.size < minColors) {
+    console.warn(`Pack only has ${colorsInPack.size} colors, regenerating...`);
+    return generatePackFromSlots(slots, options);
+  }
+
   return packCards;
+}
+
+export function getCitizenBoosterSlots(): BoosterSlot[] {
+  return [
+    { rarity: "uncommon" },
+    { rarity: "uncommon" },
+    { rarity: "common" },
+    { rarity: "common" },
+    { rarity: "common" },
+    { rarity: "common" },
+  ];
 }
 
 // booster slots for citizens - hero pack
@@ -86,8 +129,6 @@ export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
       scryfall:
         "game:arena -s:spm -s:om1 ((t:legendary AND t:creature AND legal:standard) OR (oracletag:synergy-legendary AND legal:pioneer)) -ragnarok r:u",
     },
-    { rarity: "uncommon" },
-    { rarity: "uncommon" },
     {
       rarity: "common",
       scryfall:
@@ -102,11 +143,7 @@ export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
       rarity: "common",
       scryfall:
         'o:"when this creature enters" game:arena r:c t:creature legal:standard',
-    },
-    { rarity: "common" },
-    { rarity: "common" },
-    { rarity: "common" },
-    { rarity: "common" },
+    }
   ];
 }
 
@@ -119,8 +156,6 @@ export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
       scryfall:
         "game:arena legal:standard r:u (t:warlock OR t:rogue OR t:pirate OR t:mercenary OR t:assassin OR o:outlaw)",
     },
-    { rarity: "uncommon" },
-    { rarity: "uncommon" },
     {
       rarity: "common",
       scryfall:
@@ -135,11 +170,7 @@ export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
       rarity: "common",
       scryfall:
         'game:arena legal:standard r:c (o:"commit a crime" OR o:"target spell" OR otag:removal)',
-    },
-    { rarity: "common" },
-    { rarity: "common" },
-    { rarity: "common" },
-    { rarity: "common" },
+    }
   ];
 }
 
