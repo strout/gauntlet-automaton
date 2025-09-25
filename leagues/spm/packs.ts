@@ -19,91 +19,57 @@ export interface BoosterSlot {
 }
 
 // Generate pack cards from booster slots
-export async function generatePackFromSlots(
-  slots: BoosterSlot[],
-  options: { minColors?: number; requireUniqueCards?: boolean } = {},
-): Promise<ScryfallCard[]> {
-  const { minColors, requireUniqueCards = false } = options;
+export async function generatePackFromSlots(slots: BoosterSlot[]): Promise<ScryfallCard[]> {
   const packCards: ScryfallCard[] = [];
-  const usedCardNames = new Set<string>();
-  const colorsInPack = new Set<string>();
-  const maxAttempts = 200; // Prevent infinite loops
 
   for (const slot of slots) {
-    let attempts = 0;
-    let selectedCard: ScryfallCard | undefined;
+    try {
+      // Build Scryfall query
+      let query = slot.scryfall || "set:om1";
 
-    do {
-      try {
-        // Build Scryfall query
-        let query = slot.scryfall || "set:om1";
+      // Add rarity filter if specified
+      if (slot.rarity) {
+        if (slot.rarity === "rare/mythic") {
+          // Handle rare/mythic with proper weighting
+          const rareQuery = `${query} rarity:rare`;
+          const mythicQuery = `${query} rarity:mythic`;
 
-        // Add rarity filter if specified
-        if (slot.rarity) {
-          if (slot.rarity === "rare/mythic") {
-            // Handle rare/mythic with proper weighting
-            const rareQuery = `${query} rarity:rare`;
-            const mythicQuery = `${query} rarity:mythic`;
+          const [rares, mythics] = await Promise.all([
+            searchCards(rareQuery, { unique: "cards" }),
+            searchCards(mythicQuery, { unique: "cards" }),
+          ]);
 
-            const [rares, mythics] = await Promise.all([
-              searchCards(rareQuery, { unique: "cards" }),
-              searchCards(mythicQuery, { unique: "cards" }),
-            ]);
+          // Weight rares 2:1 over mythics
+          const weightedCards = [
+            ...rares.map((card): [ScryfallCard, number] => [card, 2]),
+            ...mythics.map((card): [ScryfallCard, number] => [card, 1]),
+          ];
 
-            // Weight rares 2:1 over mythics
-            const weightedCards = [
-              ...rares.map((card): [ScryfallCard, number] => [card, 2]),
-              ...mythics.map((card): [ScryfallCard, number] => [card, 1]),
-            ];
-
-            selectedCard = weightedChoice(weightedCards);
-          } else {
-            query += ` rarity:${slot.rarity}`;
-            const cards = await searchCards(query, { unique: "cards" });
-            selectedCard = choice(cards);
+          const selectedCard = weightedChoice(weightedCards);
+          if (selectedCard) {
+            packCards.push(selectedCard);
           }
         } else {
-          // No rarity specified, search all rarities
+          query += ` rarity:${slot.rarity}`;
           const cards = await searchCards(query, { unique: "cards" });
-          selectedCard = choice(cards);
+          const selectedCard = choice(cards);
+          if (selectedCard) {
+            packCards.push(selectedCard);
+          }
         }
-
-        attempts++;
-      } catch (error) {
-        console.error(`Error generating card for slot:`, slot, error);
-        attempts++;
-        selectedCard = undefined;
-      }
-    } while (
-      selectedCard && 
-      requireUniqueCards && 
-      usedCardNames.has(selectedCard.name) && 
-      attempts < maxAttempts
-    );
-
-    if (selectedCard) {
-      packCards.push(selectedCard);
-      
-      if (requireUniqueCards) {
-        usedCardNames.add(selectedCard.name);
-      }
-      
-      // Track colors if color requirements are specified
-      if (minColors && selectedCard.colors) {
-        for (const color of selectedCard.colors) {
-          colorsInPack.add(color);
+      } else {
+        // No rarity specified, search all rarities
+        const cards = await searchCards(query, { unique: "cards" });
+        const selectedCard = choice(cards);
+        if (selectedCard) {
+          packCards.push(selectedCard);
         }
       }
-    } else {
+    } catch (error) {
+      console.error(`Error generating card for slot:`, slot, error);
       // Add a fallback minimal ScryfallCard if generation fails
       packCards.push({ name: "Unknown Card" } as ScryfallCard);
     }
-  }
-
-  // Check if we have enough colors, if not, try to regenerate the pack
-  if (minColors && colorsInPack.size < minColors) {
-    console.warn(`Pack only has ${colorsInPack.size} colors, regenerating...`);
-    return generatePackFromSlots(slots, options);
   }
 
   return packCards;
@@ -122,54 +88,56 @@ export function getCitizenBoosterSlots(): BoosterSlot[] {
 
 // booster slots for citizens - hero pack
 export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
+  // Pre-select 3 random colors and assign one to each common slot
+  const allColors = ['W', 'U', 'B', 'R', 'G'];
+  const selectedColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
+  console.log(`Hero pack colors: ${selectedColors.join(', ')}`);
+
   return [
     { rarity: "rare/mythic", scryfall: "s:om1 r>u -(-t:hero t:villain)" },
     {
       rarity: "uncommon",
-      scryfall:
-        "game:arena -s:spm -s:om1 ((t:legendary AND t:creature AND legal:standard) OR (oracletag:synergy-legendary AND legal:pioneer)) -ragnarok r:u",
+      scryfall: "game:arena -s:spm -s:om1 ((t:legendary AND t:creature AND legal:standard) OR (oracletag:synergy-legendary AND legal:pioneer)) -ragnarok r:u",
     },
     {
       rarity: "common",
-      scryfall:
-        'game:arena legal:standard r:c (o:"+1/+1" o:"put" -o:renew -o:exhaust)',
+      scryfall: `(game:arena legal:standard r:c (o:"+1/+1" o:"put" -o:renew -o:exhaust)) AND c:${selectedColors[0]}`,
     },
     {
       rarity: "common",
-      scryfall:
-        '(o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm -s:om1 legal:pioneer',
+      scryfall: `((o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm -s:om1 legal:pioneer) AND c:${selectedColors[1]}`,
     },
     {
       rarity: "common",
-      scryfall:
-        'o:"when this creature enters" game:arena r:c t:creature legal:standard',
+      scryfall: `(o:"when this creature enters" game:arena r:c t:creature legal:standard) AND c:${selectedColors[2]}`,
     }
   ];
 }
 
 // booster slots for citizens - villain pack
 export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
+  // Pre-select 3 random colors and assign one to each common slot
+  const allColors = ['W', 'U', 'B', 'R', 'G'];
+  const selectedColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
+  console.log(`Villain pack colors: ${selectedColors.join(', ')}`);
+
   return [
     { rarity: "rare/mythic", scryfall: "s:om1 r>u -(t:hero -t:villain)" },
     {
       rarity: "uncommon",
-      scryfall:
-        "game:arena legal:standard r:u (t:warlock OR t:rogue OR t:pirate OR t:mercenary OR t:assassin OR o:outlaw)",
+      scryfall: "game:arena legal:standard r:u (t:warlock OR t:rogue OR t:pirate OR t:mercenary OR t:assassin OR o:outlaw)",
     },
     {
       rarity: "common",
-      scryfall:
-        "legal:pioneer game:arena r:c -s:spm -s:om1 -o:learn oracletag:discard-outlet",
+      scryfall: `(legal:pioneer game:arena r:c -s:spm -s:om1 -o:learn oracletag:discard-outlet) AND c:${selectedColors[0]}`,
     },
     {
       rarity: "common",
-      scryfall:
-        "legal:pioneer game:arena r:c (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)",
+      scryfall: `(legal:pioneer game:arena r:c (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)) AND c:${selectedColors[1]}`,
     },
     {
       rarity: "common",
-      scryfall:
-        'game:arena legal:standard r:c (o:"commit a crime" OR o:"target spell" OR otag:removal)',
+      scryfall: `(game:arena legal:standard r:c (o:"commit a crime" OR o:"target spell" OR otag:removal)) AND c:${selectedColors[2]}`,
     }
   ];
 }

@@ -415,8 +415,8 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
     // Generate both pack options
     // Share citizen cards between both packs
     const citizenCards = await generatePackFromSlots(getCitizenBoosterSlots());
-    const heroCards = await generatePackFromSlots(getCitizenHeroBoosterSlots(), { minColors: 3, requireUniqueCards: true });
-    const villainCards = await generatePackFromSlots(getCitizenVillainBoosterSlots(), { minColors: 3, requireUniqueCards: true });
+    const heroCards = await generatePackFromSlots(getCitizenHeroBoosterSlots());
+    const villainCards = await generatePackFromSlots(getCitizenVillainBoosterSlots());
 
     // Combine citizen cards with each pack's specific cards
     const allHeroCards = [...citizenCards, ...heroCards];
