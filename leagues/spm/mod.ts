@@ -29,6 +29,7 @@ import { addPoolChange } from "../../standings.ts";
 import { Buffer } from "node:buffer";
 import { generatePackFromSlots, getCitizenHeroBoosterSlots, getCitizenVillainBoosterSlots } from "./packs.ts";
 import { buildHeroVillainChoice } from "./packs.ts";
+import { mutex } from "../../mutex.ts";
 
 // Pool generation handler
 const poolHandler: Handler<djs.Message> = async (message, handle) => {
@@ -219,10 +220,21 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (interactio
     } catch {}
   } finally {
     packChoiceLocks.delete(userId);
+    checkForMatches(interaction.client);
   }
 };
 
+const matchesLock = mutex();
+let matchesRequested = false;
+
 async function checkForMatches(client: Client<boolean>) {
+  // TODO Abstract out this "requested" song-and-dance; it's essentially a debounce
+  if (matchesRequested) return;
+  matchesRequested = true;
+  using _ = await matchesLock();
+  if (!matchesRequested) return;
+  matchesRequested = false;
+
   const [records, players] = await Promise.all([
     getAllMatches(),
     getPlayers()
@@ -240,15 +252,7 @@ async function checkForMatches(client: Client<boolean>) {
     );
     if (!loser) {
       console.warn(
-        `Unidentified loser ${record["Loser Name"]} for ${record[MATCHTYPE]} ${
-          record[MATCHTYPE] === "match"
-            ? record[ROWNUM]
-            : record[MATCHTYPE] === "entropy"
-            ? record[ROWNUM]
-            : (() => {
-              throw new Error("Invalid record type");
-            })()
-        }`,
+        `Unidentified loser ${record["Loser Name"]} for ${record[MATCHTYPE]} ${record[ROWNUM]}`,
       );
       continue;
     }
@@ -260,6 +264,11 @@ async function checkForMatches(client: Client<boolean>) {
 
     // Skip if we've already messaged this player in this batch
     if (messagedThisBatch.has(loser["Discord ID"])) {
+      continue;
+    }
+
+    // Skip if they have a pending pack choice
+    if (pendingPackChoices.has(loser["Discord ID"])) {
       continue;
     }
 
