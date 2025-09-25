@@ -83,8 +83,6 @@ export async function setup(): Promise<{
   await Promise.resolve();
   const messageHandlers: Handler<djs.Message>[] = [
     packChoiceHandler,
-    heroChoiceHandler,
-    villainChoiceHandler,
     poolHandler,
   ];
   return {
@@ -95,7 +93,7 @@ export async function setup(): Promise<{
       }
     },
     messageHandlers,
-    interactionHandlers: [],
+    interactionHandlers: [packChoiceInteractionHandler],
   };
 }
 
@@ -135,138 +133,91 @@ const packChoiceHandler: Handler<djs.Message> = async (message, handle) => {
   }
 };
 
-// Hero pack choice handler
-const heroChoiceHandler: Handler<djs.Message> = async (message, handle) => {
-  if (!message.content.startsWith("!hero")) return;
+// New interaction handler for pack choice buttons
+const packChoiceInteractionHandler: Handler<djs.Interaction> = async (interaction, handle) => {
+  if (!interaction.isButton()) return;
+  const customId = interaction.customId;
+  if (!customId.startsWith("SPM_choose_hero_") && !customId.startsWith("SPM_choose_villain_")) return;
 
   handle.claim();
 
-  const userId = message.author.id;
+  const userId = interaction.user.id;
 
-  // Check if this user is already processing a pack choice
+  // Prevent concurrent processing for a single user
   if (packChoiceLocks.has(userId)) {
-    await message.reply(
-      "You're already processing a pack choice. Please wait...",
-    );
+    await interaction.reply({ content: "You're already processing a pack choice. Please wait...", ephemeral: true });
     return;
   }
 
   try {
-    // Lock this user's pack choice processing
     packChoiceLocks.add(userId);
 
-    // Check if user has a pending pack choice
     const packChoice = pendingPackChoices.get(userId);
     if (!packChoice) {
-      await message.reply(
-        "You don't have a pending pack choice. Use `!packchoice` first.",
-      );
+      await interaction.reply({ content: "You don't have a pending pack choice. Use `!packchoice` first.", ephemeral: true });
       return;
     }
 
-    // Check if the choice is not too old (24 hours)
-    const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+    // Expiration (24 hours)
+    const maxAge = 24 * 60 * 60 * 1000;
     if (Date.now() - packChoice.timestamp > maxAge) {
       pendingPackChoices.delete(userId);
-      await message.reply(
-        "Your pack choice has expired. Use `!packchoice` to get a new one.",
-      );
+      await interaction.reply({ content: "Your pack choice has expired. Use `!packchoice` to get a new one.", ephemeral: true });
       return;
     }
 
-    const { heroCards, heroPoolId } = packChoice;
+    if (customId.startsWith("SPM_choose_hero_")) {
+      const expectedId = `SPM_choose_hero_${packChoice.heroPoolId}`;
+      if (customId !== expectedId) {
+        await interaction.reply({ content: "This pack doesn't match your current options.", ephemeral: true });
+        return;
+      }
 
-    await message.reply({
-      content: `You chose the **Hero Pack**! Here's your pack:`,
-      embeds: [{
-        title: "🦸 Hero Pack",
-        description: `[View Pack](https://sealeddeck.tech/${heroPoolId})\n${
-          formatPackCards(heroCards)
-        }`,
-        color: 0x00BFFF,
-      }],
-    });
+      await interaction.reply({
+        content: `You chose the **Hero Pack**! Here's your pack:`,
+        embeds: [{
+          title: "🦸 Hero Pack",
+          description: `[View Pack](https://sealeddeck.tech/${packChoice.heroPoolId})\n${formatPackCards(packChoice.heroCards)}`,
+          color: 0x00BFFF,
+        }],
+        ephemeral: true,
+      });
 
-    // Remove the pending choice
-    pendingPackChoices.delete(userId);
-
-    console.log(`${message.author.displayName} chose Hero pack: ${heroPoolId}`);
-  } catch (error) {
-    console.error("Error in hero choice handler:", error);
-    await message.reply(
-      "Failed to process hero pack choice. Please try again.",
-    );
-  } finally {
-    // Always release the lock
-    packChoiceLocks.delete(userId);
-  }
-};
-
-// Villain pack choice handler
-const villainChoiceHandler: Handler<djs.Message> = async (message, handle) => {
-  if (!message.content.startsWith("!villain")) return;
-
-  handle.claim();
-
-  const userId = message.author.id;
-
-  // Check if this user is already processing a pack choice
-  if (packChoiceLocks.has(userId)) {
-    await message.reply(
-      "You're already processing a pack choice. Please wait...",
-    );
-    return;
-  }
-
-  try {
-    // Lock this user's pack choice processing
-    packChoiceLocks.add(userId);
-
-    // Check if user has a pending pack choice
-    const packChoice = pendingPackChoices.get(userId);
-    if (!packChoice) {
-      await message.reply(
-        "You don't have a pending pack choice. Use `!packchoice` first.",
-      );
-      return;
-    }
-
-    // Check if the choice is not too old (24 hours)
-    const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-    if (Date.now() - packChoice.timestamp > maxAge) {
       pendingPackChoices.delete(userId);
-      await message.reply(
-        "Your pack choice has expired. Use `!packchoice` to get a new one.",
-      );
+      console.log(`${interaction.user.username} chose Hero pack: ${packChoice.heroPoolId}`);
       return;
     }
 
-    const { villainCards, villainPoolId } = packChoice;
+    if (customId.startsWith("SPM_choose_villain_")) {
+      const expectedId = `SPM_choose_villain_${packChoice.villainPoolId}`;
+      if (customId !== expectedId) {
+        await interaction.reply({ content: "This pack doesn't match your current options.", ephemeral: true });
+        return;
+      }
 
-    await message.reply({
-      content: `You chose the **Villain Pack**! Here's your pack:`,
-      embeds: [{
-        title: "🦹 Villain Pack",
-        description: `[View Pack](https://sealeddeck.tech/${villainPoolId})\n${
-          formatPackCards(villainCards)
-        }`,
-        color: 0x8B0000,
-      }],
-    });
+      await interaction.reply({
+        content: `You chose the **Villain Pack**! Here's your pack:`,
+        embeds: [{
+          title: "🦹 Villain Pack",
+          description: `[View Pack](https://sealeddeck.tech/${packChoice.villainPoolId})\n${formatPackCards(packChoice.villainCards)}`,
+          color: 0x8B0000,
+        }],
+        ephemeral: true,
+      });
 
-    // Remove the pending choice
-    pendingPackChoices.delete(userId);
-
-    console.log(
-      `${message.author.displayName} chose Villain pack: ${villainPoolId}`,
-    );
+      pendingPackChoices.delete(userId);
+      console.log(`${interaction.user.username} chose Villain pack: ${packChoice.villainPoolId}`);
+      return;
+    }
   } catch (error) {
-    console.error("Error in villain choice handler:", error);
-    await message.reply(
-      "Failed to process villain pack choice. Please try again.",
-    );
+    console.error("Error handling pack choice interaction:", error);
+    try {
+      if (!interaction.replied) {
+        await interaction.reply({ content: "Failed to process your choice. Please try again.", ephemeral: true });
+      }
+    // deno-lint-ignore no-empty
+    } catch {}
   } finally {
-    // Always release the lock
     packChoiceLocks.delete(userId);
   }
 };
