@@ -278,7 +278,13 @@ async function checkForMatches(client: Client<boolean>) {
 
       let blocked = false;
       try {
-        await sendPackChoice(member);
+        if (true /* TODO check if they are a citizen */) {
+          await sendPackChoice(member);
+        } else if (true /* TODO check if they are hero */) {
+          // await generateSuperheroPack(member);
+        } else if (true /* TODO check if they are villain */) {
+          // await generateSupervillainPack(member);
+        }
       } catch (e: unknown) {
         if (e instanceof djs.DiscordAPIError && e.code === 10007) {
           blocked = true;
