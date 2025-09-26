@@ -676,15 +676,6 @@ async function sendVillainPack(member: djs.GuildMember): Promise<void> {
   }
 }
 
-// Format pack cards for display
-function formatPackCards(cards: ScryfallCard[]): string {
-  return cards
-    .slice(0, 5) // Show first 5 cards
-    .map((card) => `• ${card.name}`)
-    .join("\n") +
-    (cards.length > 5 ? `\n... and ${cards.length - 5} more` : "");
-}
-
 // Pack choice tracking
 interface PackChoice {
   heroCards: ScryfallCard[];
