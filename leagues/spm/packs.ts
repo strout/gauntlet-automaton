@@ -2,12 +2,12 @@ import { choice, weightedChoice } from "../../random.ts";
 import { ScryfallCard, searchCards } from "../../scryfall.ts";
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
   GuildMember,
   MessageCreateOptions,
-  AttachmentBuilder,
 } from "discord.js";
 import { tileCardImages } from "../../scryfall.ts";
 import { Buffer } from "node:buffer";
@@ -19,7 +19,9 @@ export interface BoosterSlot {
 }
 
 // Generate pack cards from booster slots
-export async function generatePackFromSlots(slots: BoosterSlot[]): Promise<ScryfallCard[]> {
+export async function generatePackFromSlots(
+  slots: BoosterSlot[],
+): Promise<ScryfallCard[]> {
   const packCards: ScryfallCard[] = [];
 
   for (const slot of slots) {
@@ -89,102 +91,202 @@ export function getCitizenBoosterSlots(): BoosterSlot[] {
 // booster slots for citizens - hero pack
 export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
   // Pre-select 3 random colors and assign one to each common slot
-  const allColors = ['W', 'U', 'B', 'R', 'G'];
+  const allColors = ["W", "U", "B", "R", "G"];
   const selectedColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
-  console.log(`Hero pack colors: ${selectedColors.join(', ')}`);
+  console.log(`Hero pack colors: ${selectedColors.join(", ")}`);
 
   return [
     { rarity: "rare/mythic", scryfall: "s:om1 r>u -(-t:hero t:villain)" },
     {
       rarity: "uncommon",
-      scryfall: "game:arena -s:spm -s:om1 ((t:legendary AND t:creature AND legal:standard) OR (oracletag:synergy-legendary AND legal:pioneer)) -ragnarok r:u",
+      scryfall:
+        "game:arena -s:spm -s:om1 ((t:legendary AND t:creature AND legal:standard) OR (oracletag:synergy-legendary AND legal:pioneer)) -ragnarok r:u",
     },
     {
       rarity: "common",
-      scryfall: `(game:arena legal:standard r:c (o:"+1/+1" o:"put" -o:renew -o:exhaust)) AND c:${selectedColors[0]}`,
+      scryfall:
+        `(game:arena legal:standard r:c (o:"+1/+1" o:"put" -o:renew -o:exhaust)) AND c:${
+          selectedColors[0]
+        }`,
     },
     {
       rarity: "common",
-      scryfall: `((o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm -s:om1 legal:pioneer) AND c:${selectedColors[1]}`,
+      scryfall:
+        `((o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm -s:om1 legal:pioneer) AND c:${
+          selectedColors[1]
+        }`,
     },
     {
       rarity: "common",
-      scryfall: `(o:"when this creature enters" game:arena r:c t:creature legal:standard) AND c:${selectedColors[2]}`,
-    }
+      scryfall:
+        `(o:"when this creature enters" game:arena r:c t:creature legal:standard) AND c:${
+          selectedColors[2]
+        }`,
+    },
   ];
 }
 
 // booster slots for citizens - villain pack
 export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
   // Pre-select 3 random colors and assign one to each common slot
-  const allColors = ['W', 'U', 'B', 'R', 'G'];
+  const allColors = ["W", "U", "B", "R", "G"];
   const selectedColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
 
   return [
     { rarity: "rare/mythic", scryfall: "s:om1 r>u -(t:hero -t:villain)" },
     {
       rarity: "uncommon",
-      scryfall: "game:arena legal:standard r:u (t:warlock OR t:rogue OR t:pirate OR t:mercenary OR t:assassin OR o:outlaw)",
+      scryfall:
+        "game:arena legal:standard r:u (t:warlock OR t:rogue OR t:pirate OR t:mercenary OR t:assassin OR o:outlaw)",
     },
     {
       rarity: "common",
-      scryfall: `(legal:pioneer game:arena r:c -s:spm -s:om1 -o:learn oracletag:discard-outlet) AND c:${selectedColors[0]}`,
+      scryfall:
+        `(legal:pioneer game:arena r:c -s:spm -s:om1 -o:learn oracletag:discard-outlet) AND c:${
+          selectedColors[0]
+        }`,
     },
     {
       rarity: "common",
-      scryfall: `(legal:pioneer game:arena r:c (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)) AND c:${selectedColors[1]}`,
+      scryfall:
+        `(legal:pioneer game:arena r:c (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)) AND c:${
+          selectedColors[1]
+        }`,
     },
     {
       rarity: "common",
-      scryfall: `(game:arena legal:standard r:c (o:"commit a crime" OR o:"target spell" OR otag:removal)) AND c:${selectedColors[2]}`,
-    }
+      scryfall:
+        `(game:arena legal:standard r:c (o:"commit a crime" OR o:"target spell" OR otag:removal)) AND c:${
+          selectedColors[2]
+        }`,
+    },
   ];
 }
 
 export function getHeroBoosterSlots(): BoosterSlot[] {
   // Pre-select 3 random colors for uncommons with Scryfall queries
-  const allColors = ['W', 'U', 'B', 'R', 'G'];
+  const allColors = ["W", "U", "B", "R", "G"];
   const uncommonColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
 
   // Pre-select 3 random colors for commons with Scryfall queries
   const commonColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
 
   return [
-    { rarity: "rare/mythic", scryfall: 's:spm r>u -(-t:hero t:villain)' },
-    { rarity: "rare", scryfall: '((legal:pioneer AND (o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (o:explore and s:LCI) OR o:reconfigure OR (t:equipment o:token) OR o:"shield counter" OR (t:aura AND o:"creature you control"))) OR (legal:standard ((o:"+1/+1" o:"put") OR (o:"when this creature enters")))) -is:reprint -s:spm -s:om1 game:arena r:r ' },
-    { rarity: "uncommon", scryfall: `(game:arena -s:spm -s:OM1 ((t:legendary AND t:creature AND legal:standard) OR (oracletag:synergy-legendary AND legal:pioneer)) -ragnarok r:u) AND c:${uncommonColors[0]}` },
-    { rarity: "uncommon", scryfall: `((o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (o:explore and s:LCI) OR o:reconfigure OR (t:equipment o:token) OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena -s:spm -s:om1 r:u legal:pioneer) AND c:${uncommonColors[1]}` },
-    { rarity: "uncommon", scryfall: `(o:"when this creature enters" game:arena r:u t:creature legal:standard -s:spm -s:om1) AND c:${uncommonColors[2]}` },
+    { rarity: "rare/mythic", scryfall: "s:spm r>u -(-t:hero t:villain)" },
+    {
+      rarity: "rare",
+      scryfall:
+        '((legal:pioneer AND (o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (o:explore and s:LCI) OR o:reconfigure OR (t:equipment o:token) OR o:"shield counter" OR (t:aura AND o:"creature you control"))) OR (legal:standard ((o:"+1/+1" o:"put") OR (o:"when this creature enters")))) -is:reprint -s:spm -s:om1 game:arena r:r ',
+    },
+    {
+      rarity: "uncommon",
+      scryfall:
+        `(game:arena -s:spm -s:OM1 ((t:legendary AND t:creature AND legal:standard) OR (oracletag:synergy-legendary AND legal:pioneer)) -ragnarok r:u) AND c:${
+          uncommonColors[0]
+        }`,
+    },
+    {
+      rarity: "uncommon",
+      scryfall:
+        `((o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (o:explore and s:LCI) OR o:reconfigure OR (t:equipment o:token) OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena -s:spm -s:om1 r:u legal:pioneer) AND c:${
+          uncommonColors[1]
+        }`,
+    },
+    {
+      rarity: "uncommon",
+      scryfall:
+        `(o:"when this creature enters" game:arena r:u t:creature legal:standard -s:spm -s:om1) AND c:${
+          uncommonColors[2]
+        }`,
+    },
     { rarity: "uncommon" },
     { rarity: "uncommon" },
-    { rarity: "common", scryfall: `(game:arena legal:standard r:c -s:OM1 (o:"+1/+1" o:"put" -o:renew -o:exhaust)) AND c:${commonColors[0]}` },
-    { rarity: "common", scryfall: `((o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm -s:om1 legal:pioneer) AND c:${commonColors[1]}` },
-    { rarity: "common", scryfall: `(o:"when this creature enters" game:arena r:c t:creature legal:standard -s:om1 -s:spm) AND c:${commonColors[2]}` },
+    {
+      rarity: "common",
+      scryfall:
+        `(game:arena legal:standard r:c -s:OM1 (o:"+1/+1" o:"put" -o:renew -o:exhaust)) AND c:${
+          commonColors[0]
+        }`,
+    },
+    {
+      rarity: "common",
+      scryfall:
+        `((o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm -s:om1 legal:pioneer) AND c:${
+          commonColors[1]
+        }`,
+    },
+    {
+      rarity: "common",
+      scryfall:
+        `(o:"when this creature enters" game:arena r:c t:creature legal:standard -s:om1 -s:spm) AND c:${
+          commonColors[2]
+        }`,
+    },
     { rarity: "common" },
-    { rarity: "common" }
+    { rarity: "common" },
   ];
 }
 export function getVillainBoosterSlots(): BoosterSlot[] {
   // Pre-select 3 random colors for uncommons with Scryfall queries
-  const allColors = ['W', 'U', 'B', 'R', 'G'];
+  const allColors = ["W", "U", "B", "R", "G"];
   const uncommonColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
 
   // Pre-select 3 random colors for commons with Scryfall queries
   const commonColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
 
   return [
-    { rarity: "rare/mythic", scryfall: 's:spm r>u -(t:hero -t:villain)' },
-    { rarity: "rare", scryfall: 'r:r game:arena -is:reprint -s:om1 ((legal:standard (oracletag:discard-outlet OR o:"commit a crime" OR o:"target spell" OR (otag:removal))) OR (legal:pioneer(o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)))'},
-    { rarity: "uncommon", scryfall: `(game:arena legal:standard r:u -s:spm -s:om1 (t:warlock OR t:rogue OR t:pirate OR t:mercenary OR t:assassin OR o:outlaw)) AND c:${uncommonColors[0]}` },
-    { rarity: "uncommon", scryfall: `(legal:pioneer game:arena -s:spm -s:om1 r:u (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)) AND c:${uncommonColors[1]}` },
-    { rarity: "uncommon", scryfall: `(game:arena legal:standard -s:spm -s:om1 r:u (o:"commit a crime" OR o:"target spell" OR otag:removal)) AND c:${uncommonColors[2]}` },
+    { rarity: "rare/mythic", scryfall: "s:spm r>u -(t:hero -t:villain)" },
+    {
+      rarity: "rare",
+      scryfall:
+        'r:r game:arena -is:reprint -s:om1 ((legal:standard (oracletag:discard-outlet OR o:"commit a crime" OR o:"target spell" OR (otag:removal))) OR (legal:pioneer(o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)))',
+    },
+    {
+      rarity: "uncommon",
+      scryfall:
+        `(game:arena legal:standard r:u -s:spm -s:om1 (t:warlock OR t:rogue OR t:pirate OR t:mercenary OR t:assassin OR o:outlaw)) AND c:${
+          uncommonColors[0]
+        }`,
+    },
+    {
+      rarity: "uncommon",
+      scryfall:
+        `(legal:pioneer game:arena -s:spm -s:om1 r:u (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)) AND c:${
+          uncommonColors[1]
+        }`,
+    },
+    {
+      rarity: "uncommon",
+      scryfall:
+        `(game:arena legal:standard -s:spm -s:om1 r:u (o:"commit a crime" OR o:"target spell" OR otag:removal)) AND c:${
+          uncommonColors[2]
+        }`,
+    },
     { rarity: "uncommon" },
     { rarity: "uncommon" },
-    { rarity: "common", scryfall: `(legal:pioneer game:arena r:c -s:spm -s:om1 -o:learn oracletag:discard-outlet) AND c:${commonColors[0]}` },
-    { rarity: "common", scryfall: `(legal:pioneer game:arena -s:om1 -s:spm r:c (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)) AND c:${commonColors[1]}` },
-    { rarity: "common", scryfall: `(game:arena legal:standard -s:spm -s:om1 r:c (o:"commit a crime" OR o:"target spell" OR otag:removal)) AND c:${commonColors[2]}` },
+    {
+      rarity: "common",
+      scryfall:
+        `(legal:pioneer game:arena r:c -s:spm -s:om1 -o:learn oracletag:discard-outlet) AND c:${
+          commonColors[0]
+        }`,
+    },
+    {
+      rarity: "common",
+      scryfall:
+        `(legal:pioneer game:arena -s:om1 -s:spm r:c (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)) AND c:${
+          commonColors[1]
+        }`,
+    },
+    {
+      rarity: "common",
+      scryfall:
+        `(game:arena legal:standard -s:spm -s:om1 r:c (o:"commit a crime" OR o:"target spell" OR otag:removal)) AND c:${
+          commonColors[2]
+        }`,
+    },
     { rarity: "common" },
-    { rarity: "common" }
+    { rarity: "common" },
   ];
 }
 
@@ -197,21 +299,11 @@ export async function buildHeroVillainChoice(
 ): Promise<MessageCreateOptions> {
   // helper to format pack text (first 6 entries)
   const formatPackCards = (cards: ScryfallCard[]) =>
-    cards
-      .slice(0, 6)
-      .map((c) => `• ${c.name}`)
-      .join("\n") +
-    (cards.length > 6 ? `\n... and ${cards.length - 6} more` : "");
-
-  // try to fetch an image url for a pack using the provided ScryfallCard objects
-  function firstCardImageUrl(cards: ScryfallCard[]) {
-    if (!cards || cards.length === 0) return undefined;
-    const card = cards[0];
-    return card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal;
-  }
-
-  const heroImage = firstCardImageUrl(heroPack);
-  const villainImage = firstCardImageUrl(villainPack);
+    [
+      "```",
+      ...cards.map((c) => `${c.name}`),
+      "```",
+    ].join("\n");
 
   const heroEmbed = new EmbedBuilder()
     .setTitle("🦸 Hero Pack")
@@ -239,10 +331,12 @@ export async function buildHeroVillainChoice(
     const heroArrayBuffer = await heroBlob.arrayBuffer();
     const heroBuffer = Buffer.from(heroArrayBuffer);
     const heroFilename = `hero_${heroPoolId}.png`;
-    const heroAttachment = new AttachmentBuilder(heroBuffer, { name: heroFilename });
+    const heroAttachment = new AttachmentBuilder(heroBuffer, {
+      name: heroFilename,
+    });
     heroEmbed.setImage(`attachment://${heroFilename}`);
     files.push(heroAttachment);
-  } catch (err) {
+  } catch (_err) {
     // silently omit hero image on failure
   }
 
@@ -251,10 +345,12 @@ export async function buildHeroVillainChoice(
     const villainArrayBuffer = await villainBlob.arrayBuffer();
     const villainBuffer = Buffer.from(villainArrayBuffer);
     const villainFilename = `villain_${villainPoolId}.png`;
-    const villainAttachment = new AttachmentBuilder(villainBuffer, { name: villainFilename });
+    const villainAttachment = new AttachmentBuilder(villainBuffer, {
+      name: villainFilename,
+    });
     villainEmbed.setImage(`attachment://${villainFilename}`);
     files.push(villainAttachment);
-  } catch (err) {
+  } catch (_err) {
     // silently omit villain image on failure
   }
 
