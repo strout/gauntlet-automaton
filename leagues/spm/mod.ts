@@ -20,15 +20,22 @@ import {
 import { sheets, sheetsWrite } from "../../sheets.ts";
 import { delay } from "@std/async/delay";
 import { Client } from "discord.js";
-import { ScryfallCard } from "../../scryfall.ts";
 import { makeSealedDeck, SealedDeckEntry } from "../../sealeddeck.ts";
 import { tileCardImages } from "../../scryfall.ts";
 import { Handler } from "../../dispatch.ts";
 import { Buffer } from "node:buffer";
-import { generatePackFromSlots, getCitizenBoosterSlots, getCitizenHeroBoosterSlots, getCitizenVillainBoosterSlots, getHeroBoosterSlots, getVillainBoosterSlots } from "./packs.ts";
+import {
+  generatePackFromSlots,
+  getCitizenBoosterSlots,
+  getCitizenHeroBoosterSlots,
+  getCitizenVillainBoosterSlots,
+  getHeroBoosterSlots,
+  getVillainBoosterSlots,
+} from "./packs.ts";
 import { buildHeroVillainChoice } from "./packs.ts";
 import { mutex } from "../../mutex.ts";
 import { generateAndPostStartingPool } from "./pools.ts";
+import z from "zod";
 
 // Pool generation handler
 const poolHandler: Handler<djs.Message> = async (message, handle) => {
@@ -171,7 +178,9 @@ const heroPackHandler: Handler<djs.Message> = async (message, handle) => {
 
 // Villain pack handler for testing
 const villainPackHandler: Handler<djs.Message> = async (message, handle) => {
-  if (!message.content.startsWith("!villainpack ") || !message.inGuild()) return;
+  if (!message.content.startsWith("!villainpack ") || !message.inGuild()) {
+    return;
+  }
 
   // Extract mentioned user or use message author
   const mentionedUser = message.mentions.users.first();
@@ -204,10 +213,16 @@ const villainPackHandler: Handler<djs.Message> = async (message, handle) => {
 };
 
 // New interaction handler for pack choice buttons
-const packChoiceInteractionHandler: Handler<djs.Interaction> = async (interaction, handle) => {
+const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
+  interaction,
+  handle,
+) => {
   if (!interaction.isButton()) return;
   const customId = interaction.customId;
-  if (!customId.startsWith("SPM_choose_hero_") && !customId.startsWith("SPM_choose_villain_")) return;
+  if (
+    !customId.startsWith("SPM_choose_hero_") &&
+    !customId.startsWith("SPM_choose_villain_")
+  ) return;
 
   handle.claim();
 
@@ -215,165 +230,67 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (interactio
 
   // Prevent concurrent processing for a single user
   if (packChoiceLocks.has(userId)) {
-    await interaction.reply({ content: "You're already processing a pack choice. Please wait...", ephemeral: true });
+    await interaction.reply({
+      content: "You're already processing a pack choice. Please wait...",
+      ephemeral: true,
+    });
     return;
   }
 
   try {
     packChoiceLocks.add(userId);
 
-    const packChoice = pendingPackChoices.get(userId);
-    if (!packChoice) {
-      await interaction.reply({ content: "You don't have a pending pack choice. Use `!packchoice` first.", ephemeral: true });
-      return;
-    }
+    const [choiceType, packPoolId] = customId.split("_").slice(2); // ["hero", "packPoolId"] or ["villain", "packPoolId"]
 
-    // Expiration (24 hours)
-    const maxAge = 24 * 60 * 60 * 1000;
-    if (Date.now() - packChoice.timestamp > maxAge) {
-      pendingPackChoices.delete(userId);
-      await interaction.reply({ content: "Your pack choice has expired. Use `!packchoice` to get a new one.", ephemeral: true });
-      return;
-    }
+    // find the embed matching this pool ID
+    const chosenEmbed = interaction.message.embeds.find((embed) => {
+      return embed.fields.some((field) => field.value.includes(packPoolId));
+    });
 
-    if (customId.startsWith("SPM_choose_hero_")) {
-      const expectedId = `SPM_choose_hero_${packChoice.heroPoolId}`;
-      if (customId !== expectedId) {
-        await interaction.reply({ content: "This pack doesn't match your current options.", ephemeral: true });
-        return;
-      }
-
-      // Update the original message to remove buttons
-      await interaction.update({
-        content: `<@!${interaction.user.id}> chose the **Hero Pack**!`,
-        embeds: interaction.message.embeds,
-        components: [], // Remove all buttons
+    if (!chosenEmbed) {
+      await interaction.reply({
+        content: "This pack doesn't match your current options.",
+        ephemeral: true,
       });
-
-      // Send public message to channel with card images
-      const channel = interaction.channel;
-      if (channel && channel.isTextBased() && 'send' in channel) {
-        // Generate card image
-        let cardImageAttachment: djs.AttachmentBuilder | undefined;
-        try {
-          const cardImageBlob = await tileCardImages(packChoice.heroCards, "normal");
-          const cardImageBuffer = Buffer.from(await cardImageBlob.arrayBuffer());
-          cardImageAttachment = new djs.AttachmentBuilder(cardImageBuffer, {
-            name: `hero_pack_${packChoice.heroPoolId}.png`,
-            description: "Hero pack cards",
-          });
-        } catch (error) {
-          console.error("Failed to generate hero pack image:", error);
-        }
-
-        const embed = new djs.EmbedBuilder()
-          .setTitle(`🦸 Hero Pack - ${interaction.user.displayName}`)
-          .setColor(0x00BFFF)
-          .setThumbnail(interaction.user.displayAvatarURL({ size: 256 }))
-          .addFields([
-            {
-              name: "🔗 SealedDeck Link",
-              value: `[View Pack](https://sealeddeck.tech/${packChoice.heroPoolId})`,
-              inline: false,
-            },
-            {
-              name: "🆔 SealedDeck ID",
-              value: `\`${packChoice.heroPoolId}\``,
-              inline: true,
-            }
-          ])
-          .setTimestamp();
-
-        if (cardImageAttachment) {
-          embed.setImage(`attachment://${cardImageAttachment.name}`);
-        }
-
-        const files = cardImageAttachment ? [cardImageAttachment] : [];
-        
-        await channel.send({
-          content: `<@!${interaction.user.id}> chose the **Hero Pack**!`,
-          embeds: [embed],
-          files,
-        });
-      }
-
-      pendingPackChoices.delete(userId);
-      console.log(`${interaction.user.username} chose Hero pack: ${packChoice.heroPoolId}`);
       return;
     }
 
-    if (customId.startsWith("SPM_choose_villain_")) {
-      const expectedId = `SPM_choose_villain_${packChoice.villainPoolId}`;
-      if (customId !== expectedId) {
-        await interaction.reply({ content: "This pack doesn't match your current options.", ephemeral: true });
-        return;
-      }
+    const titleCaseChoiceType = choiceType.charAt(0).toUpperCase() +
+      choiceType.slice(1);
 
-      // Update the original message to remove buttons
-      await interaction.update({
-        content: `<@!${interaction.user.id}> chose the **Villain Pack**!`,
-        embeds: interaction.message.embeds,
-        components: [], // Remove all buttons
-      });
+    // Update the original message to remove buttons
+    await interaction.update({
+      content:
+        `<@!${interaction.user.id}> chose the **${titleCaseChoiceType} Pack**!`,
+      embeds: interaction.message.embeds,
+      components: [], // Remove all buttons
+    });
 
-      // Send public message to channel with card images
-      const channel = interaction.channel;
-      if (channel && channel.isTextBased() && 'send' in channel) {
-        // Generate card image
-        let cardImageAttachment: djs.AttachmentBuilder | undefined;
-        try {
-          const cardImageBlob = await tileCardImages(packChoice.villainCards, "normal");
-          const cardImageBuffer = Buffer.from(await cardImageBlob.arrayBuffer());
-          cardImageAttachment = new djs.AttachmentBuilder(cardImageBuffer, {
-            name: `villain_pack_${packChoice.villainPoolId}.png`,
-            description: "Villain pack cards",
-          });
-        } catch (error) {
-          console.error("Failed to generate villain pack image:", error);
-        }
+    // Build a new embed from the chosen embed (including its image and description and fields)
+    const newEmbed = new djs.EmbedBuilder()
+      .setTitle(chosenEmbed.title)
+      .setColor(chosenEmbed.color)
+      .setThumbnail(chosenEmbed.thumbnail?.url ?? null)
+      .setImage(chosenEmbed.image?.url ?? null)
+      .setDescription(chosenEmbed.description)
+      .addFields(chosenEmbed.fields)
+      .setTimestamp();
 
-        const embed = new djs.EmbedBuilder()
-          .setTitle(`🦹 Villain Pack - ${interaction.user.displayName}`)
-          .setColor(0x8B0000)
-          .setThumbnail(interaction.user.displayAvatarURL({ size: 256 }))
-          .addFields([
-            {
-              name: "🔗 SealedDeck Link",
-              value: `[View Pack](https://sealeddeck.tech/${packChoice.villainPoolId})`,
-              inline: false,
-            },
-            {
-              name: "🆔 SealedDeck ID",
-              value: `\`${packChoice.villainPoolId}\``,
-              inline: true,
-            }
-          ])
-          .setTimestamp();
-
-        if (cardImageAttachment) {
-          embed.setImage(`attachment://${cardImageAttachment.name}`);
-        }
-
-        const files = cardImageAttachment ? [cardImageAttachment] : [];
-        
-        await channel.send({
-          content: `<@!${interaction.user.id}> chose the **Villain Pack**!`,
-          embeds: [embed],
-          files,
-        });
-      }
-
-      pendingPackChoices.delete(userId);
-      console.log(`${interaction.user.username} chose Villain pack: ${packChoice.villainPoolId}`);
-      return;
-    }
+    await interaction.followUp({
+      content:
+        `<@!${interaction.user.id}> chose the **${titleCaseChoiceType} Pack**!`,
+      embeds: [newEmbed],
+    });
   } catch (error) {
     console.error("Error handling pack choice interaction:", error);
     try {
       if (!interaction.replied) {
-        await interaction.reply({ content: "Failed to process your choice. Please try again.", ephemeral: true });
+        await interaction.reply({
+          content: "Failed to process your choice. Please try again.",
+          ephemeral: true,
+        });
       }
-    // deno-lint-ignore no-empty
+      // deno-lint-ignore no-empty
     } catch {}
   } finally {
     packChoiceLocks.delete(userId);
@@ -394,7 +311,10 @@ async function checkForMatches(client: Client<boolean>) {
 
   const [records, players] = await Promise.all([
     getAllMatches(),
-    getPlayers()
+    getPlayers(undefined, {
+      ["Heroism"]: z.number(),
+      ["Villainy"]: z.number(),
+    }),
   ]);
 
   // Track players we've already messaged in this batch
@@ -409,13 +329,18 @@ async function checkForMatches(client: Client<boolean>) {
     );
     if (!loser) {
       console.warn(
-        `Unidentified loser ${record["Loser Name"]} for ${record[MATCHTYPE]} ${record[ROWNUM]}`,
+        `Unidentified loser ${record["Loser Name"]} for ${record[MATCHTYPE]} ${
+          record[ROWNUM]
+        }`,
       );
       continue;
     }
 
     // Skip if they're done.
-    if (loser["TOURNAMENT STATUS"] === "Eliminated" || loser["Matches Played"] >= 30) {
+    if (
+      loser["TOURNAMENT STATUS"] === "Eliminated" ||
+      loser["Matches played"] >= 30
+    ) {
       continue;
     }
 
@@ -424,8 +349,12 @@ async function checkForMatches(client: Client<boolean>) {
       continue;
     }
 
-    // Skip if they have a pending pack choice
-    if (pendingPackChoices.has(loser["Discord ID"])) {
+    const totalPacksChosen = loser["Heroism"] + loser["Villainy"];
+    const totalMessagesSent = records.rows.filter((r) =>
+      r["Loser Name"] === loser.Identification && r["Bot Messaged"]
+    ).length;
+    // skip if they have unanswered messages
+    if (totalMessagesSent > totalPacksChosen) {
       continue;
     }
 
@@ -485,7 +414,9 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
     // Share citizen cards between both packs
     const citizenCards = await generatePackFromSlots(getCitizenBoosterSlots());
     const heroCards = await generatePackFromSlots(getCitizenHeroBoosterSlots());
-    const villainCards = await generatePackFromSlots(getCitizenVillainBoosterSlots());
+    const villainCards = await generatePackFromSlots(
+      getCitizenVillainBoosterSlots(),
+    );
 
     // Combine citizen cards with each pack's specific cards
     const allHeroCards = [...citizenCards, ...heroCards];
@@ -507,24 +438,19 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
     const heroPoolId = await makeSealedDeck({ sideboard: heroSideboard });
     const villainPoolId = await makeSealedDeck({ sideboard: villainSideboard });
 
-    // Store the pack choices for this user
-    pendingPackChoices.set(member.id, {
-      heroCards: allHeroCards,
-      villainCards: allVillainCards,
-      heroPoolId,
-      villainPoolId,
-      timestamp: Date.now(),
-    });
-
     const guild = member.guild;
-    const channel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as djs.TextChannel;
-    await channel.send(await buildHeroVillainChoice(
-      member,
-      allHeroCards,
-      heroPoolId,
-      allVillainCards,
-      villainPoolId,
-    ));
+    const channel = await guild.channels.fetch(
+      CONFIG.PACKGEN_CHANNEL_ID,
+    ) as djs.TextChannel;
+    await channel.send(
+      await buildHeroVillainChoice(
+        member,
+        allHeroCards,
+        heroPoolId,
+        allVillainCards,
+        villainPoolId,
+      ),
+    );
 
     console.log(
       `Sent pack choice to ${member.displayName} with pools ${heroPoolId} and ${villainPoolId}`,
@@ -545,7 +471,7 @@ async function sendHeroPack(member: djs.GuildMember): Promise<void> {
   try {
     // Generate hero pack
     const heroCards = await generatePackFromSlots(getHeroBoosterSlots());
-    
+
     // Create SealedDeck pool
     const heroPoolId = await makeSealedDeck({
       sideboard: heroCards.map((c) => ({
@@ -582,7 +508,7 @@ async function sendHeroPack(member: djs.GuildMember): Promise<void> {
           name: "🆔 SealedDeck ID",
           value: `\`${heroPoolId}\``,
           inline: true,
-        }
+        },
       ])
       .setTimestamp();
 
@@ -591,16 +517,20 @@ async function sendHeroPack(member: djs.GuildMember): Promise<void> {
     }
 
     const files = cardImageAttachment ? [cardImageAttachment] : [];
-    
+
     const guild = member.guild;
-    const channel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as djs.TextChannel;
+    const channel = await guild.channels.fetch(
+      CONFIG.PACKGEN_CHANNEL_ID,
+    ) as djs.TextChannel;
     await channel.send({
       content: `<@!${member.user.id}> received a **Hero Pack**!`,
       embeds: [embed],
       files,
     });
 
-    console.log(`Sent hero pack to ${member.displayName} with pool ${heroPoolId}`);
+    console.log(
+      `Sent hero pack to ${member.displayName} with pool ${heroPoolId}`,
+    );
   } catch (error) {
     console.error(`Failed to send hero pack to ${member.displayName}:`, error);
     throw error;
@@ -614,7 +544,7 @@ async function sendVillainPack(member: djs.GuildMember): Promise<void> {
   try {
     // Generate villain pack
     const villainCards = await generatePackFromSlots(getVillainBoosterSlots());
-    
+
     // Create SealedDeck pool
     const villainPoolId = await makeSealedDeck({
       sideboard: villainCards.map((c) => ({
@@ -651,7 +581,7 @@ async function sendVillainPack(member: djs.GuildMember): Promise<void> {
           name: "🆔 SealedDeck ID",
           value: `\`${villainPoolId}\``,
           inline: true,
-        }
+        },
       ])
       .setTimestamp();
 
@@ -660,35 +590,28 @@ async function sendVillainPack(member: djs.GuildMember): Promise<void> {
     }
 
     const files = cardImageAttachment ? [cardImageAttachment] : [];
-    
+
     const guild = member.guild;
-    const channel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as djs.TextChannel;
+    const channel = await guild.channels.fetch(
+      CONFIG.PACKGEN_CHANNEL_ID,
+    ) as djs.TextChannel;
     await channel.send({
       content: `<@!${member.user.id}> received a **Villain Pack**!`,
       embeds: [embed],
       files,
     });
 
-    console.log(`Sent villain pack to ${member.displayName} with pool ${villainPoolId}`);
+    console.log(
+      `Sent villain pack to ${member.displayName} with pool ${villainPoolId}`,
+    );
   } catch (error) {
-    console.error(`Failed to send villain pack to ${member.displayName}:`, error);
+    console.error(
+      `Failed to send villain pack to ${member.displayName}:`,
+      error,
+    );
     throw error;
   }
 }
 
-// Pack choice tracking
-interface PackChoice {
-  heroCards: ScryfallCard[];
-  villainCards: ScryfallCard[];
-  heroPoolId: string;
-  villainPoolId: string;
-  timestamp: number;
-}
-
-// Store pending pack choices by Discord ID
-// TODO find a way to not depend on memory for this; it won't persist.
-const pendingPackChoices = new Map<string, PackChoice>();
-
 // Mutex to prevent race conditions when processing pack choices
-// TODO use real locks (mutex.ts)
 const packChoiceLocks = new Set<string>();
