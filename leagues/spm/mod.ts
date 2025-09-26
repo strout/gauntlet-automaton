@@ -364,12 +364,24 @@ async function checkForMatches(client: Client<boolean>) {
 
       let blocked = false;
       try {
-        if (true /* TODO check if they are a citizen */) {
+        if (loser["Heroism"] < 4 && loser["Villainy"] < 4) {
           await sendPackChoice(member);
-        } else if (true /* TODO check if they are hero */) {
-          // await generateSuperheroPack(member);
-        } else if (true /* TODO check if they are villain */) {
-          // await generateSupervillainPack(member);
+        } else if (loser["Heroism"] >= 4) {
+          await sendHeroPack(member);
+        } else if (loser["Villainy"] >= 4) {
+          await sendVillainPack(member);
+        } else {
+          console.warn(
+            `No valid pack choice for ${loser.Identification} with Heroism ${
+              loser["Heroism"]
+            } and Villainy ${loser["Villainy"]}`,
+          );
+          const owner = await client.users.fetch(CONFIG.OWNER_ID);
+          await owner.send(
+            `No valid pack choice for ${loser.Identification} with Heroism ${
+              loser["Heroism"]
+            } and Villainy ${loser["Villainy"]}`,
+          );
         }
       } catch (e: unknown) {
         if (e instanceof djs.DiscordAPIError && e.code === 10007) {
@@ -383,10 +395,7 @@ async function checkForMatches(client: Client<boolean>) {
       messagedThisBatch.add(loser["Discord ID"]);
 
       // Build the complete cell reference based on record type
-      // TODO build based on type like eoe
-      const cellRef = record[MATCHTYPE] === "entropy"
-        ? `Entropy!J${record[ROWNUM]}`
-        : `Matches!G${record[ROWNUM]}`;
+      const cellRef =`${records.sheetName[record[MATCHTYPE]]}!R${record[ROWNUM]}C${records.headerColumns[record[MATCHTYPE]]["Bot Messaged"] + 1}`;
 
       // Mark record as messaged in the appropriate sheet
       await sheetsWrite(
