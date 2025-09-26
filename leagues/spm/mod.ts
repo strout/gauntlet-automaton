@@ -247,7 +247,10 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
   try {
     packChoiceLocks.add(userId);
 
-    const [choiceType, packPoolId] = customId.split("_").slice(2); // ["hero", "packPoolId"] or ["villain", "packPoolId"]
+    const [choiceType, packPoolId] = customId.split("_").slice(2) as [
+      "hero" | "villain",
+      string,
+    ];
 
     // find the embed matching this pool ID
     const chosenEmbed = interaction.message.embeds.find((embed) => {
