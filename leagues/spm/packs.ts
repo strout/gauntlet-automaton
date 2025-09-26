@@ -11,7 +11,6 @@ import {
 } from "discord.js";
 import { tileCardImages } from "../../scryfall.ts";
 import { Buffer } from "node:buffer";
-import { shuffle } from "../../random.ts";
 
 // Booster slot definition
 export interface BoosterSlot {
@@ -64,38 +63,66 @@ export async function generatePackFromSlots(
         cardCounts.set(card.name, (cardCounts.get(card.name) ?? 0) + 1);
       }
     }
-  })
+  });
+
+  const cardColor = (
+    card: ScryfallCard,
+  ): "W" | "U" | "R" | "G" | "B" | "C" | "M" => {
+    const colors = card.colors || card.card_faces?.[0]?.colors || [];
+    return colors.length > 1
+      ? "M"
+      : colors.length === 0
+      ? "C"
+      : colors[0] as "W" | "U" | "R" | "B" | "G";
+  };
+
+  const groupColorWeights = new Map<
+    number,
+    Map<"W" | "U" | "R" | "B" | "G" | "M" | "C", number>
+  >();
+  {
+    const seenCards = new Set<string>();
+    slots.forEach((slot, index) => {
+      if (slot.balanceGroup) {
+        let weights = groupColorWeights.get(slot.balanceGroup);
+        if (!weights) {
+          weights = new Map();
+          groupColorWeights.set(slot.balanceGroup, weights);
+        }
+        for (const card of slotContents[index]) {
+          if (!seenCards.has(card.name)) {
+            seenCards.add(card.name);
+            weights.set(
+              cardColor(card),
+              (weights.get(cardColor(card)) ?? 0) + 1,
+            );
+          }
+        }
+        // massage wubrg weights to be the same
+        const wubrg = "WUBRG";
+        const total = [...wubrg].reduce((a, c) => a + weights.get(c as any)!, 0);
+        for (const c of wubrg) {
+          weights.set(c as any, total / 5);
+        }
+      }
+    });
+  }
 
   function generateCardForSlot(
     slot: BoosterSlot,
     index: number,
   ): ScryfallCard {
-    try {
-      const allCards = slotContents[index];
+    const allCards = [...slotContents[index]];
 
-      let selectedCard: (ScryfallCard & { _weight?: number }) | undefined;
-      if (slot.balanceGroup !== undefined) {
-        const weightedCards = allCards.map(
-          (card): [ScryfallCard, number] => {
-            const colors = card.colors ?? card.card_faces?.[0]?.colors ?? [];
-            let weight = 1 / (colors.length || 1);
-
-            weight /= cardCounts.get(card.name) || 1;
-            return [card, weight];
-          },
-        );
-        selectedCard = weightedChoice(weightedCards);
-      } else {
-        selectedCard = choice(allCards);
-      }
-      if (selectedCard) {
-        return selectedCard;
-      }
-    } catch (error) {
-      console.error(`Error generating card for slot:`, slot, error);
+    if (slot.rarity === "rare/mythic") {
+      // duplicate all hero or villian cards that are not hero-villains, since we removed the others
+      allCards.push(...allCards.filter(c => {
+        const line = (c.card_faces?.[0] ?? c).type_line.toLowerCase();
+        return line.includes("hero") !== line.includes("villain");
+      }));
     }
-    // Add a fallback minimal ScryfallCard if generation fails
-    return { name: "Unknown Card" } as ScryfallCard;
+
+    return choice(allCards)!;
   }
 
   const packCards: ScryfallCard[] = new Array(slots.length);
@@ -122,7 +149,13 @@ export async function generatePackFromSlots(
   for (const groupId in groups) {
     const groupSlots = groups[groupId];
     const groupSize = groupSlots.length;
-    const colors = shuffle(["W", "U", "B", "R", "G"]).slice(0, groupSize);
+    const colors: ("W" | "U" | "R" | "G" | "B" | "M" | "C")[] = [];
+    let colorWeights = [...groupColorWeights.get(+groupId)!];
+    console.log(colorWeights);
+    for (let i = 0; i < groupSize; i++) {
+      colors.unshift(weightedChoice(colorWeights)!);
+      colorWeights = colorWeights.filter(([c]) => c !== colors[0]);
+    }
 
     let containsAllColors = false;
     while (!containsAllColors) {
@@ -130,12 +163,9 @@ export async function generatePackFromSlots(
         generateCardForSlot(slot, index)
       );
 
-      const presentColors = new Set<string>();
+      const presentColors = new Set<'W' | 'U' | 'R' | 'G' | 'B' | 'M' | 'C'>();
       for (const card of generatedCards) {
-        const cardColors = card.colors ?? card.card_faces?.[0]?.colors ?? [];
-        for (const color of cardColors) {
-          presentColors.add(color);
-        }
+        presentColors.add(cardColor(card));
       }
 
       containsAllColors = colors.every((color) => presentColors.has(color));
@@ -174,19 +204,19 @@ export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
     {
       rarity: "common",
       scryfall:
-        `(game:arena legal:standard r:c (o:"+1/+1" o:"put" -o:renew -o:exhaust) -s:spm -s:om1)`,
+        `game:arena legal:standard r:c (o:"+1/+1" o:"put" -o:renew -o:exhaust) -s:spm -s:om1`,
       balanceGroup: 1,
     },
     {
       rarity: "common",
       scryfall:
-        `((o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm -s:om1 legal:pioneer)`,
+        `(o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm -s:om1 legal:pioneer`,
       balanceGroup: 1,
     },
     {
       rarity: "common",
       scryfall:
-        `(o:"when this creature enters" game:arena r:c t:creature legal:standard -s:spm -s:om1)`,
+        `o:"when this creature enters" game:arena r:c t:creature legal:standard -s:spm -s:om1`,
       balanceGroup: 1,
     },
   ];
@@ -199,24 +229,24 @@ export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
     {
       rarity: "uncommon",
       scryfall:
-        "game:arena legal:standard r:u (t:warlock OR t:rogue OR t:pirate OR t:mercenary OR t:assassin OR o:outlaw)",
+        "game:arena legal:standard -s:spm -s:om1 r:u (t:warlock OR t:rogue OR t:pirate OR t:mercenary OR t:assassin OR o:outlaw)",
     },
     {
       rarity: "common",
       scryfall:
-        `(legal:pioneer game:arena r:c -s:spm -s:om1 -o:learn oracletag:discard-outlet)`,
+        `legal:pioneer game:arena r:c -s:spm -s:om1 -o:learn oracletag:discard-outlet`,
       balanceGroup: 1,
     },
     {
       rarity: "common",
       scryfall:
-        `(legal:pioneer game:arena r:c (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth) -s:spm -s:om1)`,
+        `legal:pioneer game:arena r:c (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth) -s:spm -s:om1`,
       balanceGroup: 1,
     },
     {
       rarity: "common",
       scryfall:
-        `(game:arena legal:standard r:c (o:"commit a crime" OR o:"target spell" OR otag:removal) -s:spm -s:om1)`,
+        `game:arena legal:standard r:c (o:"commit a crime" OR o:"target spell" OR otag:removal) -s:spm -s:om1`,
       balanceGroup: 1,
     },
   ];
@@ -233,19 +263,19 @@ export function getHeroBoosterSlots(): BoosterSlot[] {
     {
       rarity: "uncommon",
       scryfall:
-        `(game:arena -s:spm -s:OM1 ((t:legendary AND t:creature AND legal:standard) OR (oracletag:synergy-legendary AND legal:pioneer)) -ragnarok r:u)`,
+        `game:arena -s:spm -s:OM1 ((t:legendary AND t:creature AND legal:standard) OR (oracletag:synergy-legendary AND legal:pioneer)) -ragnarok r:u`,
       balanceGroup: 2,
     },
     {
       rarity: "uncommon",
       scryfall:
-        `((o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (o:explore and s:LCI) OR o:reconfigure OR (t:equipment o:token) OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena -s:spm -s:om1 r:u legal:pioneer)`,
+        `(o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (o:explore and s:LCI) OR o:reconfigure OR (t:equipment o:token) OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena -s:spm -s:om1 r:u legal:pioneer`,
       balanceGroup: 2,
     },
     {
       rarity: "uncommon",
       scryfall:
-        `(o:"when this creature enters" game:arena r:u t:creature legal:standard -s:spm -s:om1)`,
+        `o:"when this creature enters" game:arena r:u t:creature legal:standard -s:spm -s:om1`,
       balanceGroup: 2,
     },
     { rarity: "uncommon" },
@@ -253,19 +283,19 @@ export function getHeroBoosterSlots(): BoosterSlot[] {
     {
       rarity: "common",
       scryfall:
-        `(game:arena legal:standard r:c -s:spm -s:om1 (o:"+1/+1" o:"put" -o:renew -o:exhaust))`,
+        `game:arena legal:standard r:c -s:spm -s:om1 (o:"+1/+1" o:"put" -o:renew -o:exhaust)`,
       balanceGroup: 1,
     },
     {
       rarity: "common",
       scryfall:
-        `((o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm -s:om1 legal:pioneer)`,
+        `(o:"modified" OR o:backup OR o:renew OR o:exhaust OR o:connive OR (t:equipment o:token) OR (o:explore and s:LCI) OR o:reconfigure OR o:"shield counter" OR (t:aura AND o:"creature you control")) game:arena r:c -s:spm -s:om1 legal:pioneer`,
       balanceGroup: 1,
     },
     {
       rarity: "common",
       scryfall:
-        `(o:"when this creature enters" game:arena r:c t:creature legal:standard -s:om1 -s:spm)`,
+        `o:"when this creature enters" game:arena r:c t:creature legal:standard -s:om1 -s:spm`,
       balanceGroup: 1,
     },
     { rarity: "common" },
@@ -278,7 +308,7 @@ export function getVillainBoosterSlots(): BoosterSlot[] {
     {
       rarity: "rare",
       scryfall:
-        'r:r game:arena -is:reprint -s:om1 ((legal:standard (oracletag:discard-outlet OR o:"commit a crime" OR o:"target spell" OR (otag:removal))) OR (legal:pioneer(o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)))',
+        'r:r game:arena -is:reprint -s:spm -s:om1 ((legal:standard (oracletag:discard-outlet OR o:"commit a crime" OR o:"target spell" OR (otag:removal))) OR (legal:pioneer (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth)))',
     },
     {
       rarity: "uncommon",

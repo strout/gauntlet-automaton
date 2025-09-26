@@ -27,14 +27,16 @@ async function main() {
   console.error("Generating villain packs...");
   const villainPacks = await generatePacks(getVillainBoosterSlots, numPacks);
 
-  const allPacks = [...heroPacks.map(x => ({ x, type: 'hero' })), ...villainPacks.map(x => ({ x, type: 'villain' }))];
+  const allPacks = [...heroPacks.map(cs => ({ cs, type: 'hero' })), ...villainPacks.map(cs => ({ cs, type: 'villain' }))];
   const cardCounts: Record<string, { count: number; rarity: string }> = {};
 
   for (const pack of allPacks) {
-    for (const card of pack.x) {
-      const entry = cardCounts[pack.type + ":" + card.name] || { count: 0, rarity: card.rarity };
+    let i = 0;
+    for (const card of pack.cs) {
+      const key = pack.type + /* "-" + (++i) + */ ":" + card.name;
+      const entry = cardCounts[key] || { count: 0, rarity: card.rarity };
       entry.count++;
-      cardCounts[pack.type + ":" + card.name] = entry;
+      cardCounts[key] = entry;
     }
   }
 
