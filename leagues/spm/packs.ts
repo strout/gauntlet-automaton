@@ -24,83 +24,127 @@ export interface BoosterSlot {
 export async function generatePackFromSlots(
   slots: readonly BoosterSlot[],
 ): Promise<ScryfallCard[]> {
-  const packCards: ScryfallCard[] = [];
+  function getWeightedScryfallQueriesForSlot(
+    slot: BoosterSlot,
+  ): [string, number][] {
+    let query = slot.scryfall || "set:om1";
 
-  // For slots with groups, assign each member of the group a particular color
-  const availableColorsByGroup: Record<number, string[]> = {};
-
-  const balancedSlots = slots.map((slot) => {
-    let color;
-    if (slot.balanceGroup !== undefined) {
-      availableColorsByGroup[slot.balanceGroup] ??= shuffle([
-        "W",
-        "U",
-        "B",
-        "R",
-        "G",
-      ]);
-      color = availableColorsByGroup[slot.balanceGroup].pop();
+    if (slot.rarity === "rare/mythic") {
+      const rareQuery = `${query} rarity:rare`;
+      const mythicQuery = `${query} rarity:mythic`;
+      return [[rareQuery, 2], [mythicQuery, 1]];
     } else {
-      color = undefined;
-    }
-    if (color) {
-      return {
-        ...slot,
-        scryfall: slot.scryfall
-          ? `(${slot.scryfall}) AND c:${color}`
-          : `c:${color}`,
-      };
-    }
-    return slot;
-  });
-
-  for (const slot of balancedSlots) {
-    try {
-      // Build Scryfall query
-      let query = slot.scryfall || "set:om1";
-
-      // Add rarity filter if specified
       if (slot.rarity) {
-        if (slot.rarity === "rare/mythic") {
-          // Handle rare/mythic with proper weighting
-          const rareQuery = `${query} rarity:rare`;
-          const mythicQuery = `${query} rarity:mythic`;
+        query += ` rarity:${slot.rarity}`;
+      }
+      return [[query, 1]];
+    }
+  }
 
-          const [rares, mythics] = await Promise.all([
-            searchCards(rareQuery, { unique: "cards" }),
-            searchCards(mythicQuery, { unique: "cards" }),
-          ]);
+  async function getScryfallCardsForSlot(slot: BoosterSlot) {
+    const queries = getWeightedScryfallQueriesForSlot(slot);
+    return (await Promise.all(
+      queries.map((x) =>
+        searchCards(x[0]).then((y) =>
+          new Array<readonly ScryfallCard[]>(x[1]).fill(y).flat()
+        )
+      ),
+    )).flat();
+  }
 
-          // Weight rares 2:1 over mythics
-          const weightedCards = [
-            ...rares.map((card): [ScryfallCard, number] => [card, 2]),
-            ...mythics.map((card): [ScryfallCard, number] => [card, 1]),
-          ];
+  const slotContents: ScryfallCard[][] = [];
+  for (const slot of slots) {
+    slotContents.push(await getScryfallCardsForSlot(slot));
+  }
 
-          const selectedCard = weightedChoice(weightedCards);
-          if (selectedCard) {
-            packCards.push(selectedCard);
-          }
-        } else {
-          query += ` rarity:${slot.rarity}`;
-          const cards = await searchCards(query, { unique: "cards" });
-          const selectedCard = choice(cards);
-          if (selectedCard) {
-            packCards.push(selectedCard);
-          }
-        }
+  const cardCounts = new Map<string, number>();
+  slots.forEach((slot, index) => {
+    if (slot.balanceGroup) {
+      for (const card of slotContents[index]) {
+        cardCounts.set(card.name, (cardCounts.get(card.name) ?? 0) + 1);
+      }
+    }
+  })
+
+  function generateCardForSlot(
+    slot: BoosterSlot,
+    index: number,
+  ): ScryfallCard {
+    try {
+      const allCards = slotContents[index];
+
+      let selectedCard: (ScryfallCard & { _weight?: number }) | undefined;
+      if (slot.balanceGroup !== undefined) {
+        const weightedCards = allCards.map(
+          (card): [ScryfallCard, number] => {
+            const colors = card.colors ?? card.card_faces?.[0]?.colors ?? [];
+            let weight = 1 / (colors.length || 1);
+
+            weight /= cardCounts.get(card.name) || 1;
+            return [card, weight];
+          },
+        );
+        selectedCard = weightedChoice(weightedCards);
       } else {
-        // No rarity specified, search all rarities
-        const cards = await searchCards(query, { unique: "cards" });
-        const selectedCard = choice(cards);
-        if (selectedCard) {
-          packCards.push(selectedCard);
-        }
+        selectedCard = choice(allCards);
+      }
+      if (selectedCard) {
+        return selectedCard;
       }
     } catch (error) {
       console.error(`Error generating card for slot:`, slot, error);
-      // Add a fallback minimal ScryfallCard if generation fails
-      packCards.push({ name: "Unknown Card" } as ScryfallCard);
+    }
+    // Add a fallback minimal ScryfallCard if generation fails
+    return { name: "Unknown Card" } as ScryfallCard;
+  }
+
+  const packCards: ScryfallCard[] = new Array(slots.length);
+
+  // Group slots by balanceGroup
+  const groups: Record<number, { slot: BoosterSlot; index: number }[]> = {};
+  const nonGroupedSlots: { slot: BoosterSlot; index: number }[] = [];
+
+  slots.forEach((slot, index) => {
+    if (slot.balanceGroup !== undefined) {
+      groups[slot.balanceGroup] ??= [];
+      groups[slot.balanceGroup].push({ slot, index });
+    } else {
+      nonGroupedSlots.push({ slot, index });
+    }
+  });
+
+  // Generate cards for non-grouped slots
+  nonGroupedSlots.forEach(({ slot, index }) => {
+    packCards[index] = generateCardForSlot(slot, index);
+  });
+
+  // Generate cards for grouped slots
+  for (const groupId in groups) {
+    const groupSlots = groups[groupId];
+    const groupSize = groupSlots.length;
+    const colors = shuffle(["W", "U", "B", "R", "G"]).slice(0, groupSize);
+
+    let containsAllColors = false;
+    while (!containsAllColors) {
+      const generatedCards = groupSlots.map(({ slot, index }) =>
+        generateCardForSlot(slot, index)
+      );
+
+      const presentColors = new Set<string>();
+      for (const card of generatedCards) {
+        const cardColors = card.colors ?? card.card_faces?.[0]?.colors ?? [];
+        for (const color of cardColors) {
+          presentColors.add(color);
+        }
+      }
+
+      containsAllColors = colors.every((color) => presentColors.has(color));
+
+      if (containsAllColors) {
+        groupSlots.forEach(({ index }, i) => {
+          packCards[index] = generatedCards[i];
+        });
+      }
     }
   }
 
@@ -130,7 +174,7 @@ export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
     {
       rarity: "common",
       scryfall:
-        `(game:arena legal:standard r:c (o:"+1/+1" o:"put" -o:renew -o:exhaust))`,
+        `(game:arena legal:standard r:c (o:"+1/+1" o:"put" -o:renew -o:exhaust) -s:spm -s:om1)`,
       balanceGroup: 1,
     },
     {
@@ -142,7 +186,7 @@ export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
     {
       rarity: "common",
       scryfall:
-        `(o:"when this creature enters" game:arena r:c t:creature legal:standard)`,
+        `(o:"when this creature enters" game:arena r:c t:creature legal:standard -s:spm -s:om1)`,
       balanceGroup: 1,
     },
   ];
@@ -166,13 +210,13 @@ export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
     {
       rarity: "common",
       scryfall:
-        `(legal:pioneer game:arena r:c (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth))`,
+        `(legal:pioneer game:arena r:c (o:disturb OR o:flashback OR o:madness OR o:escape OR o:jump-start OR o:unearth) -s:spm -s:om1)`,
       balanceGroup: 1,
     },
     {
       rarity: "common",
       scryfall:
-        `(game:arena legal:standard r:c (o:"commit a crime" OR o:"target spell" OR otag:removal))`,
+        `(game:arena legal:standard r:c (o:"commit a crime" OR o:"target spell" OR otag:removal) -s:spm -s:om1)`,
       balanceGroup: 1,
     },
   ];
@@ -209,7 +253,7 @@ export function getHeroBoosterSlots(): BoosterSlot[] {
     {
       rarity: "common",
       scryfall:
-        `(game:arena legal:standard r:c -s:OM1 (o:"+1/+1" o:"put" -o:renew -o:exhaust))`,
+        `(game:arena legal:standard r:c -s:spm -s:om1 (o:"+1/+1" o:"put" -o:renew -o:exhaust))`,
       balanceGroup: 1,
     },
     {
@@ -288,21 +332,37 @@ export async function buildHeroVillainChoice(
 ): Promise<MessageCreateOptions> {
   const heroEmbed = new EmbedBuilder()
     .setTitle("🦸 Hero Pack")
-    .setDescription(
-      `[View Pack](https://sealeddeck.tech/${heroPoolId})\n\n${
-        formatPackCards(heroPack)
-      }`,
-    )
-    .setColor(0x00BFFF);
+    .setDescription(formatPackCards(heroPack))
+    .setColor(0x00BFFF)
+    .addFields(
+      {
+        name: "🔗 SealedDeck Link",
+        value: `[View Pack](https://sealeddeck.tech/${heroPoolId})`,
+        inline: true,
+      },
+      {
+        name: "🆔 SealedDeck ID",
+        value: `\`${heroPoolId}\``,
+        inline: true,
+      },
+    );
 
   const villainEmbed = new EmbedBuilder()
     .setTitle("🦹 Villain Pack")
-    .setDescription(
-      `[View Pack](https://sealeddeck.tech/${villainPoolId})\n\n${
-        formatPackCards(villainPack)
-      }`,
-    )
-    .setColor(0x8B0000);
+    .setDescription(formatPackCards(villainPack))
+    .setColor(0x8B0000)
+    .addFields(
+      {
+        name: "🔗 SealedDeck Link",
+        value: `[View Pack](https://sealeddeck.tech/${villainPoolId})`,
+        inline: true,
+      },
+      {
+        name: "🆔 SealedDeck ID",
+        value: `\`${villainPoolId}\``,
+        inline: true,
+      },
+    );
 
   // Attempt to build tiled images for each pack. If tiling fails, omit the image.
   const files: AttachmentBuilder[] = [];

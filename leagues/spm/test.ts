@@ -14,8 +14,8 @@ client.on("interactionCreate", async interaction => {
 client.on("ready", async client => {
     const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
     const owner = await guild.members.fetch(CONFIG.OWNER_ID);
-    await sendPackChoice(owner);
-    await sendHeroPack(owner);
-    await sendVillainPack(owner);
+    await sendPackChoice(owner, CONFIG.BOT_BUNKER_CHANNEL_ID);
+    await sendHeroPack(owner, CONFIG.BOT_BUNKER_CHANNEL_ID);
+    await sendVillainPack(owner, CONFIG.BOT_BUNKER_CHANNEL_ID);
 });
 await client.login(DISCORD_TOKEN);

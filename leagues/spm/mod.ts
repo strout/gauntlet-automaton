@@ -429,7 +429,10 @@ async function checkForMatches(client: Client<boolean>) {
   }
 }
 
-export async function sendPackChoice(member: djs.GuildMember): Promise<void> {
+export async function sendPackChoice(
+  member: djs.GuildMember,
+  channelId = CONFIG.PACKGEN_CHANNEL_ID,
+): Promise<void> {
   console.log(`Sending pack choice to ${member.displayName}`);
 
   try {
@@ -462,9 +465,7 @@ export async function sendPackChoice(member: djs.GuildMember): Promise<void> {
     const villainPoolId = await makeSealedDeck({ sideboard: villainSideboard });
 
     const guild = member.guild;
-    const channel = await guild.channels.fetch(
-      CONFIG.PACKGEN_CHANNEL_ID,
-    ) as djs.TextChannel;
+    const channel = await guild.channels.fetch(channelId) as djs.TextChannel;
     await channel.send(
       await buildHeroVillainChoice(
         member,
@@ -487,17 +488,24 @@ export async function sendPackChoice(member: djs.GuildMember): Promise<void> {
   }
 }
 
-export function sendHeroPack(member: djs.GuildMember): Promise<void> {
-  return sendPack(member, "hero");
+export function sendHeroPack(
+  member: djs.GuildMember,
+  channelId = CONFIG.PACKGEN_CHANNEL_ID,
+): Promise<void> {
+  return sendPack(member, "hero", channelId);
 }
 
-export function sendVillainPack(member: djs.GuildMember): Promise<void> {
-  return sendPack(member, "villain");
+export function sendVillainPack(
+  member: djs.GuildMember,
+  channelId = CONFIG.PACKGEN_CHANNEL_ID,
+): Promise<void> {
+  return sendPack(member, "villain", channelId);
 }
 
 async function sendPack(
   member: djs.GuildMember,
   type: "hero" | "villain",
+  channelId = CONFIG.PACKGEN_CHANNEL_ID,
 ): Promise<void> {
   console.log(`Sending ${type} pack to ${member.displayName}`);
 
@@ -564,9 +572,7 @@ async function sendPack(
     const files = cardImageAttachment ? [cardImageAttachment] : [];
 
     const guild = member.guild;
-    const channel = await guild.channels.fetch(
-      CONFIG.PACKGEN_CHANNEL_ID,
-    ) as djs.TextChannel;
+    const channel = await guild.channels.fetch(channelId) as djs.TextChannel;
     await channel.send({
       content: `<@!${member.user.id}> received a **${
         isHero ? "Hero" : "Villain"
@@ -597,6 +603,7 @@ async function recordPack(
   type: "hero" | "villain",
   packPoolId: string,
 ) {
+  using _ = await lockPlayer(id);
   const [players, poolChanges] = await Promise.all([
     getPlayers(),
     getPoolChanges(),
@@ -629,4 +636,15 @@ async function recordPack(
     type,
     fullPool,
   );
+}
+
+const playerLocks = new Map<string, () => Promise<Disposable>>();
+
+function lockPlayer(discordId: string) {
+  let lock = playerLocks.get(discordId);
+  if (!lock) {
+    lock = mutex();
+    playerLocks.set(discordId, lock);
+  }
+  return lock();
 }
