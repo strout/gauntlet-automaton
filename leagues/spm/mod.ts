@@ -31,6 +31,7 @@ import { tileCardImages } from "../../scryfall.ts";
 import { Handler } from "../../dispatch.ts";
 import { Buffer } from "node:buffer";
 import {
+  formatPackCards,
   generatePackFromSlots,
   getCitizenBoosterSlots,
   getCitizenHeroBoosterSlots,
@@ -536,6 +537,7 @@ async function sendPack(
           isHero ? "🦸 Hero Pack" : "🦹 Villain Pack"
         } - ${member.displayName}`,
       )
+      .setDescription(formatPackCards(cards))
       .setColor(isHero ? 0x00BFFF : 0x8B0000)
       .setThumbnail(member.displayAvatarURL({ size: 256 }))
       .addFields([

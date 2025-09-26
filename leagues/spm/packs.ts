@@ -29,16 +29,27 @@ export async function generatePackFromSlots(
   // For slots with groups, assign each member of the group a particular color
   const availableColorsByGroup: Record<number, string[]> = {};
 
-  const balancedSlots = slots.map(slot => {
+  const balancedSlots = slots.map((slot) => {
     let color;
     if (slot.balanceGroup !== undefined) {
-      availableColorsByGroup[slot.balanceGroup] ??= shuffle(["W", "U", "B", "R", "G"]);
+      availableColorsByGroup[slot.balanceGroup] ??= shuffle([
+        "W",
+        "U",
+        "B",
+        "R",
+        "G",
+      ]);
       color = availableColorsByGroup[slot.balanceGroup].pop();
     } else {
       color = undefined;
     }
     if (color) {
-      return { ...slot, scryfall: slot.scryfall ? `(${slot.scryfall}) AND c:${color}` : `c:${color}` };
+      return {
+        ...slot,
+        scryfall: slot.scryfall
+          ? `(${slot.scryfall}) AND c:${color}`
+          : `c:${color}`,
+      };
     }
     return slot;
   });
@@ -169,7 +180,7 @@ export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
 
 export function getHeroBoosterSlots(): BoosterSlot[] {
   return [
-    { rarity: "rare/mythic", scryfall: "s:spm r>u -(-t:hero t:villain)" },
+    { rarity: "rare/mythic", scryfall: "s:om1 r>u -(-t:hero t:villain)" },
     {
       rarity: "rare",
       scryfall:
@@ -219,7 +230,7 @@ export function getHeroBoosterSlots(): BoosterSlot[] {
 }
 export function getVillainBoosterSlots(): BoosterSlot[] {
   return [
-    { rarity: "rare/mythic", scryfall: "s:spm r>u -(t:hero -t:villain)" },
+    { rarity: "rare/mythic", scryfall: "s:om1 r>u -(t:hero -t:villain)" },
     {
       rarity: "rare",
       scryfall:
@@ -275,14 +286,6 @@ export async function buildHeroVillainChoice(
   villainPack: ScryfallCard[],
   villainPoolId: string,
 ): Promise<MessageCreateOptions> {
-  // helper to format pack text (first 6 entries)
-  const formatPackCards = (cards: ScryfallCard[]) =>
-    [
-      "```",
-      ...cards.map((c) => `${c.name}`),
-      "```",
-    ].join("\n");
-
   const heroEmbed = new EmbedBuilder()
     .setTitle("🦸 Hero Pack")
     .setDescription(
@@ -359,4 +362,12 @@ export async function buildHeroVillainChoice(
   }
 
   return result;
+}
+
+export function formatPackCards(cards: ScryfallCard[]) {
+  return [
+    "```",
+    ...cards.map((c) => `${c.name}`),
+    "```",
+  ].join("\n");
 }
