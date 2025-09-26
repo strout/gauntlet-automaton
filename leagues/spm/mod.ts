@@ -12,15 +12,21 @@
 import { CONFIG } from "../../config.ts";
 import * as djs from "discord.js";
 import {
+  addPoolChange,
   getAllMatches,
   getPlayers,
+  getPoolChanges,
   MATCHTYPE,
   ROWNUM,
 } from "../../standings.ts";
 import { sheets, sheetsWrite } from "../../sheets.ts";
 import { delay } from "@std/async/delay";
 import { Client } from "discord.js";
-import { makeSealedDeck, SealedDeckEntry } from "../../sealeddeck.ts";
+import {
+  fetchSealedDeck,
+  makeSealedDeck,
+  SealedDeckEntry,
+} from "../../sealeddeck.ts";
 import { tileCardImages } from "../../scryfall.ts";
 import { Handler } from "../../dispatch.ts";
 import { Buffer } from "node:buffer";
@@ -281,6 +287,8 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
         `<@!${interaction.user.id}> chose the **${titleCaseChoiceType} Pack**!`,
       embeds: [newEmbed],
     });
+
+    await recordPack(interaction.user.id, choiceType, packPoolId);
   } catch (error) {
     console.error("Error handling pack choice interaction:", error);
     try {
@@ -395,7 +403,9 @@ async function checkForMatches(client: Client<boolean>) {
       messagedThisBatch.add(loser["Discord ID"]);
 
       // Build the complete cell reference based on record type
-      const cellRef =`${records.sheetName[record[MATCHTYPE]]}!R${record[ROWNUM]}C${records.headerColumns[record[MATCHTYPE]]["Bot Messaged"] + 1}`;
+      const cellRef = `${records.sheetName[record[MATCHTYPE]]}!R${
+        record[ROWNUM]
+      }C${records.headerColumns[record[MATCHTYPE]]["Bot Messaged"] + 1}`;
 
       // Mark record as messaged in the appropriate sheet
       await sheetsWrite(
@@ -563,6 +573,8 @@ async function sendPack(
     console.log(
       `Sent ${type} pack to ${member.displayName} with pool ${poolId}`,
     );
+
+    await recordPack(member.user.id, type, poolId);
   } catch (error) {
     console.error(
       `Failed to send ${type} pack to ${member.displayName}:`,
@@ -574,3 +586,42 @@ async function sendPack(
 
 // Mutex to prevent race conditions when processing pack choices
 const packChoiceLocks = new Set<string>();
+
+async function recordPack(
+  id: string,
+  type: "hero" | "villain",
+  packPoolId: string,
+) {
+  const [players, poolChanges] = await Promise.all([
+    getPlayers(),
+    getPoolChanges(),
+  ]);
+  const player = players.rows.find((p) => p["Discord ID"] === id);
+  if (!player) {
+    console.warn(`Could not find player with Discord ID ${id} to record pack`);
+    return;
+  }
+  const lastChange = poolChanges.rows.findLast((change) =>
+    change["Name"] === player.Identification
+  );
+  if (!lastChange) {
+    console.warn(
+      `Could not find last pool change for ${player.Identification}`,
+    );
+    return;
+  }
+
+  const packContents = await fetchSealedDeck(packPoolId);
+  // build full pool
+  const fullPool = await makeSealedDeck(
+    packContents,
+    lastChange["Full Pool"] ?? undefined,
+  );
+  await addPoolChange(
+    player.Identification,
+    "add pack",
+    packPoolId,
+    type,
+    fullPool,
+  );
+}
