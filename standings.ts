@@ -340,7 +340,7 @@ export async function getMatches<S extends z.ZodRawShape>(
   const table = await readTable("Matches!A:" + LAST_COLUMN);
   const parsed = parseTable({
     Timestamp: z.number(),
-    "Winner Name": z.string(),
+    "Your Name": z.string(),
     "Loser Name": z.string(),
     Result: z.string(),
     Notes: z.string().optional(),

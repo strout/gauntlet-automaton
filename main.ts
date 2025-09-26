@@ -78,13 +78,13 @@ export const getRegistrationData = async () => {
   );
   const registrations = parseTable({
     "Full Name": z.string(),
-    'Arena Player ID# (e.g.: "Wins4Dayz#89045") ': z.string(),
+    'Arena Player ID# (e.g.: "Wins4Dayz#89045")': z.string(),
     "Discord ID": z.string().optional(),
   }, table);
   return {
     ...registrations,
     rows: registrations.rows.filter((r) =>
-      r['Arena Player ID# (e.g.: "Wins4Dayz#89045") '].includes("#")
+      r['Arena Player ID# (e.g.: "Wins4Dayz#89045")'].includes("#")
     ),
   };
 };
@@ -295,7 +295,7 @@ const assignLeagueRole = async (
   const matches = sheetData.rows.map((s) => {
     const matcher = {
       name: s["Full Name"],
-      arenaId: s['Arena Player ID# (e.g.: "Wins4Dayz#89045") '],
+      arenaId: s['Arena Player ID# (e.g.: "Wins4Dayz#89045")'],
       discordId: s["Discord ID"],
     };
     const m = bestMatch_djs(matcher, members);

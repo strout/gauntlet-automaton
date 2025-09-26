@@ -2,8 +2,8 @@
 
 /* TODO
   * [x] starting pool packs
-  * [ ] distribution of packs (DMs)
-  * [ ] pack selection & generation for civilians
+  * [x] distribution of packs (DMs)
+  * [x] pack selection & generation for civilians
   * [ ] pack selection & generation for heroes
   * [ ] pack selection & generation for villains
   * [ ] hero/villain tracking
@@ -27,7 +27,7 @@ import { choice, weightedChoice } from "../../random.ts";
 import { Handler } from "../../dispatch.ts";
 import { addPoolChange } from "../../standings.ts";
 import { Buffer } from "node:buffer";
-import { generatePackFromSlots, getCitizenHeroBoosterSlots, getCitizenVillainBoosterSlots } from "./packs.ts";
+import { generatePackFromSlots, getCitizenBoosterSlots, getCitizenHeroBoosterSlots, getCitizenVillainBoosterSlots, getHeroBoosterSlots, getVillainBoosterSlots } from "./packs.ts";
 import { buildHeroVillainChoice } from "./packs.ts";
 import { mutex } from "../../mutex.ts";
 
@@ -84,6 +84,8 @@ export async function setup(): Promise<{
   await Promise.resolve();
   const messageHandlers: Handler<djs.Message>[] = [
     packChoiceHandler,
+    heroPackHandler,
+    villainPackHandler,
     poolHandler,
   ];
   return {
@@ -134,6 +136,74 @@ const packChoiceHandler: Handler<djs.Message> = async (message, handle) => {
   }
 };
 
+// Hero pack handler for testing
+const heroPackHandler: Handler<djs.Message> = async (message, handle) => {
+  if (!message.content.startsWith("!heropack ") || !message.inGuild()) return;
+
+  // Extract mentioned user or use message author
+  const mentionedUser = message.mentions.users.first();
+  const targetUser = mentionedUser || message.author;
+
+  // Check if user has permission (league committee, webhook users, or mentioned themselves)
+  const isLeagueCommittee = message.member?.roles.cache.has(
+    CONFIG.LEAGUE_COMMITTEE_ROLE_ID,
+  );
+  const isWebhookUser = message.author.id === CONFIG.PACKGEN_USER_ID;
+  const isSelfTarget = targetUser.id === message.author.id;
+
+  if (!isLeagueCommittee && !isWebhookUser && !isSelfTarget) {
+    await message.reply("You can only generate hero packs for yourself!");
+    return;
+  }
+
+  handle.claim();
+
+  try {
+    const guild = await message.client.guilds.fetch(CONFIG.GUILD_ID);
+    const member = await guild.members.fetch(targetUser.id);
+
+    await message.reply(`Generating hero pack for ${member.displayName}...`);
+    await sendHeroPack(member);
+  } catch (error) {
+    console.error("Error in hero pack handler:", error);
+    await message.reply("Failed to generate hero pack. Please try again.");
+  }
+};
+
+// Villain pack handler for testing
+const villainPackHandler: Handler<djs.Message> = async (message, handle) => {
+  if (!message.content.startsWith("!villainpack ") || !message.inGuild()) return;
+
+  // Extract mentioned user or use message author
+  const mentionedUser = message.mentions.users.first();
+  const targetUser = mentionedUser || message.author;
+
+  // Check if user has permission (league committee, webhook users, or mentioned themselves)
+  const isLeagueCommittee = message.member?.roles.cache.has(
+    CONFIG.LEAGUE_COMMITTEE_ROLE_ID,
+  );
+  const isWebhookUser = message.author.id === CONFIG.PACKGEN_USER_ID;
+  const isSelfTarget = targetUser.id === message.author.id;
+
+  if (!isLeagueCommittee && !isWebhookUser && !isSelfTarget) {
+    await message.reply("You can only generate villain packs for yourself!");
+    return;
+  }
+
+  handle.claim();
+
+  try {
+    const guild = await message.client.guilds.fetch(CONFIG.GUILD_ID);
+    const member = await guild.members.fetch(targetUser.id);
+
+    await message.reply(`Generating villain pack for ${member.displayName}...`);
+    await sendVillainPack(member);
+  } catch (error) {
+    console.error("Error in villain pack handler:", error);
+    await message.reply("Failed to generate villain pack. Please try again.");
+  }
+};
+
 // New interaction handler for pack choice buttons
 const packChoiceInteractionHandler: Handler<djs.Interaction> = async (interaction, handle) => {
   if (!interaction.isButton()) return;
@@ -174,15 +244,59 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (interactio
         return;
       }
 
-      await interaction.reply({
-        content: `You chose the **Hero Pack**! Here's your pack:`,
-        embeds: [{
-          title: "🦸 Hero Pack",
-          description: `[View Pack](https://sealeddeck.tech/${packChoice.heroPoolId})\n${formatPackCards(packChoice.heroCards)}`,
-          color: 0x00BFFF,
-        }],
-        ephemeral: true,
+      // Update the original message to remove buttons
+      await interaction.update({
+        content: `<@!${interaction.user.id}> chose the **Hero Pack**!`,
+        embeds: interaction.message.embeds,
+        components: [], // Remove all buttons
       });
+
+      // Send public message to channel with card images
+      const channel = interaction.channel;
+      if (channel && channel.isTextBased() && 'send' in channel) {
+        // Generate card image
+        let cardImageAttachment: djs.AttachmentBuilder | undefined;
+        try {
+          const cardImageBlob = await tileCardImages(packChoice.heroCards, "normal");
+          const cardImageBuffer = Buffer.from(await cardImageBlob.arrayBuffer());
+          cardImageAttachment = new djs.AttachmentBuilder(cardImageBuffer, {
+            name: `hero_pack_${packChoice.heroPoolId}.png`,
+            description: "Hero pack cards",
+          });
+        } catch (error) {
+          console.error("Failed to generate hero pack image:", error);
+        }
+
+        const embed = new djs.EmbedBuilder()
+          .setTitle(`🦸 Hero Pack - ${interaction.user.displayName}`)
+          .setColor(0x00BFFF)
+          .setThumbnail(interaction.user.displayAvatarURL({ size: 256 }))
+          .addFields([
+            {
+              name: "🔗 SealedDeck Link",
+              value: `[View Pack](https://sealeddeck.tech/${packChoice.heroPoolId})`,
+              inline: false,
+            },
+            {
+              name: "🆔 SealedDeck ID",
+              value: `\`${packChoice.heroPoolId}\``,
+              inline: true,
+            }
+          ])
+          .setTimestamp();
+
+        if (cardImageAttachment) {
+          embed.setImage(`attachment://${cardImageAttachment.name}`);
+        }
+
+        const files = cardImageAttachment ? [cardImageAttachment] : [];
+        
+        await channel.send({
+          content: `<@!${interaction.user.id}> chose the **Hero Pack**!`,
+          embeds: [embed],
+          files,
+        });
+      }
 
       pendingPackChoices.delete(userId);
       console.log(`${interaction.user.username} chose Hero pack: ${packChoice.heroPoolId}`);
@@ -196,15 +310,59 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (interactio
         return;
       }
 
-      await interaction.reply({
-        content: `You chose the **Villain Pack**! Here's your pack:`,
-        embeds: [{
-          title: "🦹 Villain Pack",
-          description: `[View Pack](https://sealeddeck.tech/${packChoice.villainPoolId})\n${formatPackCards(packChoice.villainCards)}`,
-          color: 0x8B0000,
-        }],
-        ephemeral: true,
+      // Update the original message to remove buttons
+      await interaction.update({
+        content: `<@!${interaction.user.id}> chose the **Villain Pack**!`,
+        embeds: interaction.message.embeds,
+        components: [], // Remove all buttons
       });
+
+      // Send public message to channel with card images
+      const channel = interaction.channel;
+      if (channel && channel.isTextBased() && 'send' in channel) {
+        // Generate card image
+        let cardImageAttachment: djs.AttachmentBuilder | undefined;
+        try {
+          const cardImageBlob = await tileCardImages(packChoice.villainCards, "normal");
+          const cardImageBuffer = Buffer.from(await cardImageBlob.arrayBuffer());
+          cardImageAttachment = new djs.AttachmentBuilder(cardImageBuffer, {
+            name: `villain_pack_${packChoice.villainPoolId}.png`,
+            description: "Villain pack cards",
+          });
+        } catch (error) {
+          console.error("Failed to generate villain pack image:", error);
+        }
+
+        const embed = new djs.EmbedBuilder()
+          .setTitle(`🦹 Villain Pack - ${interaction.user.displayName}`)
+          .setColor(0x8B0000)
+          .setThumbnail(interaction.user.displayAvatarURL({ size: 256 }))
+          .addFields([
+            {
+              name: "🔗 SealedDeck Link",
+              value: `[View Pack](https://sealeddeck.tech/${packChoice.villainPoolId})`,
+              inline: false,
+            },
+            {
+              name: "🆔 SealedDeck ID",
+              value: `\`${packChoice.villainPoolId}\``,
+              inline: true,
+            }
+          ])
+          .setTimestamp();
+
+        if (cardImageAttachment) {
+          embed.setImage(`attachment://${cardImageAttachment.name}`);
+        }
+
+        const files = cardImageAttachment ? [cardImageAttachment] : [];
+        
+        await channel.send({
+          content: `<@!${interaction.user.id}> chose the **Villain Pack**!`,
+          embeds: [embed],
+          files,
+        });
+      }
 
       pendingPackChoices.delete(userId);
       console.log(`${interaction.user.username} chose Villain pack: ${packChoice.villainPoolId}`);
@@ -325,17 +483,22 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
 
   try {
     // Generate both pack options
-    // TODO share cards for non-differentiated slots
+    // Share citizen cards between both packs
+    const citizenCards = await generatePackFromSlots(getCitizenBoosterSlots());
     const heroCards = await generatePackFromSlots(getCitizenHeroBoosterSlots());
     const villainCards = await generatePackFromSlots(getCitizenVillainBoosterSlots());
 
+    // Combine citizen cards with each pack's specific cards
+    const allHeroCards = [...citizenCards, ...heroCards];
+    const allVillainCards = [...citizenCards, ...villainCards];
+
     // Convert ScryfallCard[] -> SealedDeckEntry[] for sealed-deck creation
-    const heroSideboard: SealedDeckEntry[] = heroCards.map((c) => ({
+    const heroSideboard: SealedDeckEntry[] = allHeroCards.map((c) => ({
       name: c.name,
       count: 1,
       set: (c.set ?? undefined),
     }));
-    const villainSideboard: SealedDeckEntry[] = villainCards.map((c) => ({
+    const villainSideboard: SealedDeckEntry[] = allVillainCards.map((c) => ({
       name: c.name,
       count: 1,
       set: (c.set ?? undefined),
@@ -347,8 +510,8 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
 
     // Store the pack choices for this user
     pendingPackChoices.set(member.id, {
-      heroCards,
-      villainCards,
+      heroCards: allHeroCards,
+      villainCards: allVillainCards,
       heroPoolId,
       villainPoolId,
       timestamp: Date.now(),
@@ -358,9 +521,9 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
     const channel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as djs.TextChannel;
     await channel.send(await buildHeroVillainChoice(
       member,
-      heroCards,
+      allHeroCards,
       heroPoolId,
-      villainCards,
+      allVillainCards,
       villainPoolId,
     ));
 
@@ -372,6 +535,144 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
       `Failed to send pack choice to ${member.displayName}:`,
       error,
     );
+    throw error;
+  }
+}
+
+// Send a hero pack to a member
+async function sendHeroPack(member: djs.GuildMember): Promise<void> {
+  console.log(`Sending hero pack to ${member.displayName}`);
+
+  try {
+    // Generate hero pack
+    const heroCards = await generatePackFromSlots(getHeroBoosterSlots());
+    
+    // Create SealedDeck pool
+    const heroPoolId = await makeSealedDeck({
+      sideboard: heroCards.map((c) => ({
+        name: c.name,
+        count: 1,
+        set: c.set ?? undefined,
+      })),
+    });
+
+    // Generate card image
+    let cardImageAttachment: djs.AttachmentBuilder | undefined;
+    try {
+      const cardImageBlob = await tileCardImages(heroCards, "normal");
+      const cardImageBuffer = Buffer.from(await cardImageBlob.arrayBuffer());
+      cardImageAttachment = new djs.AttachmentBuilder(cardImageBuffer, {
+        name: `hero_pack_${heroPoolId}.png`,
+        description: "Hero pack cards",
+      });
+    } catch (error) {
+      console.error("Failed to generate hero pack image:", error);
+    }
+
+    const embed = new djs.EmbedBuilder()
+      .setTitle(`🦸 Hero Pack - ${member.displayName}`)
+      .setColor(0x00BFFF)
+      .setThumbnail(member.displayAvatarURL({ size: 256 }))
+      .addFields([
+        {
+          name: "🔗 SealedDeck Link",
+          value: `[View Pack](https://sealeddeck.tech/${heroPoolId})`,
+          inline: false,
+        },
+        {
+          name: "🆔 SealedDeck ID",
+          value: `\`${heroPoolId}\``,
+          inline: true,
+        }
+      ])
+      .setTimestamp();
+
+    if (cardImageAttachment) {
+      embed.setImage(`attachment://${cardImageAttachment.name}`);
+    }
+
+    const files = cardImageAttachment ? [cardImageAttachment] : [];
+    
+    const guild = member.guild;
+    const channel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as djs.TextChannel;
+    await channel.send({
+      content: `<@!${member.user.id}> received a **Hero Pack**!`,
+      embeds: [embed],
+      files,
+    });
+
+    console.log(`Sent hero pack to ${member.displayName} with pool ${heroPoolId}`);
+  } catch (error) {
+    console.error(`Failed to send hero pack to ${member.displayName}:`, error);
+    throw error;
+  }
+}
+
+// Send a villain pack to a member
+async function sendVillainPack(member: djs.GuildMember): Promise<void> {
+  console.log(`Sending villain pack to ${member.displayName}`);
+
+  try {
+    // Generate villain pack
+    const villainCards = await generatePackFromSlots(getVillainBoosterSlots());
+    
+    // Create SealedDeck pool
+    const villainPoolId = await makeSealedDeck({
+      sideboard: villainCards.map((c) => ({
+        name: c.name,
+        count: 1,
+        set: c.set ?? undefined,
+      })),
+    });
+
+    // Generate card image
+    let cardImageAttachment: djs.AttachmentBuilder | undefined;
+    try {
+      const cardImageBlob = await tileCardImages(villainCards, "normal");
+      const cardImageBuffer = Buffer.from(await cardImageBlob.arrayBuffer());
+      cardImageAttachment = new djs.AttachmentBuilder(cardImageBuffer, {
+        name: `villain_pack_${villainPoolId}.png`,
+        description: "Villain pack cards",
+      });
+    } catch (error) {
+      console.error("Failed to generate villain pack image:", error);
+    }
+
+    const embed = new djs.EmbedBuilder()
+      .setTitle(`🦹 Villain Pack - ${member.displayName}`)
+      .setColor(0x8B0000)
+      .setThumbnail(member.displayAvatarURL({ size: 256 }))
+      .addFields([
+        {
+          name: "🔗 SealedDeck Link",
+          value: `[View Pack](https://sealeddeck.tech/${villainPoolId})`,
+          inline: false,
+        },
+        {
+          name: "🆔 SealedDeck ID",
+          value: `\`${villainPoolId}\``,
+          inline: true,
+        }
+      ])
+      .setTimestamp();
+
+    if (cardImageAttachment) {
+      embed.setImage(`attachment://${cardImageAttachment.name}`);
+    }
+
+    const files = cardImageAttachment ? [cardImageAttachment] : [];
+    
+    const guild = member.guild;
+    const channel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as djs.TextChannel;
+    await channel.send({
+      content: `<@!${member.user.id}> received a **Villain Pack**!`,
+      embeds: [embed],
+      files,
+    });
+
+    console.log(`Sent villain pack to ${member.displayName} with pool ${villainPoolId}`);
+  } catch (error) {
+    console.error(`Failed to send villain pack to ${member.displayName}:`, error);
     throw error;
   }
 }
