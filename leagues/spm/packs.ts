@@ -17,15 +17,33 @@ import { shuffle } from "../../random.ts";
 export interface BoosterSlot {
   rarity?: "rare/mythic" | "rare" | "uncommon" | "common";
   scryfall?: string;
+  balanceGroup?: number; // If provided, ensure diversity of colors within the group
 }
 
 // Generate pack cards from booster slots
 export async function generatePackFromSlots(
-  slots: BoosterSlot[],
+  slots: readonly BoosterSlot[],
 ): Promise<ScryfallCard[]> {
   const packCards: ScryfallCard[] = [];
 
-  for (const slot of slots) {
+  // For slots with groups, assign each member of the group a particular color
+  const availableColorsByGroup: Record<number, string[]> = {};
+
+  const balancedSlots = slots.map(slot => {
+    let color;
+    if (slot.balanceGroup !== undefined) {
+      availableColorsByGroup[slot.balanceGroup] ??= shuffle(["W", "U", "B", "R", "G"]);
+      color = availableColorsByGroup[slot.balanceGroup].pop();
+    } else {
+      color = undefined;
+    }
+    if (color) {
+      return { ...slot, scryfall: slot.scryfall ? `(${slot.scryfall}) AND c:${color}` : `c:${color}` };
+    }
+    return slot;
+  });
+
+  for (const slot of balancedSlots) {
     try {
       // Build Scryfall query
       let query = slot.scryfall || "set:om1";
