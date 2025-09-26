@@ -11,6 +11,7 @@ import {
 } from "discord.js";
 import { tileCardImages } from "../../scryfall.ts";
 import { Buffer } from "node:buffer";
+import { shuffle } from "../../random.ts";
 
 // Booster slot definition
 export interface BoosterSlot {
@@ -92,7 +93,7 @@ export function getCitizenBoosterSlots(): BoosterSlot[] {
 export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
   // Pre-select 3 random colors and assign one to each common slot
   const allColors = ["W", "U", "B", "R", "G"];
-  const selectedColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
+  const selectedColors = shuffle(allColors).slice(0, 3);
   console.log(`Hero pack colors: ${selectedColors.join(", ")}`);
 
   return [
@@ -130,7 +131,7 @@ export function getCitizenHeroBoosterSlots(): BoosterSlot[] {
 export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
   // Pre-select 3 random colors and assign one to each common slot
   const allColors = ["W", "U", "B", "R", "G"];
-  const selectedColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
+  const selectedColors = shuffle(allColors).slice(0, 3);
 
   return [
     { rarity: "rare/mythic", scryfall: "s:om1 r>u -(t:hero -t:villain)" },
@@ -166,10 +167,10 @@ export function getCitizenVillainBoosterSlots(): BoosterSlot[] {
 export function getHeroBoosterSlots(): BoosterSlot[] {
   // Pre-select 3 random colors for uncommons with Scryfall queries
   const allColors = ["W", "U", "B", "R", "G"];
-  const uncommonColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
+  const uncommonColors = shuffle(allColors).slice(0, 3);
 
   // Pre-select 3 random colors for commons with Scryfall queries
-  const commonColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
+  const commonColors = shuffle(allColors).slice(0, 3);
 
   return [
     { rarity: "rare/mythic", scryfall: "s:spm r>u -(-t:hero t:villain)" },
@@ -229,10 +230,10 @@ export function getHeroBoosterSlots(): BoosterSlot[] {
 export function getVillainBoosterSlots(): BoosterSlot[] {
   // Pre-select 3 random colors for uncommons with Scryfall queries
   const allColors = ["W", "U", "B", "R", "G"];
-  const uncommonColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
+  const uncommonColors = shuffle(allColors).slice(0, 3);
 
   // Pre-select 3 random colors for commons with Scryfall queries
-  const commonColors = allColors.sort(() => Math.random() - 0.5).slice(0, 3);
+  const commonColors = shuffle(allColors).slice(0, 3);
 
   return [
     { rarity: "rare/mythic", scryfall: "s:spm r>u -(t:hero -t:villain)" },
