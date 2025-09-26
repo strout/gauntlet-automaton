@@ -235,6 +235,15 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
 
   const userId = interaction.user.id;
 
+  // ensure the right person presses it
+  if (!interaction.message.mentions.has(userId)) {
+    await interaction.reply({
+      content: "Sorry, only the mentioned user can choose a pack.",
+      ephemeral: true,
+    });
+    return;
+  }
+
   // Prevent concurrent processing for a single user
   if (packChoiceLocks.has(userId)) {
     await interaction.reply({
@@ -271,8 +280,7 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
     // Update the original message to remove buttons
     await interaction.update({
       content:
-        `<@!${interaction.user.id}> chose the **${titleCaseChoiceType} Pack**!`,
-      embeds: interaction.message.embeds,
+        `You chose the **${titleCaseChoiceType} Pack**!`,
       components: [], // Remove all buttons
     });
 
@@ -286,9 +294,11 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
       .addFields(chosenEmbed.fields)
       .setTimestamp();
 
-    await interaction.followUp({
+    const guild = await interaction.client.guilds.fetch(CONFIG.GUILD_ID);
+    const channel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as djs.TextChannel;
+    await channel.send({
       content:
-        `<@!${interaction.user.id}> chose the **${titleCaseChoiceType} Pack**!`,
+        `<@!${interaction.user.id}> chose a **${titleCaseChoiceType} Pack**!`,
       embeds: [newEmbed],
     });
 
@@ -445,8 +455,8 @@ export async function sendPackChoice(
     );
 
     // Combine citizen cards with each pack's specific cards
-    const allHeroCards = [...citizenCards, ...heroCards];
-    const allVillainCards = [...citizenCards, ...villainCards];
+    const allHeroCards = [...heroCards, ...citizenCards];
+    const allVillainCards = [...villainCards, ...citizenCards];
 
     // Convert ScryfallCard[] -> SealedDeckEntry[] for sealed-deck creation
     const heroSideboard: SealedDeckEntry[] = allHeroCards.map((c) => ({
@@ -464,16 +474,15 @@ export async function sendPackChoice(
     const heroPoolId = await makeSealedDeck({ sideboard: heroSideboard });
     const villainPoolId = await makeSealedDeck({ sideboard: villainSideboard });
 
-    const guild = member.guild;
-    const channel = await guild.channels.fetch(channelId) as djs.TextChannel;
-    await channel.send(
-      await buildHeroVillainChoice(
-        member,
-        allHeroCards,
-        heroPoolId,
-        allVillainCards,
-        villainPoolId,
-      ),
+    const options = await buildHeroVillainChoice(
+      member,
+      allHeroCards,
+      heroPoolId,
+      allVillainCards,
+      villainPoolId,
+    );
+    await member.send(
+      options,
     );
 
     console.log(

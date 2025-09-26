@@ -320,7 +320,7 @@ export async function tileCardImages(
   const totalCards = cards.length;
   const usesTwoRows = totalCards > 7;
   const cardsPerRow = usesTwoRows 
-    ? [Math.ceil(totalCards / 2), Math.floor(totalCards / 2)]
+    ? [Math.floor(totalCards / 2), Math.ceil(totalCards / 2)]
     : [totalCards];
 
   // Assume all images have the same dimensions (use first image)
