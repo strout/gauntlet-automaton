@@ -425,7 +425,7 @@ async function checkForMatches(client: Client<boolean>) {
   }
 }
 
-async function sendPackChoice(member: djs.GuildMember): Promise<void> {
+export async function sendPackChoice(member: djs.GuildMember): Promise<void> {
   console.log(`Sending pack choice to ${member.displayName}`);
 
   try {
@@ -483,11 +483,11 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
   }
 }
 
-function sendHeroPack(member: djs.GuildMember): Promise<void> {
+export function sendHeroPack(member: djs.GuildMember): Promise<void> {
   return sendPack(member, "hero");
 }
 
-function sendVillainPack(member: djs.GuildMember): Promise<void> {
+export function sendVillainPack(member: djs.GuildMember): Promise<void> {
   return sendPack(member, "villain");
 }
 
