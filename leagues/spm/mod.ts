@@ -464,122 +464,70 @@ async function sendPackChoice(member: djs.GuildMember): Promise<void> {
   }
 }
 
-// Send a hero pack to a member
-async function sendHeroPack(member: djs.GuildMember): Promise<void> {
-  console.log(`Sending hero pack to ${member.displayName}`);
-
-  try {
-    // Generate hero pack
-    const heroCards = await generatePackFromSlots(getHeroBoosterSlots());
-
-    // Create SealedDeck pool
-    const heroPoolId = await makeSealedDeck({
-      sideboard: heroCards.map((c) => ({
-        name: c.name,
-        count: 1,
-        set: c.set ?? undefined,
-      })),
-    });
-
-    // Generate card image
-    let cardImageAttachment: djs.AttachmentBuilder | undefined;
-    try {
-      const cardImageBlob = await tileCardImages(heroCards, "normal");
-      const cardImageBuffer = Buffer.from(await cardImageBlob.arrayBuffer());
-      cardImageAttachment = new djs.AttachmentBuilder(cardImageBuffer, {
-        name: `hero_pack_${heroPoolId}.png`,
-        description: "Hero pack cards",
-      });
-    } catch (error) {
-      console.error("Failed to generate hero pack image:", error);
-    }
-
-    const embed = new djs.EmbedBuilder()
-      .setTitle(`🦸 Hero Pack - ${member.displayName}`)
-      .setColor(0x00BFFF)
-      .setThumbnail(member.displayAvatarURL({ size: 256 }))
-      .addFields([
-        {
-          name: "🔗 SealedDeck Link",
-          value: `[View Pack](https://sealeddeck.tech/${heroPoolId})`,
-          inline: false,
-        },
-        {
-          name: "🆔 SealedDeck ID",
-          value: `\`${heroPoolId}\``,
-          inline: true,
-        },
-      ])
-      .setTimestamp();
-
-    if (cardImageAttachment) {
-      embed.setImage(`attachment://${cardImageAttachment.name}`);
-    }
-
-    const files = cardImageAttachment ? [cardImageAttachment] : [];
-
-    const guild = member.guild;
-    const channel = await guild.channels.fetch(
-      CONFIG.PACKGEN_CHANNEL_ID,
-    ) as djs.TextChannel;
-    await channel.send({
-      content: `<@!${member.user.id}> received a **Hero Pack**!`,
-      embeds: [embed],
-      files,
-    });
-
-    console.log(
-      `Sent hero pack to ${member.displayName} with pool ${heroPoolId}`,
-    );
-  } catch (error) {
-    console.error(`Failed to send hero pack to ${member.displayName}:`, error);
-    throw error;
-  }
+function sendHeroPack(member: djs.GuildMember): Promise<void> {
+  return sendPack(member, "hero");
 }
 
-// Send a villain pack to a member
-async function sendVillainPack(member: djs.GuildMember): Promise<void> {
-  console.log(`Sending villain pack to ${member.displayName}`);
+function sendVillainPack(member: djs.GuildMember): Promise<void> {
+  return sendPack(member, "villain");
+}
+
+async function sendPack(
+  member: djs.GuildMember,
+  type: "hero" | "villain",
+): Promise<void> {
+  console.log(`Sending ${type} pack to ${member.displayName}`);
 
   try {
-    // Generate villain pack
-    const villainCards = await generatePackFromSlots(getVillainBoosterSlots());
+    // Choose slots based on type
+    const slots = type === "hero"
+      ? getHeroBoosterSlots()
+      : getVillainBoosterSlots();
+
+    // Generate pack cards
+    const cards = await generatePackFromSlots(slots);
 
     // Create SealedDeck pool
-    const villainPoolId = await makeSealedDeck({
-      sideboard: villainCards.map((c) => ({
+    const poolId = await makeSealedDeck({
+      sideboard: cards.map((c) => ({
         name: c.name,
         count: 1,
         set: c.set ?? undefined,
       })),
     });
 
-    // Generate card image
+    // Generate card image (optional)
     let cardImageAttachment: djs.AttachmentBuilder | undefined;
     try {
-      const cardImageBlob = await tileCardImages(villainCards, "normal");
+      const cardImageBlob = await tileCardImages(cards, "normal");
       const cardImageBuffer = Buffer.from(await cardImageBlob.arrayBuffer());
       cardImageAttachment = new djs.AttachmentBuilder(cardImageBuffer, {
-        name: `villain_pack_${villainPoolId}.png`,
-        description: "Villain pack cards",
+        name: `${type}_pack_${poolId}.png`,
+        description: `${type[0].toUpperCase() + type.slice(1)} pack cards`,
       });
     } catch (error) {
-      console.error("Failed to generate villain pack image:", error);
+      console.error(`Failed to generate ${type} pack image:`, error);
     }
 
+    // Build embed with type-specific styling
+    const isHero = type === "hero";
     const embed = new djs.EmbedBuilder()
-      .setTitle(`🦹 Villain Pack - ${member.displayName}`)
-      .setColor(0x8B0000)
+      .setTitle(
+        `${
+          isHero ? "🦸 Hero Pack" : "🦹 Villain Pack"
+        } - ${member.displayName}`,
+      )
+      .setColor(isHero ? 0x00BFFF : 0x8B0000)
       .setThumbnail(member.displayAvatarURL({ size: 256 }))
       .addFields([
         {
           name: "🔗 SealedDeck Link",
-          value: `[View Pack](https://sealeddeck.tech/${villainPoolId})`,
+          value: `[View Pack](https://sealeddeck.tech/${poolId})`,
           inline: false,
         },
         {
           name: "🆔 SealedDeck ID",
-          value: `\`${villainPoolId}\``,
+          value: `\`${poolId}\``,
           inline: true,
         },
       ])
@@ -596,17 +544,19 @@ async function sendVillainPack(member: djs.GuildMember): Promise<void> {
       CONFIG.PACKGEN_CHANNEL_ID,
     ) as djs.TextChannel;
     await channel.send({
-      content: `<@!${member.user.id}> received a **Villain Pack**!`,
+      content: `<@!${member.user.id}> received a **${
+        isHero ? "Hero" : "Villain"
+      } Pack**!`,
       embeds: [embed],
       files,
     });
 
     console.log(
-      `Sent villain pack to ${member.displayName} with pool ${villainPoolId}`,
+      `Sent ${type} pack to ${member.displayName} with pool ${poolId}`,
     );
   } catch (error) {
     console.error(
-      `Failed to send villain pack to ${member.displayName}:`,
+      `Failed to send ${type} pack to ${member.displayName}:`,
       error,
     );
     throw error;
