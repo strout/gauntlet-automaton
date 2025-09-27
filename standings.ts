@@ -4,7 +4,7 @@ import {
   makeSealedDeck,
   splitCardNames,
 } from "./sealeddeck.ts";
-import { columnIndex, sheets, sheetsAppend, sheetsRead } from "./sheets.ts";
+import { columnIndex, sheets, sheetsAppend, sheetsDeleteRow, sheetsRead } from "./sheets.ts";
 import { z } from "zod";
 
 // TODO read column names from the header row instead of hardcoding
@@ -123,6 +123,25 @@ export async function addPoolChanges(
     sheetId,
     "Pool Changes!A1:F",
     changes.map((c) => [timestamp, ...c as string[]]),
+  );
+}
+
+const POOL_CHANGES_SHEET_NAME = "Pool Changes";
+
+/**
+ * Deletes a single pool change from the spreadsheet.
+ * @param rowNum - The 1-based row number of the change to delete.
+ * @param sheetId - The ID of the spreadsheet.
+ */
+export async function deletePoolChange(
+  rowNum: number,
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  return await sheetsDeleteRow(
+    sheets,
+    sheetId,
+    POOL_CHANGES_SHEET_NAME,
+    rowNum,
   );
 }
 

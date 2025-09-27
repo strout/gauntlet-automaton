@@ -13,6 +13,7 @@ import { CONFIG } from "../../config.ts";
 import * as djs from "discord.js";
 import {
   addPoolChange,
+  deletePoolChange,
   getAllMatches,
   getPlayers,
   getPoolChanges,
@@ -29,6 +30,7 @@ import {
 } from "../../sealeddeck.ts";
 import { tileCardImages } from "../../scryfall.ts";
 import { Handler } from "../../dispatch.ts";
+import { fetchMessageByUrl } from "../../main.ts";
 import { Buffer } from "node:buffer";
 import {
   formatPackCards,
@@ -43,6 +45,8 @@ import { buildHeroVillainChoice } from "./packs.ts";
 import { mutex } from "../../mutex.ts";
 import { generateAndPostStartingPool } from "./pools.ts";
 import z from "zod";
+
+const deletionLock = mutex();
 
 // Pool generation handler
 const poolHandler: Handler<djs.Message> = async (message, handle) => {
@@ -100,6 +104,7 @@ export async function setup(): Promise<{
     heroPackHandler,
     villainPackHandler,
     poolHandler,
+    unpickHandler,
   ];
   return {
     watch: async (client: Client) => {
@@ -112,6 +117,157 @@ export async function setup(): Promise<{
     interactionHandlers: [packChoiceInteractionHandler],
   };
 }
+
+const unpickHandler: Handler<djs.Message> = async (message, handle) => {
+  if (!message.content.startsWith("!unpick ")) return;
+
+  handle.claim();
+
+  const guild = await message.client.guilds.fetch(CONFIG.GUILD_ID);
+
+  try {
+    const member = await guild.members.fetch(message.author.id);
+    if (!member.roles.cache.has(CONFIG.LEAGUE_COMMITTEE_ROLE_ID)) {
+      await message.reply("Only LC can unpick choices!");
+      return;
+    }
+  } catch (_e) {
+    await message.reply("Only LC can unpick choices!");
+    return;
+  }
+
+  using _ = await deletionLock();
+
+  try {
+    const url = message.content.split(" ")[1];
+    if (!url) {
+      await message.reply("Usage: `!unpick [message_url]`");
+      return;
+    }
+
+    const announcementMsg = await fetchMessageByUrl(message.client, url);
+
+    if (!announcementMsg) {
+      await message.reply("Could not fetch message from URL. Is it valid?");
+      return;
+    }
+
+    if (
+      announcementMsg.guildId !== CONFIG.GUILD_ID ||
+      announcementMsg.channelId !== CONFIG.PACKGEN_CHANNEL_ID
+    ) {
+      await message.reply("Message must be from the pack generation channel.");
+      return;
+    }
+
+    const targetUserId = announcementMsg.mentions.users.first()?.id;
+    if (!targetUserId) {
+      await message.reply(
+        "Could not find a user mentioned in the announcement.",
+      );
+      return;
+    }
+
+    const chosenPackId = announcementMsg.embeds[0]?.fields.find((f) =>
+      f.name === "🆔 SealedDeck ID"
+    )?.value.replace(/`/g, "");
+    if (!chosenPackId) {
+      await message.reply(
+        "Could not determine chosen pack ID from announcement.",
+      );
+      return;
+    }
+
+    const [players, poolChanges] = await Promise.all([
+      getPlayers(),
+      getPoolChanges(),
+    ]);
+    const player = players.rows.find((p) => p["Discord ID"] === targetUserId);
+    if (!player) {
+      await message.reply("Could not find player data.");
+      return;
+    }
+
+    const changeRow = poolChanges.rows.findLast(
+      (row) =>
+        row["Name"] === player.Identification && row["Value"] === chosenPackId,
+    );
+
+    if (!changeRow) {
+      await message.reply(
+        "Could not find the corresponding pool change to delete.",
+      );
+      return;
+    }
+
+    const guild = await message.client.guilds.fetch(CONFIG.GUILD_ID);
+    const member = await guild.members.fetch(targetUserId);
+    const dmChannel = await member.createDM();
+    const messages = await dmChannel.messages.fetch({ limit: 20 });
+
+    const choiceType = announcementMsg.content.includes("Hero Pack")
+      ? "Hero"
+      : "Villain";
+    const dmToEdit = messages.find((m) =>
+      m.author.id === message.client.user?.id &&
+      m.content.includes(`You chose the **${choiceType} Pack**!`)
+    );
+
+    if (!dmToEdit || dmToEdit.embeds.length < 2) {
+      await message.reply(
+        "Could not find the original DM to restore. Aborting.",
+      );
+      return;
+    }
+
+    const heroEmbed = dmToEdit.embeds.find((e) =>
+      e.title?.includes("Hero Pack")
+    );
+    const villainEmbed = dmToEdit.embeds.find((e) =>
+      e.title?.includes("Villain Pack")
+    );
+
+    const heroPoolId = heroEmbed?.fields.find((f) =>
+      f.name === "🆔 SealedDeck ID"
+    )?.value.replace(/`/g, "");
+    const villainPoolId = villainEmbed?.fields.find((f) =>
+      f.name === "🆔 SealedDeck ID"
+    )?.value.replace(/`/g, "");
+
+    if (!heroPoolId || !villainPoolId) {
+      throw new Error("Could not extract pool IDs from DM embeds.");
+    }
+
+    const components = [
+      new djs.ActionRowBuilder<djs.ButtonBuilder>().addComponents(
+        new djs.ButtonBuilder({
+          customId: `SPM_choose_hero_${heroPoolId}`,
+          label: "Choose Hero",
+          style: djs.ButtonStyle.Primary,
+        }),
+        new djs.ButtonBuilder({
+          customId: `SPM_choose_villain_${villainPoolId}`,
+          label: "Choose Villain",
+          style: djs.ButtonStyle.Danger,
+        }),
+      ),
+    ];
+
+    await dmToEdit.edit({
+      content: `<@!${member.user.id}>, choose your path — Hero or Villain?`,
+      components,
+    });
+
+    await deletePoolChange(changeRow[ROWNUM]);
+
+    await announcementMsg.delete();
+
+    await message.reply("Unpick successful.");
+  } catch (error) {
+    console.error("Error in unpick handler:", error);
+    await message.reply("An error occurred during unpick. Check logs.");
+  }
+};
 
 // Bot command handler for pack generation
 const packChoiceHandler: Handler<djs.Message> = async (message, handle) => {
@@ -279,8 +435,7 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
 
     // Update the original message to remove buttons
     await interaction.update({
-      content:
-        `You chose the **${titleCaseChoiceType} Pack**!`,
+      content: `You chose the **${titleCaseChoiceType} Pack**!`,
       components: [], // Remove all buttons
     });
 
@@ -295,7 +450,9 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
       .setTimestamp();
 
     const guild = await interaction.client.guilds.fetch(CONFIG.GUILD_ID);
-    const channel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as djs.TextChannel;
+    const channel = await guild.channels.fetch(
+      CONFIG.PACKGEN_CHANNEL_ID,
+    ) as djs.TextChannel;
     await channel.send({
       content:
         `<@!${interaction.user.id}> chose a **${titleCaseChoiceType} Pack**!`,
