@@ -1,14 +1,5 @@
 /* Spider-Man: Through the Omenpath */
 
-/* TODO
-  * [x] starting pool packs
-  * [x] distribution of packs (DMs)
-  * [x] pack selection & generation for civilians
-  * [ ] pack selection & generation for heroes
-  * [ ] pack selection & generation for villains
-  * [ ] hero/villain tracking
-  */
-
 import { CONFIG } from "../../config.ts";
 import * as djs from "discord.js";
 import {
@@ -18,7 +9,9 @@ import {
   getPlayers,
   getPoolChanges,
   MATCHTYPE,
+  Player,
   ROWNUM,
+  Table,
 } from "../../standings.ts";
 import { sheets, sheetsWrite } from "../../sheets.ts";
 import { delay } from "@std/async/delay";
@@ -108,8 +101,10 @@ export async function setup(): Promise<{
   ];
   return {
     watch: async (client: Client) => {
+      const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
       while (true) {
         await checkForMatches(client);
+        await assignHeroVillainRoles(guild, false);
         await delay(60_000);
       }
     },
@@ -490,10 +485,7 @@ async function checkForMatches(client: Client<boolean>) {
 
   const [records, players] = await Promise.all([
     getAllMatches(),
-    getPlayers(undefined, {
-      ["Heroism"]: z.number(),
-      ["Villainy"]: z.number(),
-    }),
+    getSpmPlayers(),
   ]);
 
   // Track players we've already messaged in this batch
@@ -594,6 +586,17 @@ async function checkForMatches(client: Client<boolean>) {
       );
     }
   }
+}
+
+const spmPlayerShape = {
+  Heroism: z.number(),
+  Villainy: z.number(),
+};
+
+type SPMPlayer = Player<typeof spmPlayerShape>;
+
+function getSpmPlayers(): Promise<Table<SPMPlayer>> {
+  return getPlayers(undefined, spmPlayerShape);
 }
 
 export async function sendPackChoice(
@@ -815,153 +818,51 @@ function lockPlayer(discordId: string) {
   return lock();
 }
 
+/**
+ * Ensure a member has (or doesn't have) a particular role.
+ * @returns whether they had the role previously.
+ */
+const ensureRole = async (
+  member: djs.GuildMember,
+  role: djs.Role,
+  shouldHaveRole: boolean,
+  pretend: boolean,
+) => {
+  const hasRole = member.roles.cache.has(role.id);
+  if (!hasRole && shouldHaveRole) {
+    console.log(`Adding role ${role.name} to ${member.displayName}`);
+    if (!pretend) await member.roles.add(role);
+  } else if (hasRole && !shouldHaveRole) {
+    console.log(`Removing role ${role.name} from ${member.displayName}`);
+    if (!pretend) await member.roles.remove(role);
+  }
+  return hasRole;
+};
+
 export const assignHeroVillainRoles = async (
-  members: djs.Collection<djs.Snowflake, djs.GuildMember>,
+  guild: djs.Guild,
   pretend: boolean,
 ) => {
   // Get players with Heroism and Villainy stats
-  const players = await getPlayers(undefined, {
-    ["Heroism"]: z.number(),
-    ["Villainy"]: z.number(),
-  });
+  const players = await getSpmPlayers();
 
-  // Create a map of Discord ID to player data for quick lookup
-  const playerMap = new Map<string, any>();
+  const superheroRole = await guild.roles.fetch(CONFIG.SPM.SUPERHERO_ROLE_ID);
+  const supervillainRole = await guild.roles.fetch(
+    CONFIG.SPM.SUPERVILLAIN_ROLE_ID,
+  );
+  if (!superheroRole || !supervillainRole) {
+    throw new Error("Could not find super roles");
+  }
+
   for (const player of players.rows) {
-    if (player["Discord ID"]) {
-      playerMap.set(player["Discord ID"], player);
-    }
-  }
-
-  const shouldHaveSuperheroRole = (m: djs.GuildMember) => {
-    const player = playerMap.get(m.id);
-    if (!player) return false;
-    const heroism = player["Heroism"] || 0;
-    const villainy = player["Villainy"] || 0;
-    return heroism >= 4 && heroism > villainy;
-  };
-
-  const shouldHaveSupervillainRole = (m: djs.GuildMember) => {
-    const player = playerMap.get(m.id);
-    if (!player) return false;
-    const heroism = player["Heroism"] || 0;
-    const villainy = player["Villainy"] || 0;
-    return villainy >= 4 && villainy > heroism;
-  };
-
-  // Find members who need superhero role
-  const needsSuperheroRole = [...members.values()].filter((m) =>
-    shouldHaveSuperheroRole(m) &&
-    !m.roles.cache.has(CONFIG.SPM.SUPERHERO_ROLE_ID)
-  );
-
-  // Find members who need supervillain role
-  const needsSupervillainRole = [...members.values()].filter((m) =>
-    shouldHaveSupervillainRole(m) &&
-    !m.roles.cache.has(CONFIG.SPM.SUPERVILLAIN_ROLE_ID)
-  );
-
-  // Find members who have superhero role but shouldn't
-  const shouldRemoveSuperheroRole = [...members.values()].filter((m) =>
-    m.roles.cache.has(CONFIG.SPM.SUPERHERO_ROLE_ID) &&
-    !shouldHaveSuperheroRole(m)
-  );
-
-  // Find members who have supervillain role but shouldn't
-  const shouldRemoveSupervillainRole = [...members.values()].filter((m) =>
-    m.roles.cache.has(CONFIG.SPM.SUPERVILLAIN_ROLE_ID) &&
-    !shouldHaveSupervillainRole(m)
-  );
-
-  // Log summary
-  console.log("Superhero/Supervillain Role Assignment Summary:");
-  console.log(`Total members: ${members.size}`);
-  console.log(`Need Superhero role: ${needsSuperheroRole.length}`);
-  console.log(`Need Supervillain role: ${needsSupervillainRole.length}`);
-  console.log(
-    `Should remove Superhero role: ${shouldRemoveSuperheroRole.length}`,
-  );
-  console.log(
-    `Should remove Supervillain role: ${shouldRemoveSupervillainRole.length}`,
-  );
-
-  // Add superhero roles
-  if (needsSuperheroRole.length) {
-    console.log("Adding Superhero role to:");
-    console.table(
-      needsSuperheroRole.map((m) => {
-        const player = playerMap.get(m.id);
-        return {
-          name: m.displayName,
-          heroism: player?.["Heroism"] || 0,
-          villainy: player?.["Villainy"] || 0,
-        };
-      }),
-    );
-    for (const m of needsSuperheroRole) {
-      if (!pretend) await m.roles.add(CONFIG.SPM.SUPERHERO_ROLE_ID);
-      console.log("Added Superhero role to " + m.displayName);
-      await delay(250);
-    }
-  }
-
-  // Add supervillain roles
-  if (needsSupervillainRole.length) {
-    console.log("Adding Supervillain role to:");
-    console.table(
-      needsSupervillainRole.map((m) => {
-        const player = playerMap.get(m.id);
-        return {
-          name: m.displayName,
-          heroism: player?.["Heroism"] || 0,
-          villainy: player?.["Villainy"] || 0,
-        };
-      }),
-    );
-    for (const m of needsSupervillainRole) {
-      if (!pretend) await m.roles.add(CONFIG.SPM.SUPERVILLAIN_ROLE_ID);
-      console.log("Added Supervillain role to " + m.displayName);
-      await delay(250);
-    }
-  }
-
-  // Remove superhero roles
-  if (shouldRemoveSuperheroRole.length) {
-    console.log("Removing Superhero role from:");
-    console.table(
-      shouldRemoveSuperheroRole.map((m) => {
-        const player = playerMap.get(m.id);
-        return {
-          name: m.displayName,
-          heroism: player?.["Heroism"] || 0,
-          villainy: player?.["Villainy"] || 0,
-        };
-      }),
-    );
-    for (const m of shouldRemoveSuperheroRole) {
-      if (!pretend) await m.roles.remove(CONFIG.SPM.SUPERHERO_ROLE_ID);
-      console.log("Removed Superhero role from " + m.displayName);
-      await delay(250);
-    }
-  }
-
-  // Remove supervillain roles
-  if (shouldRemoveSupervillainRole.length) {
-    console.log("Removing Supervillain role from:");
-    console.table(
-      shouldRemoveSupervillainRole.map((m) => {
-        const player = playerMap.get(m.id);
-        return {
-          name: m.displayName,
-          heroism: player?.["Heroism"] || 0,
-          villainy: player?.["Villainy"] || 0,
-        };
-      }),
-    );
-    for (const m of shouldRemoveSupervillainRole) {
-      if (!pretend) await m.roles.remove(CONFIG.SPM.SUPERVILLAIN_ROLE_ID);
-      console.log("Removed Supervillain role from " + m.displayName);
-      await delay(250);
+    const shouldBeSuperhero = player.Heroism >= 4;
+    const shouldBeSupervillain = player.Villainy >= 4;
+    try {
+      const member = await guild.members.fetch(player["Discord ID"]);
+      await ensureRole(member, superheroRole, shouldBeSuperhero, pretend);
+      await ensureRole(member, supervillainRole, shouldBeSupervillain, pretend);
+    } catch (e) {
+      console.error("Could not manage roles for " + player.Identification, e);
     }
   }
 };
