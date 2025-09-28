@@ -394,7 +394,7 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
   // ensure the right person presses it
   if (!interaction.message.mentions.has(userId)) {
     await interaction.reply({
-    content: "Sorry, only the mentioned user can choose a pack.",
+      content: "Sorry, only the mentioned user can choose a pack.",
       ephemeral: true,
     });
     return;
@@ -469,7 +469,7 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
           ephemeral: true,
         });
       }
-    // deno-lint-ignore no-empty
+      // deno-lint-ignore no-empty
     } catch {}
   } finally {
     packChoiceLocks.delete(userId);
@@ -851,22 +851,26 @@ export const assignHeroVillainRoles = async (
 
   // Find members who need superhero role
   const needsSuperheroRole = [...members.values()].filter((m) =>
-    shouldHaveSuperheroRole(m) && !m.roles.cache.has(CONFIG.SPM.SUPERHERO_ROLE_ID)
+    shouldHaveSuperheroRole(m) &&
+    !m.roles.cache.has(CONFIG.SPM.SUPERHERO_ROLE_ID)
   );
 
   // Find members who need supervillain role
   const needsSupervillainRole = [...members.values()].filter((m) =>
-    shouldHaveSupervillainRole(m) && !m.roles.cache.has(CONFIG.SPM.SUPERVILLAIN_ROLE_ID)
+    shouldHaveSupervillainRole(m) &&
+    !m.roles.cache.has(CONFIG.SPM.SUPERVILLAIN_ROLE_ID)
   );
 
   // Find members who have superhero role but shouldn't
   const shouldRemoveSuperheroRole = [...members.values()].filter((m) =>
-    m.roles.cache.has(CONFIG.SPM.SUPERHERO_ROLE_ID) && !shouldHaveSuperheroRole(m)
+    m.roles.cache.has(CONFIG.SPM.SUPERHERO_ROLE_ID) &&
+    !shouldHaveSuperheroRole(m)
   );
 
   // Find members who have supervillain role but shouldn't
   const shouldRemoveSupervillainRole = [...members.values()].filter((m) =>
-    m.roles.cache.has(CONFIG.SPM.SUPERVILLAIN_ROLE_ID) && !shouldHaveSupervillainRole(m)
+    m.roles.cache.has(CONFIG.SPM.SUPERVILLAIN_ROLE_ID) &&
+    !shouldHaveSupervillainRole(m)
   );
 
   // Log summary
@@ -874,8 +878,12 @@ export const assignHeroVillainRoles = async (
   console.log(`Total members: ${members.size}`);
   console.log(`Need Superhero role: ${needsSuperheroRole.length}`);
   console.log(`Need Supervillain role: ${needsSupervillainRole.length}`);
-  console.log(`Should remove Superhero role: ${shouldRemoveSuperheroRole.length}`);
-  console.log(`Should remove Supervillain role: ${shouldRemoveSupervillainRole.length}`);
+  console.log(
+    `Should remove Superhero role: ${shouldRemoveSuperheroRole.length}`,
+  );
+  console.log(
+    `Should remove Supervillain role: ${shouldRemoveSupervillainRole.length}`,
+  );
 
   // Add superhero roles
   if (needsSuperheroRole.length) {
