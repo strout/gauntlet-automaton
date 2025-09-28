@@ -44,7 +44,7 @@ import {
 import { buildHeroVillainChoice } from "./packs.ts";
 import { mutex } from "../../mutex.ts";
 import { generateAndPostStartingPool } from "./pools.ts";
-import { z } from "zod";
+import z from "zod";
 
 const deletionLock = mutex();
 
