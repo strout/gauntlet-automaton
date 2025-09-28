@@ -44,7 +44,7 @@ import {
 import { buildHeroVillainChoice } from "./packs.ts";
 import { mutex } from "../../mutex.ts";
 import { generateAndPostStartingPool } from "./pools.ts";
-import z from "zod";
+import { z } from "zod";
 
 const deletionLock = mutex();
 
@@ -394,7 +394,7 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
   // ensure the right person presses it
   if (!interaction.message.mentions.has(userId)) {
     await interaction.reply({
-      content: "Sorry, only the mentioned user can choose a pack.",
+    content: "Sorry, only the mentioned user can choose a pack.",
       ephemeral: true,
     });
     return;
@@ -469,7 +469,7 @@ const packChoiceInteractionHandler: Handler<djs.Interaction> = async (
           ephemeral: true,
         });
       }
-      // deno-lint-ignore no-empty
+    // deno-lint-ignore no-empty
     } catch {}
   } finally {
     packChoiceLocks.delete(userId);
@@ -598,7 +598,7 @@ async function checkForMatches(client: Client<boolean>) {
 
 export async function sendPackChoice(
   member: djs.GuildMember,
-  channelId = CONFIG.PACKGEN_CHANNEL_ID,
+  _channelId = CONFIG.PACKGEN_CHANNEL_ID,
 ): Promise<void> {
   console.log(`Sending pack choice to ${member.displayName}`);
 
@@ -656,28 +656,28 @@ export async function sendPackChoice(
 
 export function sendHeroPack(
   member: djs.GuildMember,
-  channelId = CONFIG.PACKGEN_CHANNEL_ID,
+  _channelId = CONFIG.PACKGEN_CHANNEL_ID,
 ): Promise<void> {
-  return sendPack(member, "hero", channelId);
+  return sendPack(member, "superhero", _channelId);
 }
 
 export function sendVillainPack(
   member: djs.GuildMember,
-  channelId = CONFIG.PACKGEN_CHANNEL_ID,
+  _channelId = CONFIG.PACKGEN_CHANNEL_ID,
 ): Promise<void> {
-  return sendPack(member, "villain", channelId);
+  return sendPack(member, "supervillain", _channelId);
 }
 
 async function sendPack(
   member: djs.GuildMember,
-  type: "hero" | "villain",
+  type: "superhero" | "supervillain",
   channelId = CONFIG.PACKGEN_CHANNEL_ID,
 ): Promise<void> {
   console.log(`Sending ${type} pack to ${member.displayName}`);
 
   try {
     // Choose slots based on type
-    const slots = type === "hero"
+    const slots = type === "superhero"
       ? getHeroBoosterSlots()
       : getVillainBoosterSlots();
 
@@ -707,11 +707,11 @@ async function sendPack(
     }
 
     // Build embed with type-specific styling
-    const isHero = type === "hero";
+    const isHero = type === "superhero";
     const embed = new djs.EmbedBuilder()
       .setTitle(
         `${
-          isHero ? "🦸 Hero Pack" : "🦹 Villain Pack"
+          isHero ? "🦸 Superhero Pack" : "🦹 Supervillain Pack"
         } - ${member.displayName}`,
       )
       .setDescription(formatPackCards(cards))
@@ -741,7 +741,7 @@ async function sendPack(
     const channel = await guild.channels.fetch(channelId) as djs.TextChannel;
     await channel.send({
       content: `<@!${member.user.id}> received a **${
-        isHero ? "Hero" : "Villain"
+        isHero ? "Superhero" : "Supervillain"
       } Pack**!`,
       embeds: [embed],
       files,
@@ -766,7 +766,7 @@ const packChoiceLocks = new Set<string>();
 
 async function recordPack(
   id: string,
-  type: "hero" | "villain",
+  type: "hero" | "villain" | "superhero" | "supervillain",
   packPoolId: string,
 ) {
   using _ = await lockPlayer(id);
@@ -814,3 +814,146 @@ function lockPlayer(discordId: string) {
   }
   return lock();
 }
+
+export const assignHeroVillainRoles = async (
+  members: djs.Collection<djs.Snowflake, djs.GuildMember>,
+  pretend: boolean,
+) => {
+  // Get players with Heroism and Villainy stats
+  const players = await getPlayers(undefined, {
+    ["Heroism"]: z.number(),
+    ["Villainy"]: z.number(),
+  });
+
+  // Create a map of Discord ID to player data for quick lookup
+  const playerMap = new Map<string, any>();
+  for (const player of players.rows) {
+    if (player["Discord ID"]) {
+      playerMap.set(player["Discord ID"], player);
+    }
+  }
+
+  const shouldHaveSuperheroRole = (m: djs.GuildMember) => {
+    const player = playerMap.get(m.id);
+    if (!player) return false;
+    const heroism = player["Heroism"] || 0;
+    const villainy = player["Villainy"] || 0;
+    return heroism >= 4 && heroism > villainy;
+  };
+
+  const shouldHaveSupervillainRole = (m: djs.GuildMember) => {
+    const player = playerMap.get(m.id);
+    if (!player) return false;
+    const heroism = player["Heroism"] || 0;
+    const villainy = player["Villainy"] || 0;
+    return villainy >= 4 && villainy > heroism;
+  };
+
+  // Find members who need superhero role
+  const needsSuperheroRole = [...members.values()].filter((m) =>
+    shouldHaveSuperheroRole(m) && !m.roles.cache.has(CONFIG.SPM.SUPERHERO_ROLE_ID)
+  );
+
+  // Find members who need supervillain role
+  const needsSupervillainRole = [...members.values()].filter((m) =>
+    shouldHaveSupervillainRole(m) && !m.roles.cache.has(CONFIG.SPM.SUPERVILLAIN_ROLE_ID)
+  );
+
+  // Find members who have superhero role but shouldn't
+  const shouldRemoveSuperheroRole = [...members.values()].filter((m) =>
+    m.roles.cache.has(CONFIG.SPM.SUPERHERO_ROLE_ID) && !shouldHaveSuperheroRole(m)
+  );
+
+  // Find members who have supervillain role but shouldn't
+  const shouldRemoveSupervillainRole = [...members.values()].filter((m) =>
+    m.roles.cache.has(CONFIG.SPM.SUPERVILLAIN_ROLE_ID) && !shouldHaveSupervillainRole(m)
+  );
+
+  // Log summary
+  console.log("Superhero/Supervillain Role Assignment Summary:");
+  console.log(`Total members: ${members.size}`);
+  console.log(`Need Superhero role: ${needsSuperheroRole.length}`);
+  console.log(`Need Supervillain role: ${needsSupervillainRole.length}`);
+  console.log(`Should remove Superhero role: ${shouldRemoveSuperheroRole.length}`);
+  console.log(`Should remove Supervillain role: ${shouldRemoveSupervillainRole.length}`);
+
+  // Add superhero roles
+  if (needsSuperheroRole.length) {
+    console.log("Adding Superhero role to:");
+    console.table(
+      needsSuperheroRole.map((m) => {
+        const player = playerMap.get(m.id);
+        return {
+          name: m.displayName,
+          heroism: player?.["Heroism"] || 0,
+          villainy: player?.["Villainy"] || 0,
+        };
+      }),
+    );
+    for (const m of needsSuperheroRole) {
+      if (!pretend) await m.roles.add(CONFIG.SPM.SUPERHERO_ROLE_ID);
+      console.log("Added Superhero role to " + m.displayName);
+      await delay(250);
+    }
+  }
+
+  // Add supervillain roles
+  if (needsSupervillainRole.length) {
+    console.log("Adding Supervillain role to:");
+    console.table(
+      needsSupervillainRole.map((m) => {
+        const player = playerMap.get(m.id);
+        return {
+          name: m.displayName,
+          heroism: player?.["Heroism"] || 0,
+          villainy: player?.["Villainy"] || 0,
+        };
+      }),
+    );
+    for (const m of needsSupervillainRole) {
+      if (!pretend) await m.roles.add(CONFIG.SPM.SUPERVILLAIN_ROLE_ID);
+      console.log("Added Supervillain role to " + m.displayName);
+      await delay(250);
+    }
+  }
+
+  // Remove superhero roles
+  if (shouldRemoveSuperheroRole.length) {
+    console.log("Removing Superhero role from:");
+    console.table(
+      shouldRemoveSuperheroRole.map((m) => {
+        const player = playerMap.get(m.id);
+        return {
+          name: m.displayName,
+          heroism: player?.["Heroism"] || 0,
+          villainy: player?.["Villainy"] || 0,
+        };
+      }),
+    );
+    for (const m of shouldRemoveSuperheroRole) {
+      if (!pretend) await m.roles.remove(CONFIG.SPM.SUPERHERO_ROLE_ID);
+      console.log("Removed Superhero role from " + m.displayName);
+      await delay(250);
+    }
+  }
+
+  // Remove supervillain roles
+  if (shouldRemoveSupervillainRole.length) {
+    console.log("Removing Supervillain role from:");
+    console.table(
+      shouldRemoveSupervillainRole.map((m) => {
+        const player = playerMap.get(m.id);
+        return {
+          name: m.displayName,
+          heroism: player?.["Heroism"] || 0,
+          villainy: player?.["Villainy"] || 0,
+        };
+      }),
+    );
+    for (const m of shouldRemoveSupervillainRole) {
+      if (!pretend) await m.roles.remove(CONFIG.SPM.SUPERVILLAIN_ROLE_ID);
+      console.log("Removed Supervillain role from " + m.displayName);
+      await delay(250);
+    }
+  }
+};
