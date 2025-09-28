@@ -659,16 +659,16 @@ export async function sendPackChoice(
 
 export function sendHeroPack(
   member: djs.GuildMember,
-  _channelId = CONFIG.PACKGEN_CHANNEL_ID,
+  channelId = CONFIG.PACKGEN_CHANNEL_ID,
 ): Promise<void> {
-  return sendPack(member, "superhero", _channelId);
+  return sendPack(member, "superhero", channelId);
 }
 
 export function sendVillainPack(
   member: djs.GuildMember,
-  _channelId = CONFIG.PACKGEN_CHANNEL_ID,
+  channelId = CONFIG.PACKGEN_CHANNEL_ID,
 ): Promise<void> {
-  return sendPack(member, "supervillain", _channelId);
+  return sendPack(member, "supervillain", channelId);
 }
 
 async function sendPack(
