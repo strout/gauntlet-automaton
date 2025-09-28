@@ -1,14 +1,5 @@
 /* Spider-Man: Through the Omenpath */
 
-/* TODO
-  * [x] starting pool packs
-  * [x] distribution of packs (DMs)
-  * [x] pack selection & generation for civilians
-  * [ ] pack selection & generation for heroes
-  * [ ] pack selection & generation for villains
-  * [ ] hero/villain tracking
-  */
-
 import { CONFIG } from "../../config.ts";
 import * as djs from "discord.js";
 import {
@@ -18,7 +9,9 @@ import {
   getPlayers,
   getPoolChanges,
   MATCHTYPE,
+  Player,
   ROWNUM,
+  Table,
 } from "../../standings.ts";
 import { sheets, sheetsWrite } from "../../sheets.ts";
 import { delay } from "@std/async/delay";
@@ -108,8 +101,10 @@ export async function setup(): Promise<{
   ];
   return {
     watch: async (client: Client) => {
+      const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
       while (true) {
         await checkForMatches(client);
+        await assignHeroVillainRoles(guild, false);
         await delay(60_000);
       }
     },
@@ -490,10 +485,7 @@ async function checkForMatches(client: Client<boolean>) {
 
   const [records, players] = await Promise.all([
     getAllMatches(),
-    getPlayers(undefined, {
-      ["Heroism"]: z.number(),
-      ["Villainy"]: z.number(),
-    }),
+    getSpmPlayers(),
   ]);
 
   // Track players we've already messaged in this batch
@@ -596,9 +588,20 @@ async function checkForMatches(client: Client<boolean>) {
   }
 }
 
+const spmPlayerShape = {
+  Heroism: z.number(),
+  Villainy: z.number(),
+};
+
+type SPMPlayer = Player<typeof spmPlayerShape>;
+
+function getSpmPlayers(): Promise<Table<SPMPlayer>> {
+  return getPlayers(undefined, spmPlayerShape);
+}
+
 export async function sendPackChoice(
   member: djs.GuildMember,
-  channelId = CONFIG.PACKGEN_CHANNEL_ID,
+  _channelId = CONFIG.PACKGEN_CHANNEL_ID,
 ): Promise<void> {
   console.log(`Sending pack choice to ${member.displayName}`);
 
@@ -658,26 +661,26 @@ export function sendHeroPack(
   member: djs.GuildMember,
   channelId = CONFIG.PACKGEN_CHANNEL_ID,
 ): Promise<void> {
-  return sendPack(member, "hero", channelId);
+  return sendPack(member, "superhero", channelId);
 }
 
 export function sendVillainPack(
   member: djs.GuildMember,
   channelId = CONFIG.PACKGEN_CHANNEL_ID,
 ): Promise<void> {
-  return sendPack(member, "villain", channelId);
+  return sendPack(member, "supervillain", channelId);
 }
 
 async function sendPack(
   member: djs.GuildMember,
-  type: "hero" | "villain",
+  type: "superhero" | "supervillain",
   channelId = CONFIG.PACKGEN_CHANNEL_ID,
 ): Promise<void> {
   console.log(`Sending ${type} pack to ${member.displayName}`);
 
   try {
     // Choose slots based on type
-    const slots = type === "hero"
+    const slots = type === "superhero"
       ? getHeroBoosterSlots()
       : getVillainBoosterSlots();
 
@@ -707,11 +710,11 @@ async function sendPack(
     }
 
     // Build embed with type-specific styling
-    const isHero = type === "hero";
+    const isHero = type === "superhero";
     const embed = new djs.EmbedBuilder()
       .setTitle(
         `${
-          isHero ? "🦸 Hero Pack" : "🦹 Villain Pack"
+          isHero ? "🦸 Superhero Pack" : "🦹 Supervillain Pack"
         } - ${member.displayName}`,
       )
       .setDescription(formatPackCards(cards))
@@ -741,7 +744,7 @@ async function sendPack(
     const channel = await guild.channels.fetch(channelId) as djs.TextChannel;
     await channel.send({
       content: `<@!${member.user.id}> received a **${
-        isHero ? "Hero" : "Villain"
+        isHero ? "Superhero" : "Supervillain"
       } Pack**!`,
       embeds: [embed],
       files,
@@ -766,7 +769,7 @@ const packChoiceLocks = new Set<string>();
 
 async function recordPack(
   id: string,
-  type: "hero" | "villain",
+  type: "hero" | "villain" | "superhero" | "supervillain",
   packPoolId: string,
 ) {
   using _ = await lockPlayer(id);
@@ -814,3 +817,52 @@ function lockPlayer(discordId: string) {
   }
   return lock();
 }
+
+/**
+ * Ensure a member has (or doesn't have) a particular role.
+ * @returns whether they had the role previously.
+ */
+const ensureRole = async (
+  member: djs.GuildMember,
+  role: djs.Role,
+  shouldHaveRole: boolean,
+  pretend: boolean,
+) => {
+  const hasRole = member.roles.cache.has(role.id);
+  if (!hasRole && shouldHaveRole) {
+    console.log(`Adding role ${role.name} to ${member.displayName}`);
+    if (!pretend) await member.roles.add(role);
+  } else if (hasRole && !shouldHaveRole) {
+    console.log(`Removing role ${role.name} from ${member.displayName}`);
+    if (!pretend) await member.roles.remove(role);
+  }
+  return hasRole;
+};
+
+export const assignHeroVillainRoles = async (
+  guild: djs.Guild,
+  pretend: boolean,
+) => {
+  // Get players with Heroism and Villainy stats
+  const players = await getSpmPlayers();
+
+  const superheroRole = await guild.roles.fetch(CONFIG.SPM.SUPERHERO_ROLE_ID);
+  const supervillainRole = await guild.roles.fetch(
+    CONFIG.SPM.SUPERVILLAIN_ROLE_ID,
+  );
+  if (!superheroRole || !supervillainRole) {
+    throw new Error("Could not find super roles");
+  }
+
+  for (const player of players.rows) {
+    const shouldBeSuperhero = player.Heroism >= 4;
+    const shouldBeSupervillain = player.Villainy >= 4;
+    try {
+      const member = await guild.members.fetch(player["Discord ID"]);
+      await ensureRole(member, superheroRole, shouldBeSuperhero, pretend);
+      await ensureRole(member, supervillainRole, shouldBeSupervillain, pretend);
+    } catch (e) {
+      console.error("Could not manage roles for " + player.Identification, e);
+    }
+  }
+};
