@@ -491,6 +491,8 @@ async function checkForMatches(client: Client<boolean>) {
   // Track players we've already messaged in this batch
   const messagedThisBatch = new Set<string>();
 
+  let poolChanges = null;
+
   for (const record of records.rows) {
     if (record["Bot Messaged"] || !record["Script Handled"]) continue;
 
@@ -520,7 +522,11 @@ async function checkForMatches(client: Client<boolean>) {
       continue;
     }
 
-    const totalPacksChosen = loser["Heroism"] + loser["Villainy"];
+    poolChanges ??= await getPoolChanges();
+
+    const totalPacksChosen = poolChanges.rows.filter((r) =>
+      r["Name"] === loser.Identification && r["Type"] === "add pack"
+    ).length;
     const totalMessagesSent = records.rows.filter((r) =>
       r["Loser Name"] === loser.Identification && r["Bot Messaged"]
     ).length;
