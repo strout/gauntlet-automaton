@@ -396,8 +396,9 @@ export async function getEntropy<S extends z.ZodRawShape>(
     ...parsed,
     rows: parsed.rows.map((r) => ({
       ...r,
-      "Script Handled": true,
+      "Your Name": r["PLAYER 1"],
       "Loser Name": r["PLAYER 2"],
+      "Script Handled": true,
       [MATCHTYPE]: "entropy" as const,
     })),
   };
