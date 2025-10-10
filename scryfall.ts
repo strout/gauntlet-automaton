@@ -9,6 +9,7 @@ export interface ScryfallCard {
   readonly id: string;
   readonly name: string;
   readonly set: string;
+  readonly set_name: string;
   readonly collector_number: string;
   readonly rarity: 'common' | 'uncommon' | 'rare' | 'mythic' | 'special' | 'bonus';
   readonly colors?: readonly string[];

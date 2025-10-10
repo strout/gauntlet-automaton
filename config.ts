@@ -4,8 +4,11 @@ export const CONFIG: Config = rawConfig;
 
 export interface Config {
   readonly SPM: {
+    readonly BOUNTY_BOARD_CHANNEL_ID: string;
     readonly SUPERHERO_ROLE_ID: string;
     readonly SUPERVILLAIN_ROLE_ID: string;
+    readonly HERO_BOUNTY_ROLE_ID: string;
+    readonly VILLAIN_BOUNTY_ROLE_ID: string;
   }
   readonly REGISTRATION_SHEET_ID: string;
   readonly REGISTRATION_SHEET_NAME: string;

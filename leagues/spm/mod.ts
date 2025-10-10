@@ -13,7 +13,7 @@ import {
   ROWNUM,
   Table,
 } from "../../standings.ts";
-import { sheets, sheetsWrite } from "../../sheets.ts";
+import { sheets, sheetsAppend, sheetsWrite } from "../../sheets.ts";
 import { delay } from "@std/async/delay";
 import { Client } from "discord.js";
 import {
@@ -21,7 +21,7 @@ import {
   makeSealedDeck,
   SealedDeckEntry,
 } from "../../sealeddeck.ts";
-import { tileCardImages } from "../../scryfall.ts";
+import { searchCards, tileCardImages } from "../../scryfall.ts";
 import { Handler } from "../../dispatch.ts";
 import { fetchMessageByUrl } from "../../main.ts";
 import { Buffer } from "node:buffer";
@@ -38,6 +38,8 @@ import { buildHeroVillainChoice } from "./packs.ts";
 import { mutex } from "../../mutex.ts";
 import { generateAndPostStartingPool } from "./pools.ts";
 import z from "zod";
+import { parseTable, readTable } from "../../standings.ts";
+import { columnIndex } from "../../sheets.ts";
 
 const deletionLock = mutex();
 
@@ -483,8 +485,11 @@ async function checkForMatches(client: Client<boolean>) {
   if (!matchesRequested) return;
   matchesRequested = false;
 
+  const matchExtra = {
+    "Was this match found randomly?": z.string().optional(),
+  } as const;
   const [records, players] = await Promise.all([
-    getAllMatches(),
+    getAllMatches(matchExtra),
     getSpmPlayers(),
   ]);
 
@@ -492,6 +497,7 @@ async function checkForMatches(client: Client<boolean>) {
   const messagedThisBatch = new Set<string>();
 
   let poolChanges = null;
+  const bountyList = await getBountyList();
 
   for (const record of records.rows) {
     if (record["Bot Messaged"] || !record["Script Handled"]) continue;
@@ -500,6 +506,10 @@ async function checkForMatches(client: Client<boolean>) {
     const loser = players.rows.find((p) =>
       p.Identification === record["Loser Name"]
     );
+    const winner = players.rows.find((p) =>
+      p.Identification === record["Your Name"]
+    );
+
     if (!loser) {
       console.warn(
         `Unidentified loser ${record["Loser Name"]} for ${record[MATCHTYPE]} ${
@@ -507,6 +517,46 @@ async function checkForMatches(client: Client<boolean>) {
         }`,
       );
       continue;
+    }
+    if (!winner && record[MATCHTYPE] !== "entropy") {
+      console.warn(
+        `Unidentified winner ${record["Your Name"]} for ${record[MATCHTYPE]} ${
+          record[ROWNUM]
+        }`,
+      );
+      continue;
+    }
+
+    const hasBounty = bountyList.rows.some(
+      (bounty) =>
+        bounty.Identification === loser.Identification && !bounty["Claimed By"],
+    );
+
+    if (winner && hasBounty && record["Was this match found randomly?"]) {
+      const winnerIsSupervillain = winner.Villainy >= 4;
+      const loserIsSupervillain = loser.Villainy >= 4;
+
+      const unclaimedBounty = bountyList.rows.find(
+        (bounty) =>
+          bounty.Identification === loser.Identification &&
+          !bounty["Claimed By"],
+      );
+
+      if (unclaimedBounty && (winnerIsSupervillain !== loserIsSupervillain)) {
+        console.log(
+          `Claiming bounty for ${loser.Identification} by ${winner.Identification}`,
+        );
+        await claimBounty(unclaimedBounty, winner, loser, client);
+
+        if (
+          !winnerIsSupervillain && !bountyList.rows.some((b) =>
+            b.Identification === winner.Identification && !b["Claimed By"]
+          )
+        ) {
+          console.log(`Placing bounty on ${winner.Identification}`);
+          await placeBounty(winner, client);
+        }
+      }
     }
 
     // Skip if they're done.
@@ -824,6 +874,50 @@ function lockPlayer(discordId: string) {
   return lock();
 }
 
+async function addCardToPlayerPool(
+  playerIdentification: string,
+  discordId: string,
+  card: Awaited<ReturnType<typeof searchCards>>[number],
+) {
+  using _ = await lockPlayer(discordId);
+  const poolChanges = await getPoolChanges();
+  const lastChange = poolChanges.rows.findLast((change) =>
+    change["Name"] === playerIdentification
+  );
+
+  let currentFullPoolId: string | undefined = undefined;
+  if (lastChange) {
+    currentFullPoolId = lastChange["Full Pool"] ?? undefined;
+  }
+
+  const cardToAdd: SealedDeckEntry[] = [
+    { name: card.name, count: 1, set: card.set ?? undefined },
+  ];
+
+  const newFullPoolId = await makeSealedDeck(
+    { sideboard: cardToAdd },
+    currentFullPoolId,
+  );
+
+  await addPoolChange(
+    playerIdentification,
+    "add card",
+    card.name,
+    "Bounty",
+    newFullPoolId,
+  );
+}
+
+const bountyLogShape = {
+  Identification: z.string(),
+  "Claimed By": z.string().optional(),
+};
+
+export async function getBountyList(sheetId = CONFIG.LIVE_SHEET_ID) {
+  const table = await readTable("Bounty Log!B:C", 1, sheetId);
+  return parseTable(bountyLogShape, table);
+}
+
 /**
  * Ensure a member has (or doesn't have) a particular role.
  * @returns whether they had the role previously.
@@ -850,25 +944,206 @@ export const assignHeroVillainRoles = async (
   pretend: boolean,
 ) => {
   // Get players with Heroism and Villainy stats
-  const players = await getSpmPlayers();
+  const [players, bounties] = await Promise.all([
+    getSpmPlayers(),
+    getBountyList(),
+  ]);
 
   const superheroRole = await guild.roles.fetch(CONFIG.SPM.SUPERHERO_ROLE_ID);
   const supervillainRole = await guild.roles.fetch(
     CONFIG.SPM.SUPERVILLAIN_ROLE_ID,
   );
-  if (!superheroRole || !supervillainRole) {
+  const heroBountyRole = await guild.roles.fetch(
+    CONFIG.SPM.HERO_BOUNTY_ROLE_ID,
+  );
+  const villainBountyRole = await guild.roles.fetch(
+    CONFIG.SPM.VILLAIN_BOUNTY_ROLE_ID,
+  );
+  if (
+    !superheroRole || !supervillainRole || !heroBountyRole || !villainBountyRole
+  ) {
     throw new Error("Could not find super roles");
   }
 
   for (const player of players.rows) {
     const shouldBeSuperhero = player.Heroism >= 4;
     const shouldBeSupervillain = player.Villainy >= 4;
+    const shouldHaveBounty = bounties.rows.some((r) =>
+      r.Identification === player.Identification && !r["Claimed By"]
+    );
     try {
       const member = await guild.members.fetch(player["Discord ID"]);
       await ensureRole(member, superheroRole, shouldBeSuperhero, pretend);
       await ensureRole(member, supervillainRole, shouldBeSupervillain, pretend);
+      const hadHeroBountyRole = await ensureRole(
+        member,
+        heroBountyRole,
+        shouldHaveBounty && !shouldBeSupervillain,
+        pretend,
+      );
+      await ensureRole(
+        member,
+        villainBountyRole,
+        !hadHeroBountyRole && shouldHaveBounty && shouldBeSupervillain,
+        pretend,
+      );
+      if (hadHeroBountyRole && shouldBeSupervillain) {
+        // clear any bounties
+        const bountyList = await getBountyList();
+        for (const r of [...bountyList.rows].reverse()) {
+          if (r.Identification === player.Identification && !r["Claimed By"]) {
+            const range = `Bounty Log!C${r[ROWNUM]}`;
+            await sheetsWrite(
+              sheets,
+              CONFIG.LIVE_SHEET_ID,
+              range,
+              [["--became a villain--"]],
+            );
+          }
+        }
+      }
     } catch (e) {
       console.error("Could not manage roles for " + player.Identification, e);
     }
   }
 };
+
+const enchantmentRewards = await searchCards(
+  "game:arena t:enchantment legal:standard -s:om1 r:u",
+);
+const treasureMakerRewards = await searchCards(
+  "game:arena -s:om1 legal:pioneer r:u o:treasure",
+);
+
+async function claimBounty(
+  bountyRow: Awaited<ReturnType<typeof getBountyList>>["rows"][number],
+  winner: SPMPlayer,
+  loser: SPMPlayer,
+  client: Client<boolean>,
+): Promise<void> {
+  console.log(
+    `Claiming bounty for ${bountyRow.Identification} by ${winner.Identification}`,
+  );
+  const isVillain = winner.Villainy >= 4;
+  const isSuperhero = winner.Heroism >= 4;
+  const rewardCards = isVillain ? treasureMakerRewards : enchantmentRewards;
+  const chosenCard =
+    rewardCards[Math.floor(Math.random() * rewardCards.length)];
+
+  // Post the prize
+  const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+  const channel = await guild.channels.fetch(
+    CONFIG.SPM.BOUNTY_BOARD_CHANNEL_ID,
+  ) as djs.TextChannel;
+
+  const winnerMember = await guild.members.fetch(winner["Discord ID"]);
+
+  const message = isVillain
+    ? `The great hunt has ceased. <@!${
+      winner["Discord ID"]
+    }> proves the law of the wild: only the strongest survive. The formidable <@!${
+      loser["Discord ID"]
+    }> has been felled. Claim the spoils of the hunt!`
+    : isSuperhero
+    ? `Masked buffoon <@!${
+      winner["Discord ID"]
+    }>'s reckless brawl with the crook now known to be <@!${
+      loser["Discord ID"]
+    }> caused **THOUSANDS** in damage! But I'm a man of my word: <@!${
+      winner["Discord ID"]
+    }> can claim their reward, *if* they show up at the Bugle **UNMASKED** for a front-page photo!`
+    : `Upstanding citizen <@!${
+      winner["Discord ID"]
+    }> has done what the Masked Menace couldn't: bring justice for ${
+      loser["Arena ID"]
+    }'s vicitms. The criminal, now revealed to be <@!${
+      loser["Discord ID"]
+    }>, has been turned into the police, and the Bugle proudly presents <@!${
+      winner["Discord ID"]
+    }> with their well-deserved reward.`;
+
+  const title = isVillain
+    ? null
+    : `VILLAIN UNMASKED: ${
+      loser["Arena ID"].toUpperCase()
+    } IDENTITY REVEALED, BOUNTY CLAIMED!`;
+
+  const embed = new djs.EmbedBuilder()
+    .setTitle(title)
+    .setDescription(message)
+    .setColor(isVillain ? 0x8B0000 : 0x00BFFF)
+    .setThumbnail(winnerMember.displayAvatarURL({ size: 256 }))
+    .addFields([
+      {
+        name: "Card Name",
+        value: chosenCard.name,
+        inline: true,
+      },
+      {
+        name: "Set",
+        value: chosenCard.set_name ?? "N/A",
+        inline: true,
+      },
+    ])
+    .setTimestamp();
+
+  let image = chosenCard.image_uris?.normal ?? chosenCard.card_faces?.[0]?.image_uris?.normal;
+  if (image) {
+    embed.setImage(image);
+  }
+
+  const webhooks = await channel.fetchWebhooks();
+
+  const hook = webhooks.find((hook) =>
+    isVillain ? hook.name.includes("Kraven") : hook.name.includes("Jameson")
+  );
+
+  await (hook ?? channel).send({
+    content: `<@!${winner["Discord ID"]}> claimed a bounty!`,
+    embeds: [embed],
+  });
+
+  // Add card to winner's pool
+  await addCardToPlayerPool(
+    winner.Identification,
+    winner["Discord ID"],
+    chosenCard,
+  );
+
+  const range = `Bounty Log!C${bountyRow[ROWNUM]}`;
+  await sheetsWrite(
+    sheets,
+    CONFIG.LIVE_SHEET_ID,
+    range,
+    [[winner.Identification]],
+  );
+}
+
+async function placeBounty(
+  winner: SPMPlayer,
+  client: Client<boolean>,
+): Promise<void> {
+  console.log(
+    `Placing bounty on ${winner.Identification}`,
+  );
+  await sheetsAppend(
+    sheets,
+    CONFIG.LIVE_SHEET_ID,
+    "Bounty Log!A:B",
+    [["-", winner.Identification]],
+  );
+
+  const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+  const channel = await guild.channels.fetch(
+    CONFIG.SPM.BOUNTY_BOARD_CHANNEL_ID,
+  ) as djs.TextChannel;
+  const winnerMember = await guild.members.fetch(winner["Discord ID"]);
+
+  const webhooks = await channel.fetchWebhooks();
+  const hook = webhooks.find((hook) => hook.name.includes("Kraven"));
+
+  await (hook ?? channel).send({
+    content:
+      `Hark! A new quarry emerges! <@!${winnerMember.user.id}> has earned the Kingpin's ire and a place on Kingpin's hit list! Let the hunt begin!`,
+  });
+}

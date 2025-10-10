@@ -264,6 +264,8 @@ export async function rebuildPoolContents(
 
 const playerShape = {
   Identification: z.string(),
+  Name: z.string(),
+  "Arena ID": z.string(),
   "Discord ID": z.coerce.string(),
   "Matches played": z.number(),
   Wins: z.number(),
@@ -351,7 +353,7 @@ export const MATCHTYPE = "MATCHTYPE";
  * @returns Match records with results and metadata
  */
 export async function getMatches<S extends z.ZodRawShape>(
-  extras?: z.ZodObject<S>,
+  extras?: S,
   quotas?: Awaited<ReturnType<typeof getQuotas>>,
 ) {
   const quotaTask = quotas ?? getQuotas();
@@ -365,7 +367,7 @@ export async function getMatches<S extends z.ZodRawShape>(
     Notes: z.string().optional(),
     "Script Handled": z.coerce.boolean(),
     "Bot Messaged": z.coerce.boolean(),
-    ...extras?.shape,
+    ...extras,
   }, table);
   quotas = await quotaTask;
   return {
@@ -408,7 +410,7 @@ export async function getEntropy<S extends z.ZodRawShape>(
  * Get all matches and entropy, sorted by timestamp
  */
 export async function getAllMatches<SM extends z.ZodRawShape, SE extends z.ZodRawShape>(
-  matchExtras?: z.ZodObject<SM>,
+  matchExtras?: SM,
   entropyExtras?: z.ZodObject<SE>,
   quotas?: Awaited<ReturnType<typeof getQuotas>>,
 ) {
