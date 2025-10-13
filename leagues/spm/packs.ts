@@ -325,7 +325,7 @@ export function getVillainBoosterSlots(): BoosterSlot[] {
     {
       rarity: "uncommon",
       scryfall:
-        `(game:arena legal:standard -s:spm -s:om1 r:u (o:"commit a crime" OR o:"target spell" OR otag:removal))`,
+        `(game:arena legal:standard -s:spm -s:om1 r:u (o:"commit a crime" OR o:"target spell" OR otag:removal) -ragnarok)`,
       balanceGroup: 2,
     },
     { rarity: "uncommon" },
