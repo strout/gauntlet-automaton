@@ -939,6 +939,8 @@ const ensureRole = async (
   return hasRole;
 };
 
+const reportedMissing = new Set<string>();
+
 export const assignHeroVillainRoles = async (
   guild: djs.Guild,
   pretend: boolean,
@@ -972,6 +974,13 @@ export const assignHeroVillainRoles = async (
       r.Identification === player.Identification && !r["Claimed By"]
     );
     try {
+      if (!guild.members.cache.has(player["Discord ID"])) {
+        if (!reportedMissing.has(player.Identification)) {
+          reportedMissing.add(player.Identification);
+          console.log("Not in guild:", player.Identification);
+        }
+        continue;
+      }
       const member = await guild.members.fetch(player["Discord ID"]);
       await ensureRole(member, superheroRole, shouldBeSuperhero, pretend);
       await ensureRole(member, supervillainRole, shouldBeSupervillain, pretend);
