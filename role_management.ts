@@ -1,21 +1,9 @@
 import { CONFIG } from "./config.ts";
 import { delay } from "@std/async";
 import * as djs from "discord.js";
-import {
-  columnIndex,
-  env,
-  sheets,
-  sheetsRead,
-  sheetsWrite,
-} from "./sheets.ts";
+import { columnIndex, env, sheets, sheetsRead, sheetsWrite } from "./sheets.ts";
 import { mutex } from "./mutex.ts";
-import {
-  getPlayers,
-  parseTable,
-  readTable,
-  ROW,
-  ROWNUM,
-} from "./standings.ts";
+import { getPlayers, parseTable, readTable, ROW, ROWNUM } from "./standings.ts";
 import { z } from "zod";
 
 type Role = { id: djs.Snowflake; name: string };
@@ -53,7 +41,7 @@ const markRoleAdded = async (
   console.log(`Marked R${row}C${column}`);
 };
 
-const SURVEY_COLUMN = "Z";
+const SURVEY_COLUMN = "C";
 const getPlayerStatuses = async () => {
   if (
     !CONFIG.ELIMINATED_ROLE_ID || !CONFIG.LIVE_SHEET_ID || !CONFIG.ELIMINATE
@@ -247,7 +235,7 @@ const bestMatch_djs = (
 
 const surveySendDate: Record<djs.Snowflake, { toSurveyDate: Date }> = {};
 
-const SENDING_SURVEY = false;
+const SENDING_SURVEY = true;
 
 const eliminationLock = mutex();
 const assignEliminatedRole = async (
@@ -307,7 +295,7 @@ const assignEliminatedRole = async (
             sheets,
             CONFIG.LIVE_SHEET_ID,
             "BotStuff!" + SURVEY_COLUMN + player[ROWNUM],
-            [["1"]],
+            [[true]],
           );
           await sendSurvey(client, player);
           anySent = true;
@@ -321,7 +309,7 @@ const assignEliminatedRole = async (
             sheets,
             CONFIG.LIVE_SHEET_ID,
             "BotStuff!" + SURVEY_COLUMN + player[ROWNUM],
-            [["0"]],
+            [[false]],
           );
         }
       }
@@ -337,14 +325,18 @@ async function sendSurvey(
     (Awaited<ReturnType<typeof getPlayerStatuses>> & object)["rows"][number],
 ) {
   const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-  const member = await guild.members.fetch(player["Discord ID"]);
-  member.send(`Thank you for playing in Dragonstorm League! We hope you had fun!
+  try {
+    const member = await guild.members.fetch(player["Discord ID"]);
+    member.send(
+      `Thank you for playing in Spider-Man: Through the Omenpaths League! We hope you had fun!
 
-Design and implementation by Lotte P, Adam S, Chris Y, Jack H, Jordan M & Steve T.
+Let us know how we did and what we can improve by filling in the [Spider-Man: Through the Omenpaths League Survey](https://docs.google.com/forms/d/e/1FAIpQLSehcFBSYpqEp19KW-aAxL0G-rc6FyzK8kPsmYqs_52lUTkNzQ/viewform).
 
-Let us know how we did and what we can improve by filling in the [Dragonstorm League Survey](https://forms.gle/RrHCWsic32CGo3Pw8), including an important new section to register your opinions on plans for the future of the League.
-
-Join us starting May 23rd, when our next league is taken over by the rogue Shadow League Committee!`);
+Join us soon for Avatar: The Last Airbender League!`,
+    );
+  } catch (e) {
+    console.warn("Failed to survey", player["Identification"], e);
+  }
 }
 
 export async function manageRoles(
@@ -359,7 +351,11 @@ export async function manageRoles(
         try {
           const guild = await client.guilds.fetch(guildId);
           const members = await guild.members.fetch({ limit: 1000 });
-          await assignLeagueRole(members, CONFIG.REGISTRATION_LEAGUE_ROLE, pretend);
+          await assignLeagueRole(
+            members,
+            CONFIG.REGISTRATION_LEAGUE_ROLE,
+            pretend,
+          );
           await assignNewPlayerRole(members, pretend);
           await assignEliminatedRole(members, client, pretend);
         } catch (e) {
