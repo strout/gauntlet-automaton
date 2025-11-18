@@ -235,7 +235,7 @@ const bestMatch_djs = (
 
 const surveySendDate: Record<djs.Snowflake, { toSurveyDate: Date }> = {};
 
-const SENDING_SURVEY = true;
+const SENDING_SURVEY = false;
 
 const eliminationLock = mutex();
 const assignEliminatedRole = async (

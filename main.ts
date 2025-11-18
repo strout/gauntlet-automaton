@@ -13,7 +13,6 @@ import {
 } from "./sheets.ts";
 import { mutex } from "./mutex.ts";
 
-
 import {
   fetchSealedDeck,
   formatPool,
@@ -23,7 +22,6 @@ import {
 } from "./sealeddeck.ts";
 import { pendingHandler, waitForBoosterTutor } from "./pending.ts";
 import { dispatch, Handler } from "./dispatch.ts";
-
 
 import {
   addPoolChange,
@@ -35,11 +33,10 @@ import {
   ROW,
   ROWNUM,
 } from "./standings.ts";
-import { setup } from "./leagues/spm/mod.ts"
 
 import { ScryfallCard } from "./scryfall.ts";
-
 import { manageRoles, handleGuildMemberAdd } from "./role_management.ts";
+import { setup } from "./leagues/stub.ts";
 
 export { CONFIG };
 
@@ -71,14 +68,6 @@ Options:
 
 const { pretend, once } = args;
 const command = args._[0]; // First positional argument is the command
-
-
-
-
-
-
-
-
 
 export const DISCORD_TOKEN = env["DISCORD_TOKEN"];
 
@@ -215,19 +204,6 @@ async function onReady(
   await restoreState(client);
   await Promise.all([manageRoles(client, pretend, once), watch(client)]);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 async function handleRebuild(input: string) {
   const pools = await getPools();
