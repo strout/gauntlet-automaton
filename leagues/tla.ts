@@ -7,7 +7,7 @@ import { sheets, sheetsWrite } from "../sheets.ts";
 import { delay } from "@std/async";
 
 const makeSetMessage = () => {
-  const options = ["SPM", "EOE", "FIN", "TDM", "DFT", "FDM"].map((set) => ({
+  const options = ["OM1", "EOE", "FIN", "TDM", "DFT", "FDN"].map((set) => ({
     label: set,
     value: set,
   }));
@@ -68,12 +68,12 @@ async function checkForMatches(client: Client<boolean>) {
     const matchIndex = matches.rows.findIndex((m) =>
       m[ROWNUM] === match[ROWNUM]
     );
-    const lossCount = matches.rows.slice(0, matchIndex + 1).filter((m) =>
-      m["Loser Name"] === loser.Identification
+    const matchCount = matches.rows.slice(0, matchIndex + 1).filter((m) =>
+      m["Loser Name"] === loser.Identification || m["Your Name"] === loser.Identification
     ).length;
 
     // Only send the choice message if the loss count is between 1 and 5
-    if (lossCount >= 1 && lossCount <= 5) {
+    if (matchCount >= 1 && matchCount <= 5) {
       try {
         const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
         const member = await guild.members.fetch(loser["Discord ID"]);

@@ -90,23 +90,10 @@ export function makeChoice<T extends unknown[]>(
       if (interaction.isStringSelectMenu() && interactionType === "select") {
         const selectedValue = interaction.values[0];
 
-        const selectMenuRow = djs.ActionRowBuilder.from(
-          interaction.message.components[0]
-            .toJSON() as djs.APIActionRowComponent<
-              djs.APIStringSelectComponent
-            >,
-        ) as djs.ActionRowBuilder<djs.StringSelectMenuBuilder>;
-        const submitButtonRow = djs.ActionRowBuilder.from(
-          interaction.message.components[1]
-            .toJSON() as djs.APIActionRowComponent<djs.APIButtonComponent>,
-        ) as djs.ActionRowBuilder<djs.ButtonBuilder>;
+        const { selectMenu, submitButton, selectMenuRow, submitButtonRow } =
+          parseComponents(interaction);
 
-        const selectMenu = djs.StringSelectMenuBuilder.from(
-          selectMenuRow.components[0],
-        );
-        const submitButton = djs.ButtonBuilder.from(
-          submitButtonRow.components[0],
-        );
+        console.log("Selecting", interaction.values[0]);
 
         selectMenu.setOptions(selectMenu.options.map((opt) => ({
           ...opt.toJSON(),
@@ -150,23 +137,8 @@ export function makeChoice<T extends unknown[]>(
           finalContent = responseContent ||
             `Your choice "${selectedValue}" requires further action or failed temporarily. Please try again.`;
 
-          const selectMenuRow = djs.ActionRowBuilder.from(
-            interaction.message.components[0]
-              .toJSON() as djs.APIActionRowComponent<
-                djs.APIStringSelectComponent
-              >,
-          ) as djs.ActionRowBuilder<djs.StringSelectMenuBuilder>;
-          const submitButtonRow = djs.ActionRowBuilder.from(
-            interaction.message.components[1]
-              .toJSON() as djs.APIActionRowComponent<djs.APIButtonComponent>,
-          ) as djs.ActionRowBuilder<djs.ButtonBuilder>;
-
-          const selectMenu = djs.StringSelectMenuBuilder.from(
-            selectMenuRow.components[0],
-          );
-          const submitButton = djs.ButtonBuilder.from(
-            submitButtonRow.components[0],
-          );
+          const { selectMenu, submitButton, selectMenuRow, submitButtonRow } =
+            parseComponents(interaction);
 
           if (updatedOptions) {
             selectMenu.setOptions(updatedOptions.map((opt) => ({
@@ -216,4 +188,31 @@ export function makeChoice<T extends unknown[]>(
   };
 
   return { sendChoice, responseHandler };
+
+  function parseComponents(
+    interaction: djs.MessageComponentInteraction<djs.CacheType>,
+  ) {
+    const selectMenuRow: djs.ActionRowBuilder<
+      djs.StringSelectMenuBuilder
+    > = djs.ActionRowBuilder.from(
+      (interaction.message.components[0] as djs.ActionRow<
+        djs.StringSelectMenuComponent
+      >).toJSON(),
+    );
+    const submitButtonRow: djs.ActionRowBuilder<djs.ButtonBuilder> = djs
+      .ActionRowBuilder.from(
+        (interaction.message.components[1] as djs.ActionRow<
+          djs.ButtonComponent
+        >)
+          .toJSON(),
+      );
+
+    const selectMenu = djs.StringSelectMenuBuilder.from(
+      selectMenuRow.components[0],
+    );
+    const submitButton = djs.ButtonBuilder.from(
+      submitButtonRow.components[0],
+    );
+    return { selectMenu, submitButton, selectMenuRow, submitButtonRow };
+  }
 }
