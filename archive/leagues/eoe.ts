@@ -79,7 +79,14 @@ import {
 } from "@gfx/canvas-wasm";
 import { Buffer } from "node:buffer";
 import { Handler } from "../../dispatch.ts";
-import { initSheets, readSheetsDate, sheets, sheetsAppend, sheetsWrite, utcOffsetMs } from "../../sheets.ts";
+import {
+  initSheets,
+  readSheetsDate,
+  sheets,
+  sheetsAppend,
+  sheetsWrite,
+  utcOffsetMs,
+} from "../../sheets.ts";
 import { ScryfallCard, searchCards } from "../../scryfall.ts";
 import {
   fetchSealedDeck,
@@ -220,11 +227,19 @@ async function checkForMatches(client: Client<boolean>) {
     } else {
       winner = null;
     }
-    const lossCount = allMatches.slice(0, i + 1).filter(m => m["Loser Name"] === loser!.Identification).length;
+    const lossCount = allMatches.slice(0, i + 1).filter((m) =>
+      m["Loser Name"] === loser!.Identification
+    ).length;
     const tasks = [askForPack(client, loser, mapState, m, lossCount)];
-    if (winner) tasks.push(askToMove(client, winner, mapState));
+    if (winner) {
+      tasks.push(askToMove(client, winner, mapState));
+    }
     const results = await Promise.allSettled(tasks);
-    if (!results.every((x) => x.status === "fulfilled")) {
+    if (
+      !results.every((x) =>
+        x.status === "fulfilled"
+      )
+    ) {
       const errors = results.filter((x) => x.status === "rejected");
       try {
         const owner = await client.users.fetch(CONFIG.OWNER_ID);
@@ -335,11 +350,17 @@ const handlePackChoice: Handler<Interaction> = async (interaction, handle) => {
     // 3) making sure the entropy or match with the timestamp exists & they're the loser
     const planet = value && mapState.planets.get(value);
     const matchRowStamp = parsedId.matchRowStamp;
-    const { previousLosses, match } = findLossAndPrevious(matches, matchRowStamp, player);
-    const eoeOk = value !== "EOE" || player["EOE Packs Opened"] * 2 < (previousLosses + 1) && player["EOE Packs Opened"] * 2 < player.Losses;
+    const { previousLosses, match } = findLossAndPrevious(
+      matches,
+      matchRowStamp,
+      player,
+    );
+    const eoeOk = value !== "EOE" ||
+      player["EOE Packs Opened"] * 2 < (previousLosses + 1) &&
+        player["EOE Packs Opened"] * 2 < player.Losses;
     const timeOk = !planet ||
       match && (planet.discoveredWeek < match.WEEK &&
-        (!planet.exhaustedWeek || planet.exhaustedWeek >= match.WEEK));
+          (!planet.exhaustedWeek || planet.exhaustedWeek >= match.WEEK));
     console.log({ value, eoeOk, planet, timeOk, match });
     // TODO I know match is possibly undefined but TS doesn't, how to type it better?
     if (!match) {
@@ -427,7 +448,11 @@ const handlePackChoice: Handler<Interaction> = async (interaction, handle) => {
     const player = players.rows.find((x) =>
       x["Discord ID"] === interaction.user.id
     )!;
-    const { previousLosses, match } = findLossAndPrevious(matches, parsedId.matchRowStamp, player);
+    const { previousLosses, match } = findLossAndPrevious(
+      matches,
+      parsedId.matchRowStamp,
+      player,
+    );
     if (!match) {
       // don't rebuild the message for this.
       await interaction.editReply(
@@ -592,12 +617,21 @@ const handleMoveChoice: Handler<Interaction> = async (interaction, handle) => {
   }
 };
 
-function findLossAndPrevious(matches: Awaited<ReturnType<typeof getAllMatches>>, matchRowStamp: number, player: EOEPlayer) {
-  const matchIndex = matches.rows.findIndex((m) => Math.abs(m.Timestamp - matchRowStamp) < /* must be the same second */ (1 / 24 / 60 / 60 / 1000)
-    && m["Loser Name"] === player.Identification
+function findLossAndPrevious(
+  matches: Awaited<ReturnType<typeof getAllMatches>>,
+  matchRowStamp: number,
+  player: EOEPlayer,
+) {
+  const matchIndex = matches.rows.findIndex((m) =>
+    Math.abs(m.Timestamp - matchRowStamp) < /* must be the same second */
+      (1 / 24 / 60 / 60 / 1000) &&
+    m["Loser Name"] === player.Identification
   );
   const match = matches.rows[matchIndex];
-  const previousLosses = matches.rows.slice(0, matchIndex).filter(m => m["Loser Name"] === player.Identification).length;
+  const previousLosses =
+    matches.rows.slice(0, matchIndex).filter((m) =>
+      m["Loser Name"] === player.Identification
+    ).length;
   return { previousLosses, match };
 }
 
@@ -626,7 +660,7 @@ export async function getRewardOptions(planet: string) {
   return await searchCards(
     `set:${planet} ${(["PIO", "SIR"].includes(planet)
       ? ""
-      : "is:booster ")}(-kw:meld or o:'melds with') game:arena r>=r`
+      : "is:booster ")}(-kw:meld or o:'melds with') game:arena r>=r`,
   );
 }
 
@@ -642,7 +676,8 @@ export async function announceRewardCard(
   const channel = await guild.channels.fetch(
     CONFIG.EOE.ANNOUNCE_CHANNEL_ID,
   ) as TextChannel;
-  const imageUrl = card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal;
+  const imageUrl = card.image_uris?.normal ??
+    card.card_faces?.[0]?.image_uris?.normal;
   await channel.send(
     {
       content: `The crew of ${
@@ -696,7 +731,7 @@ async function askForPack(
   match: Awaited<
     ReturnType<typeof getMatches | typeof getEntropy>
   >["rows"][number],
-  currentLosses: number
+  currentLosses: number,
 ) {
   if (player["Matches played"] >= 30 || player.Losses >= 11) {
     console.log("Player finished", player.Identification);
@@ -706,7 +741,15 @@ async function askForPack(
   const member = await guild.members.fetch(player["Discord ID"]);
   const includeEoe = player["EOE Packs Opened"] * 2 < currentLosses;
   await member.send(
-    buildPackMessage(player, mapState, includeEoe, new Date(), match.Timestamp, match.WEEK, currentLosses),
+    buildPackMessage(
+      player,
+      mapState,
+      includeEoe,
+      new Date(),
+      match.Timestamp,
+      match.WEEK,
+      currentLosses,
+    ),
   );
 }
 
@@ -724,7 +767,7 @@ export async function readMapState(
       "add_planet",
       "reveal",
       "exhaust_planet",
-      "advance_week"
+      "advance_week",
     ]),
     Param1: paramSchema,
     Param2: paramSchema,
@@ -760,7 +803,7 @@ export async function buildMapState(
   let radius = 5;
   const planets = new Map<
     string,
-    { q: number; r: number; discoveredWeek: number, exhaustedWeek?: number }
+    { q: number; r: number; discoveredWeek: number; exhaustedWeek?: number }
   >();
   const ships = new Map<string, { q: number; r: number }>();
   const movesMade = new Map<string, number>();
@@ -802,7 +845,7 @@ export async function buildMapState(
       }
       case "add_planet": {
         const discoveredAt = new Date(row.Timestamp);
-        const {week: discoveredWeek} = quotas?.findLast(q => {
+        const { week: discoveredWeek } = quotas?.findLast((q) => {
           const weekStart = readSheetsDate(q.fromDate, offset);
           return weekStart <= discoveredAt;
         }) ?? { week: 0 };
@@ -841,7 +884,7 @@ export async function buildMapState(
         // set planet destroyedWeek to the current week
         const planet = planets.get(row.Param1 as string);
         if (planet) {
-          planet.exhaustedWeek = quotas?.findLast(q => {
+          planet.exhaustedWeek = quotas?.findLast((q) => {
             const weekStart = readSheetsDate(q.fromDate, offset);
             return weekStart <= new Date(row.Timestamp);
           })?.week;

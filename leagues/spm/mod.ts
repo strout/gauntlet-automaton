@@ -549,7 +549,8 @@ async function checkForMatches(client: Client<boolean>) {
         await claimBounty(unclaimedBounty, winner, loser, client);
 
         if (
-          !winnerIsSupervillain && !bountyList.rows.some((b) =>
+          !winnerIsSupervillain &&
+          !bountyList.rows.some((b) =>
             b.Identification === winner.Identification && !b["Claimed By"]
           )
         ) {
@@ -1096,7 +1097,8 @@ async function claimBounty(
     ])
     .setTimestamp();
 
-  let image = chosenCard.image_uris?.normal ?? chosenCard.card_faces?.[0]?.image_uris?.normal;
+  let image = chosenCard.image_uris?.normal ??
+    chosenCard.card_faces?.[0]?.image_uris?.normal;
   if (image) {
     embed.setImage(image);
   }

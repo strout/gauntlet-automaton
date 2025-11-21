@@ -27,7 +27,10 @@ async function main() {
   console.error("Generating villain packs...");
   const villainPacks = await generatePacks(getVillainBoosterSlots, numPacks);
 
-  const allPacks = [...heroPacks.map(cs => ({ cs, type: 'hero' })), ...villainPacks.map(cs => ({ cs, type: 'villain' }))];
+  const allPacks = [
+    ...heroPacks.map((cs) => ({ cs, type: "hero" })),
+    ...villainPacks.map((cs) => ({ cs, type: "villain" })),
+  ];
   const cardCounts: Record<string, { count: number; rarity: string }> = {};
 
   for (const pack of allPacks) {
@@ -40,7 +43,9 @@ async function main() {
     }
   }
 
-  const sortedCounts = Object.entries(cardCounts).sort(([, a], [, b]) => b.count - a.count);
+  const sortedCounts = Object.entries(cardCounts).sort(([, a], [, b]) =>
+    b.count - a.count
+  );
 
   console.log("Card Name,Rarity,Count");
   for (const [name, { rarity, count }] of sortedCounts) {

@@ -1,6 +1,9 @@
 import { searchCards } from "./scryfall.ts";
 import { makeSealedDeck } from "./sealeddeck.ts";
-import { getCitizenHeroBoosterSlots, getCitizenVillainBoosterSlots } from "./leagues/spm/packs.ts";
+import {
+  getCitizenHeroBoosterSlots,
+  getCitizenVillainBoosterSlots,
+} from "./leagues/spm/packs.ts";
 
 // Helper to extract all unique Scryfall queries from booster slots
 function getAllScryfallQueries() {
@@ -37,7 +40,11 @@ async function main() {
         continue;
       }
       // Build a pool: 1 of each card
-      const pool = cards.map(card => ({ name: card.name, count: 1, set: card.set }));
+      const pool = cards.map((card) => ({
+        name: card.name,
+        count: 1,
+        set: card.set,
+      }));
       const poolId = await makeSealedDeck({ sideboard: pool });
       const link = `https://sealeddeck.tech/${poolId}`;
       console.log(`Query: ${query}\n  Pool link: ${link}`);

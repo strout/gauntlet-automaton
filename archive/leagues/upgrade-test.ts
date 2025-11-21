@@ -14,13 +14,13 @@ import { dispatch } from "./dispatch.ts";
 
 async function main() {
   console.log("🧪 Starting FIN upgrade flow test...");
-  
+
   // Initialize sheets
   await initSheets();
-  
+
   // Create Discord client
   const client = makeClient();
-  
+
   client.once(djs.Events.ClientReady, async (readyClient) => {
     console.log(`✅ Bot logged in as ${readyClient.user?.tag}`);
   });
@@ -29,31 +29,35 @@ async function main() {
   client.on(djs.Events.MessageCreate, async (message) => {
     // Ignore bot messages and non-DM messages
     if (message.author.bot || message.guild) return;
-    
+
     // Check for upgrade test command
-    if (message.content.trim() === '!upgradeTest') {
+    if (message.content.trim() === "!upgradeTest") {
       console.log(`🧪 Upgrade test requested by ${message.author.tag}`);
-      
+
       try {
         // Verify user is in the players database
         const players = await getPlayers();
-        const player = players.find(p => p.id === message.author.id);
-        
+        const player = players.find((p) => p.id === message.author.id);
+
         if (!player) {
-          await message.reply("❌ You're not found in the players database. You need to be registered first!");
+          await message.reply(
+            "❌ You're not found in the players database. You need to be registered first!",
+          );
           return;
         }
-        
+
         console.log(`🎯 Player found in database: ${player.name}`);
-        
+
         // Get the player state from the exported playerStates map
         const playerState = await restoreSinglePlayerState(player.id);
-        
+
         if (!playerState) {
-          await message.reply("❌ Could not get your player state from FIN module. Player state not initialized?");
+          await message.reply(
+            "❌ Could not get your player state from FIN module. Player state not initialized?",
+          );
           return;
         }
-        
+
         console.log(`📊 Player state for ${message.author.tag}:`, {
           playerName: playerState.playerName,
           stats: playerState.stats,
@@ -63,16 +67,23 @@ async function main() {
         const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
         const member = await guild.members.fetch(message.author.id);
         if (!member) {
-          await message.reply("❌ Could not find your member info in the guild.");
+          await message.reply(
+            "❌ Could not find your member info in the guild.",
+          );
           return;
         }
-        
+
         // Send the upgrade message using the player's state
         console.log(`📨 Sending upgrade message to ${message.author.tag}...`);
         await sendUpgradeChoice(member, playerState);
       } catch (error) {
-        console.error(`❌ Error processing upgrade test for ${message.author.tag}:`, error);
-        await message.reply("❌ An error occurred while processing your upgrade test request.");
+        console.error(
+          `❌ Error processing upgrade test for ${message.author.tag}:`,
+          error,
+        );
+        await message.reply(
+          "❌ An error occurred while processing your upgrade test request.",
+        );
       }
     }
   });

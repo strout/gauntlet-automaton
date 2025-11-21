@@ -4,7 +4,13 @@ import {
   makeSealedDeck,
   splitCardNames,
 } from "./sealeddeck.ts";
-import { columnIndex, sheets, sheetsAppend, sheetsDeleteRow, sheetsRead } from "./sheets.ts";
+import {
+  columnIndex,
+  sheets,
+  sheetsAppend,
+  sheetsDeleteRow,
+  sheetsRead,
+} from "./sheets.ts";
 import { z } from "zod";
 
 // TODO read column names from the header row instead of hardcoding
@@ -372,7 +378,11 @@ export async function getMatches<S extends z.ZodRawShape>(
   quotas = await quotaTask;
   return {
     ...parsed,
-    rows: parsed.rows.map((r) => ({ ...r, [MATCHTYPE]: "match" as const, WEEK: quotas.findLast(q => q.fromDate <= r.Timestamp)?.week ?? 0 })),
+    rows: parsed.rows.map((r) => ({
+      ...r,
+      [MATCHTYPE]: "match" as const,
+      WEEK: quotas.findLast((q) => q.fromDate <= r.Timestamp)?.week ?? 0,
+    })),
   };
 }
 
@@ -409,7 +419,10 @@ export async function getEntropy<S extends z.ZodRawShape>(
 /**
  * Get all matches and entropy, sorted by timestamp
  */
-export async function getAllMatches<SM extends z.ZodRawShape, SE extends z.ZodRawShape>(
+export async function getAllMatches<
+  SM extends z.ZodRawShape,
+  SE extends z.ZodRawShape,
+>(
   matchExtras?: SM,
   entropyExtras?: z.ZodObject<SE>,
   quotas?: Awaited<ReturnType<typeof getQuotas>>,
@@ -434,10 +447,9 @@ export async function getAllMatches<SM extends z.ZodRawShape, SE extends z.ZodRa
     sheetName: {
       match: "Matches",
       entropy: "Entropy",
-    }
+    },
   };
 }
-
 
 /**
  * Gets all pools from the Pools sheet.
