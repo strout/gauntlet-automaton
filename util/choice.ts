@@ -112,6 +112,10 @@ export function makeChoice<T extends unknown[]>(
         submitButton.setCustomId(newSubmitCustomId);
         submitButton.setDisabled(false);
 
+        // Update the action rows with the modified components
+        selectMenuRow.setComponents(selectMenu);
+        submitButtonRow.setComponents(submitButton);
+
         await interaction.update({
           components: [selectMenuRow, submitButtonRow],
         });
