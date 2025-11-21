@@ -17,7 +17,7 @@ const planets = mapState.planets;
 for (const [name, { discoveredAt }] of planets) {
   console.log(`${name}: ${discoveredAt}`);
   const offset = utcOffsetMs("America/New_York");
-  const { week } = quotas.findLast(q => {
+  const { week } = quotas.findLast((q) => {
     const weekStart = readSheetsDate(q.fromDate, offset);
     console.log(`Week ${q.week} starts ${weekStart}`);
     return weekStart <= discoveredAt;

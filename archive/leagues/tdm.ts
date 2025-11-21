@@ -108,26 +108,26 @@ export async function checkForMatches(client: Client<true>) {
           );
         } else {
           try {
-          const changes = await getPoolChanges();
-          const lastChange = changes.findLast((c) => c.name === loser.name);
-          
-          const comment = JSON.parse(lastChange!.comment);
-          const packNotChosen = comment.notChosen[0];
-          await initiateChoice(
-            null,
-            [[
-              "Past:pack-" + packNotChosen,
-              "Future:" +
-              (comment.choice.toUpperCase() === "KHANS" ? "TDM" : "cube-TRF"),
-            ]],
-            loser.id,
-            "!choose",
-            client,
-            CONFIG.PACKGEN_CHANNEL_ID,
-          );
+            const changes = await getPoolChanges();
+            const lastChange = changes.findLast((c) => c.name === loser.name);
+
+            const comment = JSON.parse(lastChange!.comment);
+            const packNotChosen = comment.notChosen[0];
+            await initiateChoice(
+              null,
+              [[
+                "Past:pack-" + packNotChosen,
+                "Future:" +
+                (comment.choice.toUpperCase() === "KHANS" ? "TDM" : "cube-TRF"),
+              ]],
+              loser.id,
+              "!choose",
+              client,
+              CONFIG.PACKGEN_CHANNEL_ID,
+            );
           } catch (e) {
             console.error(e);
-            continue
+            continue;
           }
         }
       }

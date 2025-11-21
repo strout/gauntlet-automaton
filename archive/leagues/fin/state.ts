@@ -175,7 +175,7 @@ export function applyStatUpgrade(
           );
         }
       }
-      
+
       // Add special slot based on stat after upgrading existing slot
       state.boosterSlots.push({ special: stat });
       break;
@@ -214,14 +214,16 @@ export async function restoreSinglePlayerState(playerId: string) {
   resetPlayer(player);
   const upgradeRows = await readStateRows();
   upgradeRows.values = upgradeRows.values?.filter(
-    (row) => row[0] === player.name
+    (row) => row[0] === player.name,
   );
   applyRecordedUpgrades(upgradeRows, players);
   return playerStates.get(playerId);
 }
 
-
-function applyRecordedUpgrades(upgradeRows: { values?: string[][] }, players: Awaited<ReturnType<typeof getPlayers>>) {
+function applyRecordedUpgrades(
+  upgradeRows: { values?: string[][] },
+  players: Awaited<ReturnType<typeof getPlayers>>,
+) {
   // Apply upgrades from log in chronological order
   for (const row of upgradeRows.values ?? []) {
     const [playerName, stat, level, customization, status] = row;
@@ -265,7 +267,7 @@ async function readStateRows() {
     upgradeRows = await sheetsRead(
       sheets,
       CONFIG.LIVE_SHEET_ID,
-      "Upgrade Log!A2:F"
+      "Upgrade Log!A2:F",
     );
   } catch (error) {
     // If the sheet doesn't exist yet, just start with no upgrades
@@ -275,7 +277,20 @@ async function readStateRows() {
   return upgradeRows;
 }
 
-function resetPlayer(player: { rowNum: number; name: string; id: string; matchesPlayed: number; wins: number; losses: number; matchesToPlay: string; status: string; surveySent: boolean; row: any[]; }) {
+function resetPlayer(
+  player: {
+    rowNum: number;
+    name: string;
+    id: string;
+    matchesPlayed: number;
+    wins: number;
+    losses: number;
+    matchesToPlay: string;
+    status: string;
+    surveySent: boolean;
+    row: any[];
+  },
+) {
   playerStates.set(player.id, {
     userId: player.id,
     playerName: player.name,
@@ -314,9 +329,9 @@ export async function findUpgradeRow(
         rowStat === stat &&
         rowLevel === level.toString()
       ) {
-        return { 
+        return {
           row: i + 2, // Convert 0-based index to 1-based row number (+1) plus header row (+1)
-          status: status
+          status: status,
         };
       }
     }
@@ -343,11 +358,11 @@ export async function recordUpgrade(
   choices?: Record<string, unknown>,
 ): Promise<void> {
   const result = await findUpgradeRow(playerName, stat, level);
-  
+
   // Check if an upgrade already exists for this stat/level
   if (result.row > 0) {
     throw new Error(
-      `Upgrade already exists for ${playerName} ${stat} Level ${level}`
+      `Upgrade already exists for ${playerName} ${stat} Level ${level}`,
     );
   }
 
@@ -372,7 +387,9 @@ export async function recordUpgrade(
  * @param playerName - The player's name to count upgrades for
  * @returns Number of completed upgrades
  */
-export async function countCompletedUpgrades(playerName: string): Promise<number> {
+export async function countCompletedUpgrades(
+  playerName: string,
+): Promise<number> {
   try {
     const upgradeRows = await sheetsRead(
       sheets,

@@ -4,12 +4,12 @@ import { delay } from "@std/async";
 import { parseArgs } from "@std/cli/parse-args";
 import * as djs from "discord.js";
 import {
+  columnIndex,
   env,
   initSheets,
   sheets,
   sheetsRead,
   sheetsWrite,
-  columnIndex,
 } from "./sheets.ts";
 import { mutex } from "./mutex.ts";
 
@@ -35,7 +35,7 @@ import {
 } from "./standings.ts";
 
 import { ScryfallCard } from "./scryfall.ts";
-import { manageRoles, handleGuildMemberAdd } from "./role_management.ts";
+import { handleGuildMemberAdd, manageRoles } from "./role_management.ts";
 import { setup } from "./leagues/tla.ts";
 
 export { CONFIG };
@@ -44,12 +44,12 @@ export { CONFIG };
 const args = parseArgs(Deno.args, {
   boolean: ["pretend", "once", "help"],
   string: ["_"], // Positional arguments
-  default: { pretend: false, once: false, help: false }
+  default: { pretend: false, once: false, help: false },
 });
 
 // Show help if requested
-  if (args.help) {
-    console.log(`Usage: deno task start <command> [options]
+if (args.help) {
+  console.log(`Usage: deno task start <command> [options]
    or: deno run main.ts <command> [options]
 
 Commands:
@@ -63,8 +63,8 @@ Options:
   --once     Run role management once and exit (instead of looping)
   --help     Show this help message
   `);
-    Deno.exit(0);
-  }
+  Deno.exit(0);
+}
 
 const { pretend, once } = args;
 const command = args._[0]; // First positional argument is the command
@@ -892,7 +892,7 @@ export const deckCheckHandler: Handler<djs.Message> = async (
       const body = await resp.json();
       for (
         const newEnt of ents.filter(([, ident]) =>
-          !body.not_found?.some((x: { name: string, set?: string }) =>
+          !body.not_found?.some((x: { name: string; set?: string }) =>
             x.name === ident.name && x.set === ident.set
           )
         ).map(([name], i) => [name, body.data[i]] as const)
@@ -944,7 +944,9 @@ export const deckCheckHandler: Handler<djs.Message> = async (
     const colorIdentity = (cards: readonly SealedDeckEntry[]) =>
       [
         ...new Set(
-          cards.map((x) => cardEntries.get(x.name)).flatMap((x) => x?.color_identity ?? []),
+          cards.map((x) => cardEntries.get(x.name)).flatMap((x) =>
+            x?.color_identity ?? []
+          ),
         ),
       ].join("") || "no colors";
     await message.reply(

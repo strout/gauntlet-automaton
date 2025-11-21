@@ -6,40 +6,40 @@ import { searchCards, tileCardImages } from "./scryfall.ts";
 async function testCardTiling() {
   try {
     console.log("Fetching cards from FIN set...");
-    
+
     // Search for cards from the FIN set
     const allCards = await searchCards("set:fin");
     console.log(`Found ${allCards.length} cards in FIN set`);
-    
+
     if (allCards.length === 0) {
       throw new Error("No cards found in FIN set");
     }
-    
+
     // Select random number of cards between 5 and 15
     const numCards = Math.floor(Math.random() * 11) + 5; // 5-15 cards
     console.log(`Selecting ${numCards} random cards...`);
-    
+
     // Shuffle and select random cards
     const shuffled = [...allCards].sort(() => Math.random() - 0.5);
     const selectedCards = shuffled.slice(0, numCards);
-    
-    console.log("Selected cards:", selectedCards.map(c => c.name).join(", "));
-    
+
+    console.log("Selected cards:", selectedCards.map((c) => c.name).join(", "));
+
     console.log("Creating tiled image...");
     const imageBlob = await tileCardImages(selectedCards, "small");
-    
+
     // Convert blob to base64 data URI
     const arrayBuffer = await imageBlob.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
-    
+
     // Convert to base64 without using spread operator to avoid stack overflow
-    let binaryString = '';
+    let binaryString = "";
     for (let i = 0; i < uint8Array.length; i++) {
       binaryString += String.fromCharCode(uint8Array[i]);
     }
     const base64 = btoa(binaryString);
     const dataUri = `data:image/png;base64,${base64}`;
-    
+
     // Create a temporary HTML file to display the image
     const htmlContent = `
 <!DOCTYPE html>
@@ -77,22 +77,21 @@ async function testCardTiling() {
     <img src="${dataUri}" alt="Tiled Magic Cards" />
 </body>
 </html>`;
-    
+
     // Write HTML to temporary file
     const tempFile = "/tmp/card-tiling-test.html";
     await Deno.writeTextFile(tempFile, htmlContent);
-    
+
     console.log(`Opening image in browser...`);
-    
+
     // Open in default browser
     const command = new Deno.Command("xdg-open", {
       args: [tempFile],
     });
-    
+
     await command.output();
-    
+
     console.log("Test completed successfully!");
-    
   } catch (error) {
     console.error("Test failed:", error);
   }

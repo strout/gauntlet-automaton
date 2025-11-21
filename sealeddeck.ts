@@ -21,7 +21,9 @@ export type SealedDeckEntry = {
   readonly set?: string;
 };
 
-export type SealedDeckEntryRequest = Partial<SealedDeckEntry> & Pick<SealedDeckEntry, 'name'>;
+export type SealedDeckEntryRequest =
+  & Partial<SealedDeckEntry>
+  & Pick<SealedDeckEntry, "name">;
 
 /**
  * Represents a complete sealed deck pool with all card categories.
@@ -37,7 +39,14 @@ export type SealedDeckPool = {
  * Request type for creating or updating a sealed deck pool.
  * All properties are optional and poolId is excluded.
  */
-export type SealedDeckPoolRequest = Partial<Readonly<{ [K in keyof Omit<SealedDeckPool, "poolId">]: readonly SealedDeckEntryRequest[] }>>;
+export type SealedDeckPoolRequest = Partial<
+  Readonly<
+    {
+      [K in keyof Omit<SealedDeckPool, "poolId">]:
+        readonly SealedDeckEntryRequest[];
+    }
+  >
+>;
 
 const sealedDeckCache = new Map<string, SealedDeckPool>();
 
@@ -126,7 +135,9 @@ function fixNames<T extends SealedDeckPoolRequest>(json: T): T {
  */
 export function formatPool(pool: Partial<SealedDeckPool>): string {
   return "```\n" +
-    [...pool.sideboard ?? [], ...pool.deck ?? [], ...pool.hidden ?? []].map((c) =>
-      c.count + " " + c.name + (c.set ? " (" + c.set + ")" : "")
-    ).join("\n") + "\n```";
+    [...pool.sideboard ?? [], ...pool.deck ?? [], ...pool.hidden ?? []].map((
+      c,
+    ) => c.count + " " + c.name + (c.set ? " (" + c.set + ")" : "")).join(
+      "\n",
+    ) + "\n```";
 }

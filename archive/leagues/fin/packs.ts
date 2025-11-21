@@ -7,7 +7,8 @@ import { choice, weightedChoice } from "../random.ts";
 import { CONFIG } from "../main.ts";
 import { Buffer } from "node:buffer";
 
-const BASE_SEARCH = 'in:paper game:arena (-is:meld or fo:"melds with") -t:basic';
+const BASE_SEARCH =
+  'in:paper game:arena (-is:meld or fo:"melds with") -t:basic';
 
 export async function generateAndSendPack(
   client: djs.Client,
@@ -28,9 +29,16 @@ export async function generateAndSendPack(
       if (cardResult) {
         packCards.push(cardResult.card);
         sealedDeckCards.push({ name: cardResult.name, count: 1 });
-        console.log(`${state.playerName} generated card for slot:`, slot, `-> ${cardResult.name}`);
+        console.log(
+          `${state.playerName} generated card for slot:`,
+          slot,
+          `-> ${cardResult.name}`,
+        );
       } else {
-        console.warn(`${state.playerName} failed to generate card for slot:`, slot);
+        console.warn(
+          `${state.playerName} failed to generate card for slot:`,
+          slot,
+        );
       }
     }
 
@@ -228,20 +236,22 @@ async function generateCardForSlot(
       const cards = await searchCards(query, { unique: "cards" });
 
       console.log(cards.length, "cards found for query:", query);
-      
+
       // Apply color weighting if this is a color-locked slot
       if (slot.color) {
         const weightedCards = cards.map((card): [ScryfallCard, number] => {
-          const colorCount = card.card_faces?.[0]?.colors?.length ?? card.colors?.length ?? 0;
+          const colorCount = card.card_faces?.[0]?.colors?.length ??
+            card.colors?.length ?? 0;
           if (!card.colors && !card.card_faces?.[0]?.colors) {
             console.log(
-              `Card ${card.name} has no colors, treating as colorless`,);
+              `Card ${card.name} has no colors, treating as colorless`,
+            );
           }
           // Single-color or colorless cards get full weight, multicolor cards get 1/colorCount weight
           const weight = colorCount <= 1 ? 1 : 1 / colorCount;
           return [card, weight];
         });
-        
+
         const selectedCard = weightedChoice(weightedCards);
         return selectedCard
           ? { card: selectedCard, name: selectedCard.name }

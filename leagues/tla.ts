@@ -2,12 +2,7 @@ import { Client, Interaction, Message } from "discord.js";
 import { Handler } from "../dispatch.ts";
 import { makeChoice } from "../util/choice.ts";
 import { CONFIG } from "../config.ts";
-import {
-  getMatches,
-  getPlayers,
-  MATCHTYPE,
-  ROWNUM,
-} from "../standings.ts";
+import { getMatches, getPlayers, MATCHTYPE, ROWNUM } from "../standings.ts";
 import { sheets, sheetsWrite } from "../sheets.ts";
 import { delay } from "@std/async";
 
@@ -70,7 +65,9 @@ async function checkForMatches(client: Client<boolean>) {
     }
 
     // Calculate loss count for the player up to this match
-    const matchIndex = matches.rows.findIndex((m) => m[ROWNUM] === match[ROWNUM]);
+    const matchIndex = matches.rows.findIndex((m) =>
+      m[ROWNUM] === match[ROWNUM]
+    );
     const lossCount = matches.rows.slice(0, matchIndex + 1).filter((m) =>
       m["Loser Name"] === loser.Identification
     ).length;

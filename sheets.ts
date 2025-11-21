@@ -61,7 +61,7 @@ export function sheetsWrite(
   sheetId: string,
   range: string,
   values: unknown[][],
-  valueInputOption?: "RAW" | "USER_ENTERED"
+  valueInputOption?: "RAW" | "USER_ENTERED",
 ) {
   return withSmartRetry(() =>
     sheets.spreadsheetsValuesUpdate(
@@ -87,7 +87,7 @@ export function sheetsAppend(
   sheetId: string,
   range: string,
   values: unknown[][],
-  valueInputOption?: "RAW" | "USER_ENTERED"
+  valueInputOption?: "RAW" | "USER_ENTERED",
 ) {
   return withSmartRetry(() =>
     sheets.spreadsheetsValuesAppend(
@@ -158,7 +158,7 @@ export function utcOffsetMs(timeZone: string, date?: Date) {
   // TODO is it just coincidental that en-UK produces offsets of GMT or is it reliable?
   const dtf = Intl.DateTimeFormat("en-UK", { timeZoneName: "short", timeZone });
   const parts = dtf.formatToParts(date);
-  const gmtOffset = parts.find(part => part.type === "timeZoneName")!.value;
+  const gmtOffset = parts.find((part) => part.type === "timeZoneName")!.value;
   const match = gmtOffset.match(/([+-]\d+)(?::(\d+))?$/);
   if (!match) return 0;
   const hours = match[1];
@@ -177,14 +177,17 @@ const SHEET_ID_CACHE = new Map<string, Map<string, number>>();
  * @param sheetName The title of the sheet.
  * @returns The numeric GID of the sheet, or undefined if not found.
  */
-async function getSheetIdByName(spreadsheetId: string, sheetName: string): Promise<number | undefined> {
+async function getSheetIdByName(
+  spreadsheetId: string,
+  sheetName: string,
+): Promise<number | undefined> {
   let spreadsheetCache = SHEET_ID_CACHE.get(spreadsheetId);
   if (spreadsheetCache?.has(sheetName)) {
     return spreadsheetCache.get(sheetName);
   }
 
   const res = await withSmartRetry(() => sheets.spreadsheetsGet(spreadsheetId));
-  
+
   if (!spreadsheetCache) {
     spreadsheetCache = new Map<string, number>();
     SHEET_ID_CACHE.set(spreadsheetId, spreadsheetCache);
@@ -198,7 +201,6 @@ async function getSheetIdByName(spreadsheetId: string, sheetName: string): Promi
 
   return spreadsheetCache.get(sheetName);
 }
-
 
 /**
  * Deletes a row from a Google Sheet.
@@ -218,7 +220,9 @@ export function sheetsDeleteRow(
   return withSmartRetry(async (disable) => {
     const sheetId = await getSheetIdByName(spreadsheetId, sheetName);
     if (sheetId === undefined) {
-      const error = new Error(`Sheet with name "${sheetName}" not found in spreadsheet ${spreadsheetId}`);
+      const error = new Error(
+        `Sheet with name "${sheetName}" not found in spreadsheet ${spreadsheetId}`,
+      );
       // This is a permanent error, don't retry
       disable();
       throw error;

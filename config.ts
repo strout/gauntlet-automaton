@@ -35,5 +35,3 @@ export interface BotRole {
   readonly id: string;
   readonly name: string;
 }
-
-

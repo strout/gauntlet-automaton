@@ -1,6 +1,8 @@
-
 import { searchCards } from "./scryfall.ts";
-import { getCitizenHeroBoosterSlots, getCitizenVillainBoosterSlots } from "./leagues/spm/packs.ts";
+import {
+  getCitizenHeroBoosterSlots,
+  getCitizenVillainBoosterSlots,
+} from "./leagues/spm/packs.ts";
 
 interface CardSlotInfo {
   cardName: string;
@@ -10,7 +12,9 @@ interface CardSlotInfo {
 async function main() {
   const heroSlots = getCitizenHeroBoosterSlots();
   const villainSlots = getCitizenVillainBoosterSlots();
-  const allSlots = [...heroSlots, ...villainSlots].filter(slot => slot.balanceGroup);
+  const allSlots = [...heroSlots, ...villainSlots].filter((slot) =>
+    slot.balanceGroup
+  );
 
   const cardSlotMap = new Map<string, string[]>();
 
@@ -42,7 +46,6 @@ async function main() {
   } else {
     console.log("No cards found in multiple slots from balanced groups.");
   }
-
 }
 
 if (import.meta.main) {

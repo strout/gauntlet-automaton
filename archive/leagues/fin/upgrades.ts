@@ -73,15 +73,13 @@ class MenuBuilder {
     selectedIndex?: number,
   ): djs.StringSelectMenuBuilder {
     const selectedSlot = selectedIndex !== undefined
-      ? commonSlots.find(s => s.idx === selectedIndex)
+      ? commonSlots.find((s) => s.idx === selectedIndex)
       : undefined;
     const menu = new djs.StringSelectMenuBuilder()
       .setCustomId(customId)
       .setPlaceholder(
         selectedSlot !== undefined
-          ? `${
-            describeSlot(selectedSlot.slot, selectedSlot.idx)
-          } selected`
+          ? `${describeSlot(selectedSlot.slot, selectedSlot.idx)} selected`
           : placeholder,
       )
       .addOptions(commonSlots.map(({ slot, idx }) => ({
@@ -184,7 +182,8 @@ class CustomizationFlow<T extends { selectedStat: FINStat }> {
 
     if (!this.config.isComplete(choices)) {
       await interaction.editReply({
-        content: "Error occurred (selections incomplete). Please contact the league committee.",
+        content:
+          "Error occurred (selections incomplete). Please contact the league committee.",
         components: [],
       });
       return;
@@ -194,9 +193,11 @@ class CustomizationFlow<T extends { selectedStat: FINStat }> {
     const newLevel = ++state.stats[stat];
     // TODO extract this out into a flow-specific method
     if (newLevel === 2) {
-      state.level2Choices[stat] = choices as unknown as typeof state.level2Choices[FINStat];
+      state.level2Choices[stat] =
+        choices as unknown as typeof state.level2Choices[FINStat];
     } else if (newLevel === 3) {
-      state.level3Choices[stat] = choices as unknown as typeof state.level3Choices[FINStat];
+      state.level3Choices[stat] =
+        choices as unknown as typeof state.level3Choices[FINStat];
     }
     applyStatUpgrade(state, stat, newLevel);
     await recordUpgrade(state.playerName, stat, newLevel, choices);
@@ -387,7 +388,11 @@ const level2Flow = new CustomizationFlow({
       content += `• Stat: ${choices.selectedStat}\n`;
 
       if (choices.colorSlotIndex !== undefined) {
-        const selectedSlot = commonSlots.find(s => s.idx === choices.colorSlotIndex) ?? (() => { throw new Error("Color slot index out of bounds"); })();
+        const selectedSlot = commonSlots.find((s) =>
+          s.idx === choices.colorSlotIndex
+        ) ?? (() => {
+          throw new Error("Color slot index out of bounds");
+        })();
         content += `• Color slot: ${
           describeSlot(selectedSlot.slot, selectedSlot.idx)
         }\n`;
@@ -396,7 +401,11 @@ const level2Flow = new CustomizationFlow({
         content += `• New color: ${getColorName(choices.colorChoice)}\n`;
       }
       if (choices.upgradeIndex !== undefined) {
-        const selectedSlot = commonSlots.find(s => s.idx === choices.upgradeIndex) ?? (() => { throw new Error("Upgrade index out of bounds"); })();
+        const selectedSlot = commonSlots.find((s) =>
+          s.idx === choices.upgradeIndex
+        ) ?? (() => {
+          throw new Error("Upgrade index out of bounds");
+        })();
         content += `• Upgrade slot: ${
           describeSlot(selectedSlot.slot, selectedSlot.idx)
         }\n`;
@@ -497,7 +506,11 @@ const level3Flow = new CustomizationFlow({
       content += `• Stat: ${choices.selectedStat}\n`;
 
       if (choices.upgradeIndex !== undefined) {
-        const selectedSlot = commonSlots.find(s => s.idx === choices.upgradeIndex) ?? (() => { throw new Error("Upgrade index out of bounds"); })();
+        const selectedSlot = commonSlots.find((s) =>
+          s.idx === choices.upgradeIndex
+        ) ?? (() => {
+          throw new Error("Upgrade index out of bounds");
+        })();
         content += `• Upgrade slot: ${
           describeSlot(selectedSlot.slot, selectedSlot.idx)
         }\n`;
@@ -559,7 +572,7 @@ const normalFlow = new CustomizationFlow({
         statsMenu,
       ),
     );
-    
+
     return components;
   },
   formatContent: (choices) => {
@@ -654,7 +667,7 @@ export const finUpgradeSubmitHandler: Handler<djs.Interaction> = async (
 
   handle.claim();
   using _ = await getStateLock(interaction.user.id);
-  
+
   // Determine which flow to use based on the selected stat's next level
   const state = await restoreSinglePlayerState(interaction.user.id);
   if (!state) {
@@ -667,7 +680,7 @@ export const finUpgradeSubmitHandler: Handler<djs.Interaction> = async (
 
   // Don't upgrade if they're at-level already
   const players = await getPlayers();
-  const player = players.find(p => p.id === interaction.user.id);
+  const player = players.find((p) => p.id === interaction.user.id);
   if (!player) {
     await interaction.reply({
       content: "Player record not found.",
@@ -679,7 +692,8 @@ export const finUpgradeSubmitHandler: Handler<djs.Interaction> = async (
   const totalLevel = Object.values(state.stats).reduce((a, b) => a + b, 0);
   if (player.losses <= totalLevel) {
     await interaction.reply({
-      content: `You have ${player.losses} losses and are at level ${totalLevel}; you shouldn't have an upgrade unless your losses is greater than your current level.`,
+      content:
+        `You have ${player.losses} losses and are at level ${totalLevel}; you shouldn't have an upgrade unless your losses is greater than your current level.`,
       ephemeral: true,
     });
     return;
@@ -688,12 +702,15 @@ export const finUpgradeSubmitHandler: Handler<djs.Interaction> = async (
   // Extract the selected stat from the message components
   const message = interaction.message;
   let selectedStat: FINStat | undefined;
-  
+
   for (const row of message.components) {
     if (!isActionRowComponent(row)) continue;
     for (const component of row.components) {
-      if (isStringSelectComponent(component) && component.customId.includes("stat")) {
-        const defaultOption = component.options?.find(opt => opt.default);
+      if (
+        isStringSelectComponent(component) &&
+        component.customId.includes("stat")
+      ) {
+        const defaultOption = component.options?.find((opt) => opt.default);
         if (defaultOption) {
           selectedStat = defaultOption.value as FINStat;
           break;
@@ -712,7 +729,7 @@ export const finUpgradeSubmitHandler: Handler<djs.Interaction> = async (
   }
 
   const nextLevel = state.stats[selectedStat] + 1;
-  
+
   if (nextLevel === 2) {
     await level2Flow.handleInteraction(interaction);
   } else if (nextLevel === 3) {
@@ -759,17 +776,20 @@ export async function sendUpgradeChoice(
       })),
       {
         name: "🎴 Current Booster Slots",
-        value: state.boosterSlots.map((slot, idx) => 
+        value: state.boosterSlots.map((slot, idx) =>
           describeSlot(slot, idx)
         ).join("\n") || "No slots",
         inline: false,
-      }
+      },
     ]);
 
   return await member.send({ embeds: [embed], components: [row] });
 }
 
-function buildStatSelect(upgradableStats: { stat: FINStat; level: number; nextLevel: number; }[], selectedStat?: FINStat) {
+function buildStatSelect(
+  upgradableStats: { stat: FINStat; level: number; nextLevel: number }[],
+  selectedStat?: FINStat,
+) {
   return new djs.StringSelectMenuBuilder()
     .setCustomId("FIN:upgrade_stat")
     .setPlaceholder("Choose a stat to upgrade")

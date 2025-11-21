@@ -50,7 +50,7 @@ async function checkForMatches(client: djs.Client) {
     }
 
     // Skip if they're dead.
-    if (loser.status === 'Eliminated') {
+    if (loser.status === "Eliminated") {
       continue;
     }
 

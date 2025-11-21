@@ -100,7 +100,10 @@ export async function generatePackFromSlots(
         }
         // massage wubrg weights to be the same
         const wubrg = "WUBRG";
-        const total = [...wubrg].reduce((a, c) => a + weights.get(c as any)!, 0);
+        const total = [...wubrg].reduce(
+          (a, c) => a + weights.get(c as any)!,
+          0,
+        );
         for (const c of wubrg) {
           weights.set(c as any, total / 5);
         }
@@ -116,7 +119,7 @@ export async function generatePackFromSlots(
 
     if (slot.rarity === "rare/mythic") {
       // duplicate all hero or villian cards that are not hero-villains, since we removed the others
-      allCards.push(...allCards.filter(c => {
+      allCards.push(...allCards.filter((c) => {
         const line = (c.card_faces?.[0] ?? c).type_line.toLowerCase();
         return line.includes("hero") !== line.includes("villain");
       }));
@@ -163,7 +166,7 @@ export async function generatePackFromSlots(
         generateCardForSlot(slot, index)
       );
 
-      const presentColors = new Set<'W' | 'U' | 'R' | 'G' | 'B' | 'M' | 'C'>();
+      const presentColors = new Set<"W" | "U" | "R" | "G" | "B" | "M" | "C">();
       for (const card of generatedCards) {
         presentColors.add(cardColor(card));
       }

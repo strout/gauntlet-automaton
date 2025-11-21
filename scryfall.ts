@@ -11,7 +11,13 @@ export interface ScryfallCard {
   readonly set: string;
   readonly set_name: string;
   readonly collector_number: string;
-  readonly rarity: 'common' | 'uncommon' | 'rare' | 'mythic' | 'special' | 'bonus';
+  readonly rarity:
+    | "common"
+    | "uncommon"
+    | "rare"
+    | "mythic"
+    | "special"
+    | "bonus";
   readonly colors?: readonly string[];
   readonly color_identity: readonly string[];
   readonly mana_cost: string;
@@ -106,10 +112,10 @@ async function cachedScryfallRequest<T>(
 
   return await withRetry(async () => {
     const response = await fetch(url);
-    
+
     if (!response.ok) {
       throw new Error(
-        `Scryfall API error: ${response.status} ${response.statusText} for ${url}`
+        `Scryfall API error: ${response.status} ${response.statusText} for ${url}`,
       );
     }
 
@@ -128,7 +134,22 @@ async function cachedScryfallRequest<T>(
  */
 export interface SearchOptions {
   readonly unique?: "cards" | "art" | "prints";
-  readonly order?: "name" | "set" | "released" | "rarity" | "color" | "usd" | "tix" | "eur" | "cmc" | "power" | "toughness" | "edhrec" | "penny" | "artist" | "review";
+  readonly order?:
+    | "name"
+    | "set"
+    | "released"
+    | "rarity"
+    | "color"
+    | "usd"
+    | "tix"
+    | "eur"
+    | "cmc"
+    | "power"
+    | "toughness"
+    | "edhrec"
+    | "penny"
+    | "artist"
+    | "review";
   readonly dir?: "auto" | "asc" | "desc";
   readonly include_extras?: boolean;
   readonly include_multilingual?: boolean;
@@ -138,7 +159,7 @@ export interface SearchOptions {
 
 /**
  * Searches for cards using the Scryfall /cards/search endpoint (single page only)
- * 
+ *
  * @param query - Scryfall search query
  * @param options - Additional search options
  * @returns Single page of search results
@@ -148,7 +169,7 @@ export async function searchCardsOnePage(
   options: SearchOptions = {},
 ): Promise<ScryfallSearchResponse> {
   const params = new URLSearchParams({ q: query });
-  
+
   if (options.unique) params.set("unique", options.unique);
   if (options.order) params.set("order", options.order);
   if (options.dir) params.set("dir", options.dir);
@@ -163,7 +184,7 @@ export async function searchCardsOnePage(
 
 /**
  * Searches for cards using the Scryfall /cards/search endpoint
- * 
+ *
  * @param query - Scryfall search query
  * @param options - Additional search options
  * @returns All cards from all result pages
@@ -177,7 +198,10 @@ export async function searchCards(
   let hasMore = true;
 
   while (hasMore) {
-    const response = await searchCardsOnePage(query, { ...options, page: currentPage });
+    const response = await searchCardsOnePage(query, {
+      ...options,
+      page: currentPage,
+    });
     allCards.push(...response.data);
     hasMore = response.has_more;
     currentPage++;
@@ -204,8 +228,8 @@ export function getScryfallCacheSize(): number {
  * Gets cache statistics
  */
 export function getScryfallCacheStats() {
-  const timestamps = Array.from(scryfallCache.values(), e => e.timestamp);
-  
+  const timestamps = Array.from(scryfallCache.values(), (e) => e.timestamp);
+
   return {
     size: scryfallCache.size,
     oldestEntry: Math.min(...timestamps),
@@ -215,7 +239,7 @@ export function getScryfallCacheStats() {
 
 /**
  * Forces cache cleanup and removes entries older than the specified TTL
- * 
+ *
  * @param ttl - Time to live in milliseconds (default: DEFAULT_CACHE_TTL)
  * @returns Number of entries removed
  */
@@ -232,7 +256,7 @@ export type ImageSize = "small" | "normal" | "large" | "png";
 
 /**
  * Fetches a card image of the specified size from a ScryfallCard object
- * 
+ *
  * @param card - ScryfallCard object containing image URIs
  * @param size - Desired image size (default: "normal")
  * @param ttl - Cache TTL in milliseconds (default: IMAGE_CACHE_TTL)
@@ -246,19 +270,21 @@ export async function fetchCardImage(
 ): Promise<Blob> {
   // Check for image_uris on the card itself first
   let imageUris = card.image_uris;
-  
+
   // If not available, check the front face for double-faced cards
   if (!imageUris && card.card_faces && card.card_faces.length > 0) {
     imageUris = card.card_faces[0].image_uris;
   }
-  
+
   if (!imageUris) {
     throw new Error(`Card "${card.name}" has no image URIs available`);
   }
 
   const imageUrl = imageUris[size];
   if (!imageUrl) {
-    throw new Error(`Image size "${size}" not available for card "${card.name}"`);
+    throw new Error(
+      `Image size "${size}" not available for card "${card.name}"`,
+    );
   }
 
   const cached = scryfallCache.get(imageUrl);
@@ -268,10 +294,10 @@ export async function fetchCardImage(
 
   return await withRetry(async () => {
     const response = await fetch(imageUrl);
-    
+
     if (!response.ok) {
       throw new Error(
-        `Failed to fetch image: ${response.status} ${response.statusText} for ${imageUrl}`
+        `Failed to fetch image: ${response.status} ${response.statusText} for ${imageUrl}`,
       );
     }
 
@@ -287,7 +313,7 @@ export async function fetchCardImage(
 
 /**
  * Creates a tiled image from multiple cards
- * 
+ *
  * @param cards - Array of ScryfallCard objects to tile
  * @param size - Image size to use for each card (default: "normal")
  * @param ttl - Cache TTL in milliseconds (default: IMAGE_CACHE_TTL)
@@ -305,7 +331,7 @@ export async function tileCardImages(
 
   // Fetch all card images
   const imageBlobs = await Promise.all(
-    cards.map(card => fetchCardImage(card, size, ttl))
+    cards.map((card) => fetchCardImage(card, size, ttl)),
   );
 
   // Convert blobs to ImageScript Image objects
@@ -314,13 +340,13 @@ export async function tileCardImages(
       const arrayBuffer = await blob.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
       return await Image.decode(uint8Array);
-    })
+    }),
   );
 
   // Calculate layout: 1 row if ≤7 cards, 2 rows if >7 cards
   const totalCards = cards.length;
   const usesTwoRows = totalCards > 7;
-  const cardsPerRow = usesTwoRows 
+  const cardsPerRow = usesTwoRows
     ? [Math.floor(totalCards / 2), Math.ceil(totalCards / 2)]
     : [totalCards];
 
@@ -340,8 +366,10 @@ export async function tileCardImages(
   let imageIndex = 0;
   for (let row = 0; row < cardsPerRow.length; row++) {
     const cardsInThisRow = cardsPerRow[row];
-    const rowStartX = Math.floor((canvasWidth - cardsInThisRow * cardWidth) / 2); // Center the row
-    
+    const rowStartX = Math.floor(
+      (canvasWidth - cardsInThisRow * cardWidth) / 2,
+    ); // Center the row
+
     for (let col = 0; col < cardsInThisRow; col++) {
       const x = rowStartX + col * cardWidth;
       const y = row * cardHeight;
@@ -352,12 +380,12 @@ export async function tileCardImages(
 
   // Encode as PNG and return as Blob
   const pngData = await composite.encode();
-  return new Blob([pngData], { type: 'image/png' });
+  return new Blob([pngData], { type: "image/png" });
 }
 
 /**
  * Creates a tiled image from only rare and special rarity cards
- * 
+ *
  * @param cards - Array of ScryfallCard objects to filter and tile
  * @param size - Image size to use for each card (default: "normal")
  * @param ttl - Cache TTL in milliseconds (default: IMAGE_CACHE_TTL)
@@ -370,12 +398,14 @@ export async function tileRareImages(
   ttl: number = IMAGE_CACHE_TTL,
 ): Promise<Blob> {
   // Filter for rare and special rarities
-  const rareCards = cards.filter(card => 
+  const rareCards = cards.filter((card) =>
     ["rare", "mythic", "special", "bonus"].includes(card.rarity.toLowerCase())
   );
 
   if (rareCards.length === 0) {
-    throw new Error("No rare or special rarity cards found in the provided list");
+    throw new Error(
+      "No rare or special rarity cards found in the provided list",
+    );
   }
 
   return await tileCardImages(rareCards, size, ttl);

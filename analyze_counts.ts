@@ -34,8 +34,8 @@ function analyze(data: string) {
     if (match) {
       let [, name, rarity, countStr] = match;
       if (name && rarity && countStr) {
-        const [type, ...nameParts] = name.split(':');
-        name = nameParts.join(':');
+        const [type, ...nameParts] = name.split(":");
+        name = nameParts.join(":");
         const count = parseInt(countStr, 10);
         cards.push({ name, type, rarity, count });
 
@@ -55,7 +55,9 @@ function analyze(data: string) {
     console.log(`- **Mean:** ${mean.toFixed(2)}`);
     console.log(`- **Standard Deviation:** ${stddev.toFixed(2)}`);
 
-    const cardsInRarity = cards.filter((card) => card.type + ":" + card.rarity === rarity);
+    const cardsInRarity = cards.filter((card) =>
+      card.type + ":" + card.rarity === rarity
+    );
     cardsInRarity.sort((a, b) => b.count - a.count);
 
     const top10 = cardsInRarity.slice(0, 10);

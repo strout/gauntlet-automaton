@@ -5,7 +5,7 @@
  */
 export function shuffle<T>(array: readonly T[]): T[] {
   return array
-    .map(item => [item, Math.random()] as const)
+    .map((item) => [item, Math.random()] as const)
     .sort(([, a], [, b]) => a - b)
     .map(([item]) => item);
 }
@@ -25,7 +25,9 @@ export function choice<T>(array: readonly T[]): T | undefined {
  * @param items - Array of items with weights: [item, weight][]
  * @returns A randomly selected item based on weights, or undefined if array is empty or all weights are 0
  */
-export function weightedChoice<T>(items: readonly [T, number][]): T | undefined {
+export function weightedChoice<T>(
+  items: readonly [T, number][],
+): T | undefined {
   if (items.length === 0) return undefined;
 
   const totalWeight = items.reduce((sum, [, weight]) => sum + weight, 0);
@@ -35,7 +37,7 @@ export function weightedChoice<T>(items: readonly [T, number][]): T | undefined 
 
   for (const [item, weight] of items) {
     random -= weight;
-    if (random < 0) {  // Changed from <= to < for better floating point handling
+    if (random < 0) { // Changed from <= to < for better floating point handling
       return item;
     }
   }
@@ -46,6 +48,6 @@ export function weightedChoice<T>(items: readonly [T, number][]): T | undefined 
       return items[i][0];
     }
   }
-  
+
   return undefined;
 }

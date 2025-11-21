@@ -532,8 +532,12 @@ export async function removeBonusCards(poolId: string, newWalker: string) {
     return { keep: pool, remove: { poolId: undefined } };
   }
   return {
-    keep: await fetchSealedDeck(await makeSealedDeck({ sideboard: result.keep })),
-    remove: await fetchSealedDeck(await makeSealedDeck({ sideboard: result.remove })),
+    keep: await fetchSealedDeck(
+      await makeSealedDeck({ sideboard: result.keep }),
+    ),
+    remove: await fetchSealedDeck(
+      await makeSealedDeck({ sideboard: result.remove }),
+    ),
   };
 }
 
@@ -728,7 +732,6 @@ export async function rerollBonusCards(
     );
   }
 }
-
 
 export async function addMissingStuff(client: djs.Client<true>) {
   const guild = await client.guilds.fetch(CONFIG.AGL_GUILD_ID);
