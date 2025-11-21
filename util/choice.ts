@@ -38,6 +38,7 @@ export function makeChoice<T extends unknown[]>(
     userId: djs.Snowflake,
     ...args: T
   ): Promise<void> => {
+    console.debug(`sendChoice called for userId: ${userId}`);
     const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
     const member = await guild.members.fetch(userId);
     const dmChannel = await member.createDM();
@@ -74,21 +75,27 @@ export function makeChoice<T extends unknown[]>(
     interaction,
     handle,
   ) => {
+    console.debug(
+      `responseHandler called for customId: ${interaction.customId}`,
+    );
     if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
 
     const customId = interaction.customId;
     if (!customId.startsWith(prefix)) return;
 
     const parts = customId.split(":");
+    console.debug(`CustomId parts: ${parts.join(", ")}`);
 
     const interactionType = parts[1];
-    const _interactingUserId = interaction.user.id;
 
     handle.claim();
 
     try {
       if (interaction.isStringSelectMenu() && interactionType === "select") {
         const selectedValue = interaction.values[0];
+        console.debug(
+          `Handling select menu interaction. Selected value: ${selectedValue}`,
+        );
 
         const { selectMenu, submitButton, selectMenuRow, submitButtonRow } =
           parseComponents(interaction);
@@ -110,6 +117,9 @@ export function makeChoice<T extends unknown[]>(
         });
       } else if (interaction.isButton() && interactionType === "submit") {
         const selectedValue = parts[2];
+        console.debug(
+          `Handling submit button interaction. Selected value: ${selectedValue}`,
+        );
 
         if (selectedValue === "null") {
           await interaction.reply({
@@ -126,6 +136,7 @@ export function makeChoice<T extends unknown[]>(
             selectedValue,
             interaction,
           );
+        console.debug(`onChoice result: ${result}`);
 
         let finalContent = responseContent ||
           `Your choice "${selectedValue}" was processed.`;
@@ -192,6 +203,7 @@ export function makeChoice<T extends unknown[]>(
   function parseComponents(
     interaction: djs.MessageComponentInteraction<djs.CacheType>,
   ) {
+    console.debug("parseComponents called.");
     const selectMenuRow: djs.ActionRowBuilder<
       djs.StringSelectMenuBuilder
     > = djs.ActionRowBuilder.from(
