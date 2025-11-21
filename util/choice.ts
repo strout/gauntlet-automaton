@@ -10,7 +10,7 @@ export function makeChoice<T extends unknown[]>(
   ) => Promise<
     {
       content: string;
-      options: { value: string; label: string }[];
+      options: djs.APISelectMenuOption[];
       image?: string | Buffer;
     }
   >,

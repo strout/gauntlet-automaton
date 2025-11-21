@@ -7,12 +7,20 @@ import { sheets, sheetsWrite } from "../sheets.ts";
 import { delay } from "@std/async";
 
 const makeSetMessage = () => {
-  const options = ["OM1", "EOE", "FIN", "TDM", "DFT", "FDN"].map((set) => ({
+  const options = Object.entries({
+    "SPM": "Marvel's Spider-Man",
+    "EOE": "Edge of Eternities",
+    "FIN": "Final Fantasy",
+    "TDM": "Tarkir: Dragonstorm",
+    "DFT": "Aetherdrift",
+    "FDN": "Magic Foundations",
+  }).map(([set, name]) => ({
     label: set,
     value: set,
+    description: name,
   }));
   return Promise.resolve({
-    content: "Which set do you choose?",
+    content: "Now is your moment to choose.",
     options: options,
   });
 };
@@ -27,6 +35,38 @@ const onSetChoice = async (
   const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
   const channel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID);
 
+  let flavorText = "";
+  switch (chosen) {
+    case "TDM":
+      flavorText =
+        "Did I ever tell you how I got the nickname Dragon of the West?";
+      break;
+    case "FDN":
+      flavorText = "Remember your basics, Prince Zuko!";
+      break;
+    case "EOE":
+      flavorText =
+        "The Fire Nation needs the moon, too; we all depend on the balance.";
+      break;
+    case "SPM":
+      flavorText =
+        "Destiny is a funny thing. You never know how things are going to work out.";
+      break;
+    case "DFT":
+      flavorText =
+        "Sometimes, life is like this dark tunnel. You can't always see the light at the end of the tunnel, but if you just keep moving, you will come to a better place.";
+      break;
+    case "FIN":
+      flavorText =
+        "Understanding others, the other elements, and the other nations will help you become whole.";
+      break;
+    default:
+      flavorText = "";
+  }
+
+  const packgenChannelUrl =
+    `https://discord.com/channels/${CONFIG.GUILD_ID}/${CONFIG.PACKGEN_CHANNEL_ID}`;
+
   if (channel && channel.isTextBased()) {
     await channel.send(`!${chosen} <@${userId}>`);
   } else {
@@ -36,7 +76,9 @@ const onSetChoice = async (
   return {
     result: "success" as const,
     content:
-      `You chose ${chosen}. A request has been sent to the pack generation channel.`,
+      `You chose ${chosen}. A request has been sent to the pack generation channel: ${packgenChannelUrl}${
+        flavorText ? `\n*${flavorText}*` : ""
+      }`,
   };
 };
 
@@ -69,7 +111,8 @@ async function checkForMatches(client: Client<boolean>) {
       m[ROWNUM] === match[ROWNUM]
     );
     const matchCount = matches.rows.slice(0, matchIndex + 1).filter((m) =>
-      m["Loser Name"] === loser.Identification || m["Your Name"] === loser.Identification
+      m["Loser Name"] === loser.Identification ||
+      m["Your Name"] === loser.Identification
     ).length;
 
     // Only send the choice message if the loss count is between 1 and 5
