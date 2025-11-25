@@ -15,5 +15,8 @@
     "googleapis": "https://googleapis.deno.dev/_/base@v1/mod.ts",
     "sheets": "https://googleapis.deno.dev/v1/sheets:v4.ts",
     "zod": "npm:zod@^4.0.10"
-  }
+  },
+  "exclude": [
+    "archive/"
+  ]
 }
