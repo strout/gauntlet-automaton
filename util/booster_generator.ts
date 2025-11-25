@@ -1,8 +1,14 @@
 // Placeholder for the new reusable booster generation system
 // This file will contain the core BoosterSlot interface and the generic pack generation logic.
 
-import { ScryfallCard, searchCards } from "../scryfall.ts";
+import { ScryfallCard, searchCards, tileCardImages } from "../scryfall.ts";
 import { choice, weightedChoice } from "../random.ts";
+import {
+  AttachmentBuilder,
+  EmbedBuilder,
+  MessageCreateOptions,
+} from "discord.js";
+import { Buffer } from "node:buffer";
 
 export interface BoosterSlot {
   // A direct Scryfall search query string. This allows for highly flexible and specific card selection.
@@ -156,7 +162,7 @@ export async function generatePackFromSlots(
     ) {
       const selectedCard = choice(possibleCards);
       if (selectedCard) {
-        cardsForThisSlot.push(selectedCard);
+          cardsForThisSlot.push(selectedCard);
 
       }
       attempts++;
@@ -171,4 +177,44 @@ export async function generatePackFromSlots(
     pack.push(...cardsForThisSlot);
   }
   return pack;
+}
+
+/**
+ * Formats an array of ScryfallCard objects into a Discord message with an embed and optionally a tiled image.
+ * @param cards The array of ScryfallCard objects to format.
+ * @param title The title for the Discord embed.
+ * @returns A Promise resolving to MessageCreateOptions suitable for sending via discord.js.
+ */
+export async function formatBoosterPackForDiscord(
+  cards: ScryfallCard[],
+  title: string = "Booster Pack",
+): Promise<MessageCreateOptions> {
+  const cardNames = cards.map((c) => c.name).join("\n");
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(`\`\`\`\n${cardNames}\n\`\`\``)
+    .setColor(0x00FF00); // A generic green color
+
+  const files: AttachmentBuilder[] = [];
+  let result: MessageCreateOptions = {
+    embeds: [embed],
+  };
+
+  try {
+    const tiledImageBlob = await tileCardImages(cards, "normal");
+    const arrayBuffer = await tiledImageBlob.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const filename = "booster_pack.png";
+    const attachment = new AttachmentBuilder(buffer, { name: filename });
+
+    embed.setImage(`attachment://${filename}`);
+    files.push(attachment);
+    result = { ...result, files };
+  } catch (error) {
+    console.error("Failed to generate tiled image for booster pack:", error);
+    // Continue without the image if it fails
+  }
+
+  return result;
 }
