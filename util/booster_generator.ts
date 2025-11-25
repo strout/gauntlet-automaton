@@ -18,10 +18,10 @@ export interface BoosterSlot {
     | "special"
     | "bonus"
     | "rare/mythic";
-  color?: string[]; // e.g., ['W', 'U', 'B', 'R', 'G'] for multicolor, or ['W'] for white
+
   type?: string | string[]; // e.g., 'creature', ['basic', 'land'], or ['creature', 'artifact']
   set?: string; // e.g., 'zne' for Zendikar Rising
-  block?: string; // e.g., 'zendikar'
+
   // Add more properties as needed for common filtering criteria
   // e.g., legalities, keywords, power/toughness ranges, etc.
 
@@ -54,14 +54,6 @@ function generateScryfallQuery(slot: BoosterSlot): string {
     parts.push(`r:${slot.rarity}`);
   }
 
-  // Color
-  if (slot.color && slot.color.length > 0) {
-    // Assuming 'color' array means exact colors, if multiple, it's multicolor.
-    // Scryfall syntax for exact colors is 'c:wubrg' or 'c=w'
-    const colorString = slot.color.map((c) => c.toLowerCase()).join("");
-    parts.push(`c=${colorString}`);
-  }
-
   // Type
   if (slot.type) {
     if (Array.isArray(slot.type)) {
@@ -75,11 +67,6 @@ function generateScryfallQuery(slot: BoosterSlot): string {
   // Set
   if (slot.set) {
     parts.push(`set:${slot.set}`);
-  }
-
-  // Block
-  if (slot.block) {
-    parts.push(`block:${slot.block}`);
   }
 
   return `${parts.join(" ")} ${defaultQueryParts.join(" ")}`;
@@ -96,7 +83,7 @@ export async function generatePackFromSlots(
   slots: BoosterSlot[],
 ): Promise<ScryfallCard[]> {
   const pack: ScryfallCard[] = [];
-  const selectedCardIds = new Set<string>(); // To prevent duplicate cards in a single pack
+
 
   for (const slot of slots) {
     if (slot.rarity === "rare/mythic") {
@@ -113,8 +100,8 @@ export async function generatePackFromSlots(
       ]);
 
       const weightedCards: [ScryfallCard, number][] = [
-        ...possibleRares.map((card) => [card, 2]), // Rares get 2x weight
-        ...possibleMythics.map((card) => [card, 1]), // Mythics get 1x weight
+        ...possibleRares.map((card) => [card, 2] as [ScryfallCard, number]), // Rares get 2x weight
+        ...possibleMythics.map((card) => [card, 1] as [ScryfallCard, number]), // Mythics get 1x weight
       ];
 
       const numToSelect = slot.count || 1;
@@ -126,9 +113,9 @@ export async function generatePackFromSlots(
         attempts < (possibleRares.length * 2 + possibleMythics.length) * 2
       ) {
         const selectedCard = weightedChoice(weightedCards);
-        if (selectedCard && !selectedCardIds.has(selectedCard.id)) {
+        if (selectedCard) {
           cardsForThisSlot.push(selectedCard);
-          selectedCardIds.add(selectedCard.id);
+
         }
         attempts++;
       }
@@ -168,9 +155,9 @@ export async function generatePackFromSlots(
       attempts < possibleCards.length * 2
     ) {
       const selectedCard = choice(possibleCards);
-      if (selectedCard && !selectedCardIds.has(selectedCard.id)) {
+      if (selectedCard) {
         cardsForThisSlot.push(selectedCard);
-        selectedCardIds.add(selectedCard.id);
+
       }
       attempts++;
     }
