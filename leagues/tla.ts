@@ -5,6 +5,11 @@ import { CONFIG } from "../config.ts";
 import { getMatches, getPlayers, MATCHTYPE, ROWNUM } from "../standings.ts";
 import { sheets, sheetsWrite } from "../sheets.ts";
 import { delay } from "@std/async";
+import {
+  BoosterSlot,
+  formatBoosterPackForDiscord,
+  generatePackFromSlots,
+} from "../util/booster_generator.ts";
 
 const makeSetMessage = () => {
   const options = Object.entries({
@@ -150,6 +155,55 @@ async function checkForMatches(client: Client<boolean>) {
           error,
         );
         // Optionally, send error to owner here if critical
+      }
+    } else if (matchCount >= 6 && matchCount <= 10) {
+      // Logic for matches 6-10: DM a booster pack
+      try {
+        const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+        const member = await guild.members.fetch(loser["Discord ID"]);
+
+        const slots: BoosterSlot[] = [
+          { rarity: "rare/mythic", count: 1, set: "TLA" },
+          { rarity: "uncommon", count: 4, set: "TLA" },
+          { rarity: "common", count: 9, set: "TLA" },
+        ];
+
+        const pack = await generatePackFromSlots(slots);
+        const discordMessage = await formatBoosterPackForDiscord(
+          pack,
+          "Your TLA Booster Pack!",
+        );
+
+        let blocked = false;
+        try {
+          // Send the pack as a DM
+          await member.user.send(discordMessage);
+        } catch (e: unknown) {
+          if (e instanceof Error && e.message.includes("10007")) {
+            blocked = true;
+            console.warn(
+              `Player ${loser.Identification} (${loser["Discord ID"]}) blocked DMs.`,
+            );
+          } else {
+            throw e;
+          }
+        }
+
+        await sheetsWrite(
+          sheets,
+          CONFIG.LIVE_SHEET_ID,
+          `Matches!R${match[ROWNUM]}C${
+            matches.headerColumns["Bot Messaged"] + 1
+          }`,
+          [[blocked ? "-1" : "1"]], // -1 for blocked, 1 for sent (consistent with choice messages)
+        );
+      } catch (error) {
+        console.error(
+          `Error sending TLA booster to ${loser.Identification} (${
+            loser["Discord ID"]
+          }) for match ${match[ROWNUM]}:`,
+          error,
+        );
       }
     }
     // For other loss counts, do nothing and leave "Bot Messaged" untouched
