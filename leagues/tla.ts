@@ -2,7 +2,7 @@ import { Client, Interaction, Message, TextChannel } from "discord.js";
 import { Handler } from "../dispatch.ts";
 import { makeChoice } from "../util/choice.ts";
 import { CONFIG } from "../config.ts";
-import { addPoolChange, getMatches, getPlayers, getPoolChanges, MATCHTYPE, ROWNUM } from "../standings.ts";
+import { addPoolChange, getAllMatches, getPlayers, getPoolChanges, MATCHTYPE, ROWNUM } from "../standings.ts";
 import { sheets, sheetsWrite } from "../sheets.ts";
 import { delay } from "@std/async";
 import {
@@ -175,12 +175,21 @@ async function recordPack(
   );
 }
 
+const processed = new Set<string>();
+
 const onPackModifyChoice = async (
   chosen: string,
   interaction: Interaction,
 ) => {
   const [choice, packMessageId] = chosen.split(":");
   const userId = interaction.user.id;
+  if (processed.has(packMessageId)) {
+    return {
+      result: "failure" as const,
+      content: "Double-press detected. Check #pack-generation and wait a moment for your pack. Contact #league-committee if it does not appear in a few moments."
+    }
+  }
+  processed.add(packMessageId);
 
   // Fetch the original pack message
   if (!interaction.channel) {
@@ -297,6 +306,7 @@ const onPackModifyChoice = async (
       finalPack,
       `<@${interaction.user.id}> got a week 2 pack!`,
     );
+    discordMessage.content = `<@${interaction.user.id}> got a week 2 pack!`;
 
     const guild = await interaction.client.guilds.fetch(CONFIG.GUILD_ID);
     const packGenChannel = await guild.channels.fetch(
@@ -334,7 +344,7 @@ const { sendChoice: sendSetChoice, responseHandler: setChoiceHandler } =
   makeChoice("TLA_week1", makeSetMessage, onSetChoice);
 
 async function checkForMatches(client: Client<boolean>) {
-  const matches = await getMatches();
+  const matches = await getAllMatches();
   const players = await getPlayers();
 
   for (const match of matches.rows) {
@@ -354,9 +364,13 @@ async function checkForMatches(client: Client<boolean>) {
       continue;
     }
 
+    if (loser["Losses"] >= 11) {
+      continue; // TODO adjust when winner-only stuff happens
+    }
+
     // Calculate loss count for the player up to this match
     const matchIndex = matches.rows.findIndex((m) =>
-      m[ROWNUM] === match[ROWNUM]
+      m[ROWNUM] === match[ROWNUM] && m[MATCHTYPE] === match[MATCHTYPE]
     );
     const matchCount = matches.rows.slice(0, matchIndex + 1).filter((m) =>
       m["Loser Name"] === loser.Identification ||
@@ -385,8 +399,8 @@ async function checkForMatches(client: Client<boolean>) {
         await sheetsWrite(
           sheets,
           CONFIG.LIVE_SHEET_ID,
-          `Matches!R${match[ROWNUM]}C${
-            matches.headerColumns["Bot Messaged"] + 1
+          `${matches.sheetName[match[MATCHTYPE]]}!R${match[ROWNUM]}C${
+            matches.headerColumns[match[MATCHTYPE]]["Bot Messaged"] + 1
           }`,
           [[blocked ? "-1" : "1"]], // -1 for blocked, 1 for sent
         );
@@ -431,7 +445,8 @@ async function checkForMatches(client: Client<boolean>) {
           await sheetsWrite(
             sheets,
             CONFIG.LIVE_SHEET_ID,
-            `Matches!R${rowNum}C${matches.headerColumns["Bot Messaged"] + 1}`,
+          `${matches.sheetName[match[MATCHTYPE]]}!R${match[ROWNUM]}C${
+            matches.headerColumns[match[MATCHTYPE]]["Bot Messaged"] + 1}`,
             [["1"]], // 1 for sent
           );
         } catch (e: unknown) {
@@ -446,7 +461,7 @@ async function checkForMatches(client: Client<boolean>) {
             await sheetsWrite(
               sheets,
               CONFIG.LIVE_SHEET_ID,
-              `Matches!R${rowNum}C${matches.headerColumns["Bot Messaged"] + 1}`,
+              `${matches.sheetName[match[MATCHTYPE]]}!R${rowNum}C${matches.headerColumns[match[MATCHTYPE]]["Bot Messaged"] + 1}`,
               [["-1"]], // -1 for blocked
             );
           } else {
