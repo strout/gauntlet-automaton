@@ -120,7 +120,7 @@ export function makeChoice<T extends unknown[]>(
           components: [selectMenuRow, submitButtonRow],
         });
       } else if (interaction.isButton() && interactionType === "submit") {
-        const selectedValue = parts[2];
+        const selectedValue = parts.slice(2).join(":");
         console.debug(
           `Handling submit button interaction. Selected value: ${selectedValue}`,
         );
