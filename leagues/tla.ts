@@ -11,16 +11,7 @@ import {
   generatePackFromSlots,
 } from "../util/booster_generator.ts";
 
-// New imports
-import { ScryfallCard } from "../scryfall.ts"; // Only ScryfallCard needed here
-
-// Define the activePacks Map for temporary storage of pack data
-const activePacks = new Map<
-  string,
-  { pack: ScryfallCard[]; rowNum: number; originalSlots: BoosterSlot[] }
->();
-
-// Helper function to generate specific cards
+import { ScryfallCard, searchCards } from "../scryfall.ts";
 async function generateSpecificCards(
   rarity: "common" | "uncommon" | "rare" | "mythic",
   count: number,
@@ -115,14 +106,14 @@ const onSetChoice = async (
   };
 };
 
-const makePackModifyMessage = (rowNum: number) => {
+const makePackModifyMessage = (packMessageId: string) => {
   const options = Object.entries({
     "KEEP": "Keep the pack as is",
     "SWAP_UC_FOR_C": "Swap 4 Uncommons for 9 random Commons",
     "SWAP_C_FOR_UC": "Swap 9 Commons for 4 random Uncommons",
   }).map(([value, label]) => ({
     label,
-    value: `${value}:${rowNum}`, // Encode rowNum in value
+    value: `${value}:${packMessageId}`, // Encode packMessageId in value
     description: label,
   }));
   return Promise.resolve({
@@ -135,30 +126,71 @@ const onPackModifyChoice = async (
   chosen: string,
   interaction: Interaction,
 ) => {
-  const [choice, rowNumStr] = chosen.split(":");
-  const rowNum = parseInt(rowNumStr, 10);
+  const [choice, packMessageId] = chosen.split(":");
   const userId = interaction.user.id;
 
-  const packData = activePacks.get(userId);
-  if (!packData || packData.rowNum !== rowNum) {
-    // This could happen if the user tries to interact with an old message
+  // Fetch the original pack message
+  if (!interaction.channel) {
     return {
       result: "failure" as const,
-      content:
-        "This pack modification choice has expired or is invalid. Please ensure you are interacting with the most recent pack.",
+      content: "Could not find the channel for the pack message.",
     };
   }
-  // Clean up the temporary storage after interaction
-  activePacks.delete(userId);
+  const packMessage = await interaction.channel.messages.fetch(packMessageId);
+  const embed = packMessage.embeds[0];
+  if (!embed || !embed.description) {
+    return {
+      result: "failure" as const,
+      content: "Could not retrieve pack details from the original message.",
+    };
+  }
 
-  const { pack: originalPack, originalSlots } = packData;
+  // Extract card names from the description (assuming format ````\nCard Name\nCard Name\n````)
+  const cardNamesRaw = embed.description.replace(/```\n/g, "").replace(/\n```/g, "");
+  const cardNames = cardNamesRaw.split("\n").filter((name) => name.trim() !== "");
+
+  if (cardNames.length === 0) {
+    return {
+      result: "failure" as const,
+      content: "No card names found in the original pack message.",
+    };
+  }
+
+  // Construct a single Scryfall query for all cards
+  const scryfallQueryParts = cardNames.map((name) => `!"${name}"`);
+  const combinedQuery = `(${scryfallQueryParts.join(" or ")}) set:tla is:booster`;
+
+  // Fetch all ScryfallCard objects
+      let originalPack: readonly ScryfallCard[] = [];  try {
+    originalPack = await searchCards(combinedQuery);
+    // Ensure the order is generally preserved or at least all cards are present
+    // Scryfall search does not guarantee order, so we need to re-sort or match
+    const originalPackMap = new Map<string, ScryfallCard>();
+    for (const card of originalPack) {
+      originalPackMap.set(card.name, card);
+    }
+    // Reconstruct in the order of cardNames if possible, otherwise just use what was found
+    originalPack = cardNames.map(name => originalPackMap.get(name)).filter(card => card !== undefined) as readonly ScryfallCard[];
+
+    // If some cards couldn't be found, log a warning
+    if (originalPack.length !== cardNames.length) {
+      console.warn(`Could not find all cards for pack message ${packMessageId}. Expected ${cardNames.length}, found ${originalPack.length}. Missing: ${cardNames.filter(name => !originalPackMap.has(name)).join(', ')}`);
+    }
+
+  } catch (error) {
+    console.error(`Error fetching cards for pack message ${packMessageId}:`, error);
+    return {
+      result: "failure" as const,
+      content: "There was an error retrieving card details for the pack. Please try again.",
+    };
+  }
 
   let finalPack: ScryfallCard[] = [];
   let flavorText = "";
 
   // Helper to separate cards by rarity
   const separateCardsByRarity = (
-    cards: ScryfallCard[],
+    cards: readonly ScryfallCard[],
   ) => {
     const raresMythics = cards.filter((c) =>
       c.rarity === "rare" || c.rarity === "mythic"
@@ -175,7 +207,7 @@ const onPackModifyChoice = async (
   try {
     switch (choice) {
       case "KEEP":
-        finalPack = originalPack;
+        finalPack = [...originalPack];
         flavorText = "You decided to keep your pack as is. Enjoy!";
         break;
       case "SWAP_UC_FOR_C": {
@@ -218,7 +250,7 @@ const onPackModifyChoice = async (
       }
       default:
         flavorText = "An unexpected choice was made. Defaulting to keep.";
-        finalPack = originalPack;
+        finalPack = [...originalPack];
     }
 
     const discordMessage = await formatBoosterPackForDiscord(
@@ -228,7 +260,7 @@ const onPackModifyChoice = async (
 
     let blocked = false;
     try {
-      await member.user.send(discordMessage);
+      await interaction.user.send(discordMessage);
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes("10007")) {
         blocked = true;
@@ -245,7 +277,7 @@ const onPackModifyChoice = async (
       content: `${flavorText}\nYour pack has been sent!`,
     };
   } catch (error) {
-    console.error(`Error processing pack modification for ${userId}:\`, error);
+    console.error(`Error processing pack modification for ${userId}:`, error);
     return {
       result: "failure" as const,
       content:
@@ -275,11 +307,7 @@ async function checkForMatches(client: Client<boolean>) {
     );
 
     if (!loser) {
-      console.warn(
-        `Unidentified loser ${match["Loser Name"]} for ${match[MATCHTYPE]} ${
-          match[ROWNUM]
-        }`,
-      );
+      console.warn(`Unidentified loser ${match["Loser Name"]} for ${match[MATCHTYPE]} ${match[ROWNUM]}`);
       continue;
     }
 
@@ -351,19 +379,10 @@ async function checkForMatches(client: Client<boolean>) {
         let blocked = false;
         try {
           // Send the initial pack as a DM
-          await member.user.send(discordMessage);
-
-          // Store the pack in activePacks and set a timeout for cleanup
-          activePacks.set(userId, { pack, rowNum, originalSlots: slots });
-          setTimeout(() => {
-            if (activePacks.get(userId)?.rowNum === rowNum) { // Check if it's still the same pack
-              activePacks.delete(userId);
-              console.log(`Cleaned up expired pack for user ${userId}`);
-            }
-          }, 30 * 60 * 1000); // 30 minutes timeout
+          const sentMessage = await member.user.send(discordMessage);
 
           // Then send the modification choice
-          await sendPackModifyChoice(client, userId, rowNum);
+          await sendPackModifyChoice(client, userId, sentMessage.id);
 
           // Mark the match as messaged in the sheet AFTER sending both messages
           await sheetsWrite(
