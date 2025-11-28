@@ -1,8 +1,8 @@
-import { Client, Interaction, Message } from "discord.js";
+import { Client, Interaction, Message, TextChannel } from "discord.js";
 import { Handler } from "../dispatch.ts";
 import { makeChoice } from "../util/choice.ts";
 import { CONFIG } from "../config.ts";
-import { getMatches, getPlayers, MATCHTYPE, ROWNUM } from "../standings.ts";
+import { addPoolChange, getMatches, getPlayers, getPoolChanges, MATCHTYPE, ROWNUM } from "../standings.ts";
 import { sheets, sheetsWrite } from "../sheets.ts";
 import { delay } from "@std/async";
 import {
@@ -12,6 +12,12 @@ import {
 } from "../util/booster_generator.ts";
 
 import { ScryfallCard, searchCards } from "../scryfall.ts";
+import { fetchSealedDeck, makeSealedDeck } from "../sealeddeck.ts";
+import { mutex } from "../mutex.ts";
+
+const packgenChannelUrl =
+  `https://discord.com/channels/${CONFIG.GUILD_ID}/${CONFIG.PACKGEN_CHANNEL_ID}`;
+
 async function generateSpecificCards(
   rarity: "common" | "uncommon" | "rare" | "mythic",
   count: number,
@@ -28,7 +34,6 @@ async function generateSpecificCards(
   const generatedCards = await generatePackFromSlots([slot]);
   return generatedCards;
 }
-
 
 const makeSetMessage = () => {
   const options = Object.entries({
@@ -88,9 +93,6 @@ const onSetChoice = async (
       flavorText = "";
   }
 
-  const packgenChannelUrl =
-    `https://discord.com/channels/${CONFIG.GUILD_ID}/${CONFIG.PACKGEN_CHANNEL_ID}`;
-
   if (channel && channel.isTextBased()) {
     await channel.send(`!${chosen} <@${userId}>`);
   } else {
@@ -122,6 +124,57 @@ const makePackModifyMessage = (packMessageId: string) => {
   });
 };
 
+const playerLocks = new Map<string, () => Promise<Disposable>>();
+
+function lockPlayer(discordId: string) {
+  let lock = playerLocks.get(discordId);
+  if (!lock) {
+    lock = mutex();
+    playerLocks.set(discordId, lock);
+  }
+  return lock();
+}
+
+async function recordPack(
+  id: string,
+  packPoolId: string,
+  comment?: string,
+) {
+  using _ = await lockPlayer(id);
+  const [players, poolChanges] = await Promise.all([
+    getPlayers(),
+    getPoolChanges(),
+  ]);
+  const player = players.rows.find((p) => p["Discord ID"] === id);
+  if (!player) {
+    console.warn(`Could not find player with Discord ID ${id} to record pack`);
+    return;
+  }
+  const lastChange = poolChanges.rows.findLast((change) =>
+    change["Name"] === player.Identification
+  );
+  if (!lastChange) {
+    console.warn(
+      `Could not find last pool change for ${player.Identification}`,
+    );
+    return;
+  }
+
+  const packContents = await fetchSealedDeck(packPoolId);
+  // build full pool
+  const fullPool = await makeSealedDeck(
+    packContents,
+    lastChange["Full Pool"] ?? undefined,
+  );
+  await addPoolChange(
+    player.Identification,
+    "add pack",
+    packPoolId,
+    comment ?? "",
+    fullPool,
+  );
+}
+
 const onPackModifyChoice = async (
   chosen: string,
   interaction: Interaction,
@@ -146,8 +199,13 @@ const onPackModifyChoice = async (
   }
 
   // Extract card names from the description (assuming format ````\nCard Name\nCard Name\n````)
-  const cardNamesRaw = embed.description.replace(/```\n/g, "").replace(/\n```/g, "");
-  const cardNames = cardNamesRaw.split("\n").filter((name) => name.trim() !== "");
+  const cardNamesRaw = embed.description.replace(/```\n/g, "").replace(
+    /\n```/g,
+    "",
+  );
+  const cardNames = cardNamesRaw.split("\n").filter((name) =>
+    name.trim() !== ""
+  );
 
   if (cardNames.length === 0) {
     return {
@@ -214,41 +272,20 @@ const onPackModifyChoice = async (
         flavorText = "You decided to keep your pack as is. Enjoy!";
         break;
       case "SWAP_UC_FOR_C": {
-        // Remove 4 random uncommons
-        const uncommonsToKeep = [...uncommons];
-        const removedUncommons: ScryfallCard[] = [];
-        for (let i = 0; i < Math.min(4, uncommons.length); i++) {
-          const removed = uncommonsToKeep.splice(
-            Math.floor(Math.random() * uncommonsToKeep.length),
-            1,
-          )[0];
-          removedUncommons.push(removed);
-        }
-
-        // Generate 9 new common cards
+        // Remove all 4 uncommons and generate 9 new common cards
         const newCommons = await generateSpecificCards("common", 9, "TLA");
 
-        finalPack = [...raresMythics, ...uncommonsToKeep, ...commons, ...newCommons];
+        finalPack = [...raresMythics, ...commons, ...newCommons];
         flavorText = "You swapped your uncommons for more commons. Good luck!";
         break;
       }
       case "SWAP_C_FOR_UC": {
-        // Remove 9 random commons
-        const commonsToKeep = [...commons];
-        const removedCommons: ScryfallCard[] = [];
-        for (let i = 0; i < Math.min(9, commons.length); i++) {
-          const removed = commonsToKeep.splice(
-            Math.floor(Math.random() * commonsToKeep.length),
-            1,
-          )[0];
-          removedCommons.push(removed);
-        }
-
-        // Generate 4 new uncommon cards
+        // Remove all 9 random commons and generate 4 new uncommon cards
         const newUncommons = await generateSpecificCards("uncommon", 4, "TLA");
 
-        finalPack = [...raresMythics, ...uncommons, ...commonsToKeep, ...newUncommons];
-        flavorText = "You swapped your commons for more uncommons. A bold move!";
+        finalPack = [...raresMythics, ...uncommons, ...newUncommons];
+        flavorText =
+          "You swapped your commons for more uncommons. A bold move!";
         break;
       }
       default:
@@ -258,31 +295,30 @@ const onPackModifyChoice = async (
 
     const discordMessage = await formatBoosterPackForDiscord(
       finalPack,
-      `Your Modified TLA Booster Pack! (${choice})`,
+      `<@${interaction.user.id}> got a week 2 pack!`,
     );
 
-    let blocked = false;
-    try {
-      await interaction.user.send(discordMessage);
-    } catch (e: unknown) {
-      if (e instanceof Error && e.message.includes("10007")) {
-        blocked = true;
-        console.warn(`Player ${userId} blocked DMs.`);
-      } else {
-        throw e;
-      }
-    }
+    const guild = await interaction.client.guilds.fetch(CONFIG.GUILD_ID);
+    const packGenChannel = await guild.channels.fetch(
+      CONFIG.PACKGEN_CHANNEL_ID,
+    ) as TextChannel;
+    await packGenChannel.send(discordMessage);
 
+    const packPoolId = await makeSealedDeck({
+      sideboard: finalPack.map((x) => ({ name: x.name, set: x.set })),
+    });
 
+    await recordPack(interaction.user.id, packPoolId);
 
     return {
       result: "success" as const,
-      content: `${flavorText}\nYour pack has been sent!`,
+      content: `${flavorText}\nYour pack has been selected! See ` +
+        packgenChannelUrl,
     };
   } catch (error) {
     console.error(`Error processing pack modification for ${userId}:`, error);
     return {
-      result: "failure" as const,
+      result: "try-again" as const,
       content:
         "There was an error processing your pack modification. Please try again.",
     };
@@ -292,7 +328,7 @@ const onPackModifyChoice = async (
 const {
   sendChoice: sendPackModifyChoice,
   responseHandler: packModifyChoiceHandler,
-} = makeChoice("TLA_packmodify", makePackModifyMessage, onPackModifyChoice);
+} = makeChoice("TLA_week2", makePackModifyMessage, onPackModifyChoice);
 
 const { sendChoice: sendSetChoice, responseHandler: setChoiceHandler } =
   makeChoice("TLA_week1", makeSetMessage, onSetChoice);
@@ -310,7 +346,11 @@ async function checkForMatches(client: Client<boolean>) {
     );
 
     if (!loser) {
-      console.warn(`Unidentified loser ${match["Loser Name"]} for ${match[MATCHTYPE]} ${match[ROWNUM]}`);
+      console.warn(
+        `Unidentified loser ${match["Loser Name"]} for ${match[MATCHTYPE]} ${
+          match[ROWNUM]
+        }`,
+      );
       continue;
     }
 
@@ -391,32 +431,28 @@ async function checkForMatches(client: Client<boolean>) {
           await sheetsWrite(
             sheets,
             CONFIG.LIVE_SHEET_ID,
-            `Matches!R${rowNum}C${
-              matches.headerColumns["Bot Messaged"] + 1
-            }`,
+            `Matches!R${rowNum}C${matches.headerColumns["Bot Messaged"] + 1}`,
             [["1"]], // 1 for sent
           );
-
         } catch (e: unknown) {
           if (e instanceof Error && e.message.includes("10007")) {
             blocked = true;
             console.warn(
-              `Player ${loser.Identification} (${loser["Discord ID"]}) blocked DMs. Cannot send booster or choice.`,
+              `Player ${loser.Identification} (${
+                loser["Discord ID"]
+              }) blocked DMs. Cannot send booster or choice.`,
             );
             // If blocked, update sheet immediately as no choice will be made
             await sheetsWrite(
               sheets,
               CONFIG.LIVE_SHEET_ID,
-              `Matches!R${rowNum}C${
-                matches.headerColumns["Bot Messaged"] + 1
-              }`,
+              `Matches!R${rowNum}C${matches.headerColumns["Bot Messaged"] + 1}`,
               [["-1"]], // -1 for blocked
             );
           } else {
             throw e;
           }
         }
-
       } catch (error) {
         console.error(
           `Error sending TLA booster or choice to ${loser.Identification} (${

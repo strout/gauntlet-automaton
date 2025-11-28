@@ -202,7 +202,7 @@ export async function formatBoosterPackForDiscord(
   };
 
   try {
-    const tiledImageBlob = await tileCardImages(cards, "normal");
+    const tiledImageBlob = await tileCardImages(cards, "small");
     const arrayBuffer = await tiledImageBlob.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const filename = "booster_pack.png";
