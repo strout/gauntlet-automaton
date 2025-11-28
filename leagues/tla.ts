@@ -156,35 +156,38 @@ const onPackModifyChoice = async (
     };
   }
 
-  // Construct a single Scryfall query for all cards
-  const scryfallQueryParts = cardNames.map((name) => `!"${name}"`);
-  const combinedQuery = `(${scryfallQueryParts.join(" or ")}) set:tla is:booster`;
-
-  // Fetch all ScryfallCard objects
-      let originalPack: readonly ScryfallCard[] = [];  try {
-    originalPack = await searchCards(combinedQuery);
-    // Ensure the order is generally preserved or at least all cards are present
-    // Scryfall search does not guarantee order, so we need to re-sort or match
-    const originalPackMap = new Map<string, ScryfallCard>();
-    for (const card of originalPack) {
-      originalPackMap.set(card.name, card);
+  let originalPack: readonly ScryfallCard[] = [];
+  try {
+    const allTlaBoosterCards = await searchCards("set:tla is:booster");
+    const tlaBoosterCardMap = new Map<string, ScryfallCard>();
+    for (const card of allTlaBoosterCards) {
+      tlaBoosterCardMap.set(card.name, card);
     }
-    // Reconstruct in the order of cardNames if possible, otherwise just use what was found
-    originalPack = cardNames.map(name => originalPackMap.get(name)).filter(card => card !== undefined) as readonly ScryfallCard[];
+
+    // Reconstruct originalPack in the order of cardNames
+    originalPack = cardNames.map((name) => tlaBoosterCardMap.get(name)).filter(
+      (card) => card !== undefined,
+    ) as readonly ScryfallCard[];
 
     // If some cards couldn't be found, log a warning
     if (originalPack.length !== cardNames.length) {
-      console.warn(`Could not find all cards for pack message ${packMessageId}. Expected ${cardNames.length}, found ${originalPack.length}. Missing: ${cardNames.filter(name => !originalPackMap.has(name)).join(', ')}`);
+      console.warn(
+        `Could not find all cards for pack message ${packMessageId}. Expected ${cardNames.length}, found ${originalPack.length}. Missing: ${
+          cardNames.filter((name) => !tlaBoosterCardMap.has(name)).join(", ")
+        }`,
+      );
     }
-
   } catch (error) {
-    console.error(`Error fetching cards for pack message ${packMessageId}:`, error);
+    console.error(
+      `Error fetching TLA booster cards for pack message ${packMessageId}:`,
+      error,
+    );
     return {
       result: "failure" as const,
-      content: "There was an error retrieving card details for the pack. Please try again.",
+      content:
+        "There was an error retrieving TLA booster card details. Please try again.",
     };
   }
-
   let finalPack: ScryfallCard[] = [];
   let flavorText = "";
 
