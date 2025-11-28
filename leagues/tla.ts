@@ -119,7 +119,7 @@ const makePackModifyMessage = (packMessageId: string) => {
     description: label,
   }));
   return Promise.resolve({
-    content: "You received a booster pack! Would you like to modify it?",
+    content: "You are at the crossroads of your destiny. It's time for you to choose.",
     options: options,
   });
 };
@@ -416,7 +416,7 @@ async function checkForMatches(client: Client<boolean>) {
         const pack = await generatePackFromSlots(slots);
         const discordMessage = await formatBoosterPackForDiscord(
           pack,
-          "Your TLA Booster Pack!",
+          "Week 2 pack. You must choose an option below before your next match.",
         );
 
         let blocked = false;

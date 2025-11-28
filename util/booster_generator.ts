@@ -44,7 +44,7 @@ export interface BoosterSlot {
  * @returns A Scryfall query string.
  */
 function generateScryfallQuery(slot: BoosterSlot): string {
-  const defaultQueryParts = ["is:booster", "game:paper game:arena"]; // Base constraints for all Scryfall queries
+  const defaultQueryParts = ["is:booster", "game:paper game:arena", "-t:basic"]; // Base constraints for all Scryfall queries
 
   if (slot.scryfallQuery) {
     return `${slot.scryfallQuery} ${defaultQueryParts.join(" ")}`;
