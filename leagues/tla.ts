@@ -2,7 +2,15 @@ import { Client, Interaction, Message, TextChannel } from "discord.js";
 import { Handler } from "../dispatch.ts";
 import { makeChoice } from "../util/choice.ts";
 import { CONFIG } from "../config.ts";
-import { addPoolChange, getAllMatches, getPlayers, getPoolChanges, MATCHTYPE, ROWNUM } from "../standings.ts";
+import {
+  addPoolChange,
+  getAllMatches,
+  getPlayers,
+  getPoolChanges,
+  MATCHTYPE,
+  Player,
+  ROWNUM,
+} from "../standings.ts";
 import { sheets, sheetsWrite } from "../sheets.ts";
 import { delay } from "@std/async";
 import {
@@ -120,7 +128,8 @@ const makePackModifyMessage = (packMessageId: string) => {
     description: label,
   }));
   return Promise.resolve({
-    content: "You are at the crossroads of your destiny. It's time for you to choose.",
+    content:
+      "You are at the crossroads of your destiny. It's time for you to choose.",
     options: options,
   });
 };
@@ -187,8 +196,9 @@ const onPackModifyChoice = async (
   if (processed.has(packMessageId)) {
     return {
       result: "failure" as const,
-      content: "Double-press detected. Check #pack-generation and wait a moment for your pack. Contact #league-committee if it does not appear in a few moments."
-    }
+      content:
+        "Double-press detected. Check #pack-generation and wait a moment for your pack. Contact #league-committee if it does not appear in a few moments.",
+    };
   }
   processed.add(packMessageId);
 
@@ -344,150 +354,325 @@ const {
 const { sendChoice: sendSetChoice, responseHandler: setChoiceHandler } =
   makeChoice("TLA_week1", makeSetMessage, onSetChoice);
 
+const { sendChoice: sendBonusChoice, responseHandler: bonusChoiceHandler } =
+  makeChoice("TLA_week3", makeBonusMessage, onBonusChoice);
+
+function makeBonusMessage(bonusCount: number) {
+  return Promise.resolve({
+    content: "Take your bonus now, or endure and take it later?",
+    options: [
+      {
+        label: "Bonus: Get " + bonusCount + " shrines and " + bonusCount +
+          " Learn cards now",
+        value: "bonus",
+        description: "Get You can only choose Bonus once",
+      },
+      {
+        label: "Endure",
+        value: "endure",
+        description: "Collect your bonus after a future match",
+      },
+    ],
+  });
+}
+
+async function onBonusChoice(chosen: string, interaction: Interaction) {
+  if (chosen === "endure") {
+    return { result: "success" as const, content: "You have endured" };
+  }
+  if (chosen === "bonus") {
+    const matches = await getTlaMatches();
+    const players = await getPlayers();
+    const player = players.rows.find((p) =>
+      p["Discord ID"] === interaction.user.id
+    );
+    if (!player) return { result: "try-again" as const };
+    const bonusCount = Math.max(
+      5,
+      matches.rows.filter((m) =>
+        m["Your Name"] === player.Identification ||
+        m["Loser Name"] === player.Identification
+      ).length,
+    );
+    if (bonusCount < 0) {
+      return {
+        result: "failure" as const,
+        content: "You have fewer than 11 matches played.",
+      };
+    }
+    const sent = await sendBonus(interaction.client, player, bonusCount);
+    if (!sent) return { result: "try-again" as const };
+    return { result: "success" as const, content: "Your pack is in #pack-generation" };
+  }
+  return { result: "try-again" as const };
+}
+
+async function sendBonus(client: Client, player: Player, bonusCount: number) {
+  const poolChanges = await getPoolChanges();
+  const hasBonus = poolChanges.rows.some((r) =>
+    r.Name === player.Identification && r.Comment === "Bonus"
+  );
+  if (hasBonus) {
+    console.log(`Player ${player.Identification} already received bonus.`);
+    return false; // Player already received bonus
+  }
+
+  const bonusSlots: BoosterSlot[] = [
+    // Shrines: Use the combined Scryfall query directly
+    { scryfallQuery: "t:shrine r:u (s:neo OR s:m21)", count: bonusCount },
+    // Learn Cards: Use the Scryfall query directly
+    { scryfallQuery: "o:learn r<r s:stx", count: bonusCount }, // r<r means common or uncommon
+  ];
+
+  let bonusPack: ScryfallCard[] = [];
+  try {
+      bonusPack = await generatePackFromSlots(bonusSlots);
+  } catch (error) {
+      console.error(`Error generating bonus pack for player ${player.Identification}:`, error);
+      return false;
+  }
+
+  if (bonusPack.length === 0) {
+    console.warn(
+      `No cards generated for bonus pack for player ${player.Identification}.`,
+    );
+    return false;
+  }
+
+  // 2. Format for Discord and send to pack generation channel
+  const discordMessageContent =
+    `<@${player["Discord ID"]}> received a bonus pack! (${bonusCount} Shrines, ${bonusCount} Learn Cards)`;
+  const discordMessage = await formatBoosterPackForDiscord(
+    bonusPack,
+    discordMessageContent,
+  );
+
+  const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+  const packGenChannel = await guild.channels.fetch(
+    CONFIG.PACKGEN_CHANNEL_ID,
+  ) as TextChannel;
+
+  try {
+    await packGenChannel.send(discordMessage);
+  } catch (e) {
+    console.error(
+      `Error sending bonus pack message to Discord for player ${player.Identification}:`,
+      e,
+    );
+    return false;
+  }
+
+  // 3. Record it (with recordPack) with comment "Bonus"
+  const packPoolId = await makeSealedDeck({
+    sideboard: bonusPack.map((x) => ({ name: x.name, set: x.set })),
+  });
+
+  await recordPack(player["Discord ID"], packPoolId, "Bonus");
+
+  return true;
+}
+
 async function checkForMatches(client: Client<boolean>) {
   const matches = await getTlaMatches();
   const players = await getPlayers();
 
   for (const match of matches.rows) {
     // Check if the match is handled by script and not yet messaged by bot
-    if (!match["Script Handled"] || match["Bot Messaged"]) continue;
+    if (!match["Script Handled"]) continue;
 
-    if (!match["Bot Messaged"]) await handleLoser(client, matches, players, match);
+    if (!match["Bot Messaged"]) {
+      await handleLoser(client, matches, players, match);
+    }
+
+    if (match[MATCHTYPE] === "match" && !match["Bot Messaged Winner"]) {
+      await handleWinner(client, matches, players, match);
+    }
   }
 }
 
 async function getTlaMatches() {
-  return await getAllMatches({ "Bot Messaged Winner": z.coerce.number() }, { "Bot Messaged Winner": z.coerce.number().optional() });
+  return await getAllMatches({ "Bot Messaged Winner": z.coerce.number() }, {
+    "Bot Messaged Winner": z.coerce.number().optional(),
+  });
 }
 
-async function handleLoser(client: Client<boolean>, matches: Awaited<ReturnType<typeof getTlaMatches>>, players: Awaited<ReturnType<typeof getPlayers<Record<string, never>>>>, match: Awaited<ReturnType<typeof getTlaMatches>>['rows'][number]) {
-    const loser = players.rows.find((p) =>
-      p.Identification === match["Loser Name"]
+function getMatchCount(
+  matches: Awaited<ReturnType<typeof getTlaMatches>>,
+  player: Awaited<
+    ReturnType<typeof getPlayers<Record<string, never>>>
+  >["rows"][number],
+  match: Awaited<ReturnType<typeof getTlaMatches>>["rows"][number],
+) {
+  // Calculate total matches played by the player up to this match
+  const matchIndex = matches.rows.findIndex((m) =>
+    m[ROWNUM] === match[ROWNUM] && m[MATCHTYPE] === match[MATCHTYPE]
+  );
+  return matches.rows.slice(0, matchIndex + 1).filter((m) =>
+    m["Loser Name"] === player.Identification ||
+    m["Your Name"] === player.Identification
+  ).length;
+}
+
+async function handleWinner(
+  client: Client<boolean>,
+  matches: Awaited<ReturnType<typeof getTlaMatches>>,
+  players: Awaited<ReturnType<typeof getPlayers<Record<string, never>>>>,
+  match: Awaited<ReturnType<typeof getTlaMatches>>["rows"][number],
+) {
+  const winner = players.rows.find((p) =>
+    p.Identification === match["Your Name"]
+  );
+
+  if (!winner) {
+    console.warn(
+      `Unidentified winner ${match["Your Name"]} for ${match[MATCHTYPE]} ${
+        match[ROWNUM]
+      }`,
     );
+    return;
+  }
 
-    if (!loser) {
-      console.warn(
-        `Unidentified loser ${match["Loser Name"]} for ${match[MATCHTYPE]} ${
-          match[ROWNUM]
-        }`,
-      );
-      return;
-    }
+  const matchCount = getMatchCount(matches, winner, match);
 
-    if (loser["Losses"] >= 11) {
-      return;
-    }
+  // Logic for matches 11-15: Week 3
+  if (matchCount >= 11 && matchCount <= 15) {
+    await handleWeek3(client, winner, match, matches, "Bot Messaged Winner");
+  }
+}
 
-    // Calculate total matches played by the player up to this match
-    const matchIndex = matches.rows.findIndex((m) =>
-      m[ROWNUM] === match[ROWNUM] && m[MATCHTYPE] === match[MATCHTYPE]
+async function handleLoser(
+  client: Client<boolean>,
+  matches: Awaited<ReturnType<typeof getTlaMatches>>,
+  players: Awaited<ReturnType<typeof getPlayers<Record<string, never>>>>,
+  match: Awaited<ReturnType<typeof getTlaMatches>>["rows"][number],
+) {
+  const loser = players.rows.find((p) =>
+    p.Identification === match["Loser Name"]
+  );
+
+  if (!loser) {
+    console.warn(
+      `Unidentified loser ${match["Loser Name"]} for ${match[MATCHTYPE]} ${
+        match[ROWNUM]
+      }`,
     );
-    const matchCount = matches.rows.slice(0, matchIndex + 1).filter((m) =>
-      m["Loser Name"] === loser.Identification ||
-      m["Your Name"] === loser.Identification
-    ).length;
+    return;
+  }
 
-    // Only send the choice message if the total matches played is between 1 and 5
-    if (matchCount >= 1 && matchCount <= 5) {
+  if (loser["Losses"] >= 11) {
+    return;
+  }
+
+  const matchCount = getMatchCount(matches, loser, match);
+
+  // Only send the choice message if the total matches played is between 1 and 5
+  if (matchCount >= 1 && matchCount <= 5) {
+    try {
+      const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+      const member = await guild.members.fetch(loser["Discord ID"]);
+
+      let blocked = false;
       try {
-        const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-        const member = await guild.members.fetch(loser["Discord ID"]);
-
-        let blocked = false;
-        try {
-          await sendSetChoice(client, member.user.id);
-        } catch (e: unknown) {
-          // DiscordAPIError code 10007 means "Cannot send messages to this user"
-          if (e instanceof Error && e.message.includes("10007")) { // Simplified check for DiscordAPIError
-            blocked = true;
-          } else {
-            throw e;
-          }
+        await sendSetChoice(client, member.user.id);
+      } catch (e: unknown) {
+        // DiscordAPIError code 10007 means "Cannot send messages to this user"
+        if (e instanceof Error && e.message.includes("10007")) { // Simplified check for DiscordAPIError
+          blocked = true;
+        } else {
+          throw e;
         }
+      }
 
-        // Mark the match as messaged in the sheet
+      // Mark the match as messaged in the sheet
+      await recordMessaged(
+        matches,
+        match,
+        "Bot Messaged",
+        blocked ? "-1" : "1",
+      );
+    } catch (error) {
+      console.error(
+        `Error sending TLA choice to ${loser.Identification} (${
+          loser["Discord ID"]
+        }) for match ${match[ROWNUM]}:`,
+        error,
+      );
+      // Optionally, send error to owner here if critical
+    }
+  } else if (matchCount >= 6 && matchCount <= 10) {
+    // Logic for matches 6-10: DM a booster pack and offer modification
+    try {
+      const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+      const member = await guild.members.fetch(loser["Discord ID"]);
+      const userId = member.user.id; // Declare userId here
+
+
+      const slots: BoosterSlot[] = [
+        { rarity: "rare/mythic", count: 1, set: "TLA" },
+        { rarity: "uncommon", count: 4, set: "TLA" },
+        { rarity: "common", count: 9, set: "TLA" },
+      ];
+
+      const pack = await generatePackFromSlots(slots);
+      const discordMessage = await formatBoosterPackForDiscord(
+        pack,
+        "Week 2 pack. You must choose an option below before your next match.",
+      );
+
+      try {
+        // Send the initial pack as a DM
+        const sentMessage = await member.user.send(discordMessage);
+
+        // Then send the modification choice
+        await sendPackModifyChoice(client, userId, sentMessage.id);
+
+        // Mark the match as messaged in the sheet AFTER sending both messages
         await recordMessaged(
           matches,
           match,
           "Bot Messaged",
-          blocked ? "-1" : "1",
+          "1",
         );
-      } catch (error) {
-        console.error(
-          `Error sending TLA choice to ${loser.Identification} (${
-            loser["Discord ID"]
-          }) for match ${match[ROWNUM]}:`,
-          error,
-        );
-        // Optionally, send error to owner here if critical
-      }
-    } else if (matchCount >= 6 && matchCount <= 10) {
-      // Logic for matches 6-10: DM a booster pack and offer modification
-      try {
-        const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-        const member = await guild.members.fetch(loser["Discord ID"]);
-        const userId = member.user.id; // Declare userId here
-        const rowNum = match[ROWNUM]; // Declare rowNum here
-
-        const slots: BoosterSlot[] = [
-          { rarity: "rare/mythic", count: 1, set: "TLA" },
-          { rarity: "uncommon", count: 4, set: "TLA" },
-          { rarity: "common", count: 9, set: "TLA" },
-        ];
-
-        const pack = await generatePackFromSlots(slots);
-        const discordMessage = await formatBoosterPackForDiscord(
-          pack,
-          "Week 2 pack. You must choose an option below before your next match.",
-        );
-
-        try {
-          // Send the initial pack as a DM
-          const sentMessage = await member.user.send(discordMessage);
-
-          // Then send the modification choice
-          await sendPackModifyChoice(client, userId, sentMessage.id);
-
-          // Mark the match as messaged in the sheet AFTER sending both messages
-          await recordMessaged(
-            matches,
-            match,
-            "Bot Messaged",
-            "1",
+      } catch (e: unknown) {
+        if (e instanceof Error && e.message.includes("10007")) {
+          console.warn(
+            `Player ${loser.Identification} (${
+              loser["Discord ID"]
+            }) blocked DMs. Cannot send booster or choice.`,
           );
-        } catch (e: unknown) {
-          if (e instanceof Error && e.message.includes("10007")) {
-            console.warn(
-              `Player ${loser.Identification} (${
-                loser["Discord ID"]
-              }) blocked DMs. Cannot send booster or choice.`,
-            );
-            // If blocked, update sheet immediately as no choice will be made
-            await recordMessaged(matches, match, "Bot Messaged", "-1");
-          } else {
-            throw e;
-          }
+          // If blocked, update sheet immediately as no choice will be made
+          await recordMessaged(matches, match, "Bot Messaged", "-1");
+        } else {
+          throw e;
         }
-      } catch (error) {
-        console.error(
-          `Error sending TLA booster or choice to ${loser.Identification} (${
-            loser["Discord ID"]
-          }) for match ${match[ROWNUM]}:`,
-          error,
-        );
       }
-    } else if (matchCount >= 11 && matchCount <= 15) {
-      await handleWeek3(loser, match, matches, "Bot Messaged");
+    } catch (error) {
+      console.error(
+        `Error sending TLA booster or choice to ${loser.Identification} (${
+          loser["Discord ID"]
+        }) for match ${match[ROWNUM]}:`,
+        error,
+      );
     }
-    // For other match counts, do nothing and leave "Bot Messaged" untouched
+  } else if (matchCount >= 11 && matchCount <= 15) {
+    await handleWeek3(client, loser, match, matches, "Bot Messaged");
+  }
+  // For other match counts, do nothing and leave "Bot Messaged" untouched
 }
 
-async function recordMessaged(matches: Awaited<ReturnType<typeof getTlaMatches>>, match: Awaited<ReturnType<typeof getTlaMatches>>['rows'][number], column: "Bot Messaged" | "Bot Messaged Winner", value: "1" | "-1") {
+async function recordMessaged(
+  matches: Awaited<ReturnType<typeof getTlaMatches>>,
+  match: Awaited<ReturnType<typeof getTlaMatches>>["rows"][number],
+  column: "Bot Messaged" | "Bot Messaged Winner",
+  value: "1" | "-1",
+) {
   await sheetsWrite(
     sheets,
     CONFIG.LIVE_SHEET_ID,
-    `${matches.sheetName[match[MATCHTYPE]]}!R${match[ROWNUM]}C${matches.headerColumns[match[MATCHTYPE]][column] + 1}`,
-    [[value]]
+    `${matches.sheetName[match[MATCHTYPE]]}!R${match[ROWNUM]}C${
+      matches.headerColumns[match[MATCHTYPE]][column] + 1
+    }`,
+    [[value]],
   );
 }
 
@@ -504,10 +689,56 @@ export function setup(): Promise<{
       }
     },
     messageHandlers: [],
-    interactionHandlers: [setChoiceHandler, packModifyChoiceHandler],
+    interactionHandlers: [
+      setChoiceHandler,
+      packModifyChoiceHandler,
+      bonusChoiceHandler,
+    ],
   });
 }
 
-function handleWeek3(player: Awaited<ReturnType<typeof getPlayers<Record<string,never>>>>['rows'][number], match: Awaited<ReturnType<typeof getTlaMatches>>['rows'][number], matches: Awaited<ReturnType<typeof getTlaMatches>>, messagedColumn: string) {
-  //
+async function handleWeek3(
+  client: Client,
+  player: Awaited<
+    ReturnType<typeof getPlayers<Record<string, never>>>
+  >["rows"][number],
+  match: Awaited<ReturnType<typeof getTlaMatches>>["rows"][number],
+  matches: Awaited<ReturnType<typeof getTlaMatches>>,
+  messagedColumn: "Bot Messaged" | "Bot Messaged Winner",
+) {
+  const matchCount = getMatchCount(matches, player, match);
+  const poolChanges = await getPoolChanges();
+  const hasBonus = poolChanges.rows.some((r) =>
+    r.Name === player.Identification
+    && r.Comment === "Bonus"
+  );
+  try {
+    if (
+      !hasBonus &&
+      matches.rows.findLast((m) =>
+          m["Your Name"] === player.Identification ||
+          m["Loser Name"] === player.Identification
+        ) === match
+    ) {
+      const bonusCount = matchCount - 10;
+      if (bonusCount < 5) {
+        await sendBonusChoice(client, player["Discord ID"], bonusCount);
+      } else {
+        await sendBonus(client, player, bonusCount);
+      }
+    }
+    await recordMessaged(matches, match, messagedColumn, "1");
+  } catch (e: unknown) {
+    if (e instanceof Error && e.message.includes("10007")) {
+      console.warn(
+        `Player ${player.Identification} (${
+          player["Discord ID"]
+        }) blocked DMs. Cannot send booster or choice.`,
+      );
+      // If blocked, update sheet immediately as no choice will be made
+      await recordMessaged(matches, match, "Bot Messaged", "-1");
+    } else {
+      throw e;
+    }
+  }
 }
