@@ -33,6 +33,7 @@ export function makeChoice<T extends unknown[]>(
   ) => Promise<void>;
   responseHandler: Handler<djs.Interaction>;
 } {
+  const processingMessages = new Set<djs.Snowflake>();
   const sendChoice = async (
     client: djs.Client,
     userId: djs.Snowflake,
@@ -75,10 +76,10 @@ export function makeChoice<T extends unknown[]>(
     interaction,
     handle,
   ) => {
+    if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
     console.debug(
       `responseHandler called for customId: ${interaction.customId}`,
     );
-    if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
 
     const customId = interaction.customId;
     if (!customId.startsWith(prefix)) return;
@@ -92,6 +93,13 @@ export function makeChoice<T extends unknown[]>(
 
     try {
       if (interaction.isStringSelectMenu() && interactionType === "select") {
+        if (processingMessages.has(interaction.message.id)) {
+          await interaction.reply({
+            content: "Please wait for your previous choice to finish processing.",
+            ephemeral: true,
+          });
+          return;
+        }
         const selectedValue = interaction.values[0];
         console.debug(
           `Handling select menu interaction. Selected value: ${selectedValue}`,
@@ -120,6 +128,14 @@ export function makeChoice<T extends unknown[]>(
           components: [selectMenuRow, submitButtonRow],
         });
       } else if (interaction.isButton() && interactionType === "submit") {
+        if (processingMessages.has(interaction.message.id)) {
+          await interaction.reply({
+            content: "Your previous choice is still being processed.",
+            ephemeral: true,
+          });
+          return;
+        }
+
         const selectedValue = parts.slice(2).join(":");
         console.debug(
           `Handling submit button interaction. Selected value: ${selectedValue}`,
@@ -133,59 +149,92 @@ export function makeChoice<T extends unknown[]>(
           return;
         }
 
-        await interaction.deferUpdate();
+        processingMessages.add(interaction.message.id);
+        try {
+          const {
+            submitButton,
+            selectMenu,
+            selectMenuRow,
+            submitButtonRow,
+          } = parseComponents(interaction);
 
-        const { result, content: responseContent, updatedOptions, image } =
-          await onChoice(
-            selectedValue,
-            interaction,
-          );
-        console.debug(`onChoice result: ${result}`);
+          // Disable select menu and submit button
+          selectMenu.setDisabled(true);
+          selectMenuRow.setComponents(selectMenu);
+          submitButton.setDisabled(true).setLabel("Processing...");
+          submitButtonRow.setComponents(submitButton);
 
-        let finalContent = responseContent ||
-          `Your choice "${selectedValue}" was processed.`;
+          await interaction.update({
+            components: [selectMenuRow, submitButtonRow],
+          });
 
-        if (result === "failure") {
-          finalContent = responseContent ||
-            `There was an error processing your choice "${selectedValue}". Please try again.`;
-        } else if (result === "try-again") {
-          finalContent = responseContent ||
-            `Your choice "${selectedValue}" requires further action or failed temporarily. Please try again.`;
+          const { result, content: responseContent, updatedOptions, image } =
+            await onChoice(
+              selectedValue,
+              interaction,
+            );
+          console.debug(`onChoice result: ${result}`);
 
-          const { selectMenu, submitButton, selectMenuRow, submitButtonRow } =
-            parseComponents(interaction);
+          let finalContent = responseContent ||
+            `Your choice "${selectedValue}" was processed.`;
 
-          if (updatedOptions) {
-            selectMenu.setOptions(updatedOptions.map((opt) => ({
-              ...opt,
-              default: opt.value === selectedValue,
-            })));
-          } else {
-            selectMenu.setOptions(selectMenu.options.map((opt) => ({
-              ...opt.toJSON(),
-              default: opt.toJSON().value === selectedValue,
-            })));
+          if (result === "failure") {
+            finalContent = responseContent ||
+              `There was an error processing your choice "${selectedValue}". Please try again.`;
+             // Re-enable select menu and submit button on failure
+            selectMenu.setDisabled(false);
+            selectMenuRow.setComponents(selectMenu);
+            submitButton.setDisabled(false).setLabel("Submit Choice");
+            submitButtonRow.setComponents(submitButton);
+            await interaction.editReply({
+              content: finalContent,
+              components: [selectMenuRow, submitButtonRow],
+              files: image ? [image] : undefined,
+            });
+            return;
+          } else if (result === "try-again") {
+            finalContent = responseContent ||
+              `Your choice "${selectedValue}" requires further action or failed temporarily. Please try again.`;
+
+            // Re-enable select menu and submit button on try-again
+            selectMenu.setDisabled(false);
+            selectMenuRow.setComponents(selectMenu);
+            if (updatedOptions) {
+              selectMenu.setOptions(updatedOptions.map((opt) => ({
+                ...opt,
+                default: opt.value === selectedValue,
+              })));
+            } else {
+              selectMenu.setOptions(selectMenu.options.map((opt) => ({
+                ...opt.toJSON(),
+                default: opt.toJSON().value === selectedValue,
+              })));
+            }
+
+            submitButton.setCustomId(
+              `${prefix}:submit:${selectedValue}`,
+            );
+            submitButton.setDisabled(false).setLabel("Submit Choice");
+            submitButtonRow.setComponents(submitButton);
+
+            await interaction.editReply({
+              content: finalContent,
+              components: [selectMenuRow, submitButtonRow],
+              files: image ? [image] : undefined,
+            });
+            return;
           }
 
-          submitButton.setCustomId(
-            `${prefix}:submit:${selectedValue}`,
-          );
-          submitButton.setDisabled(false);
-
+          // If success, clear all components
           await interaction.editReply({
             content: finalContent,
-            components: [selectMenuRow, submitButtonRow],
+            components: [],
+            embeds: [],
             files: image ? [image] : undefined,
           });
-          return;
+        } finally {
+          processingMessages.delete(interaction.message.id);
         }
-
-        await interaction.editReply({
-          content: finalContent,
-          components: [],
-          embeds: [],
-          files: image ? [image] : undefined,
-        });
       }
     } catch (error) {
       console.error(`Error in ${prefix} choice handler:`, error);

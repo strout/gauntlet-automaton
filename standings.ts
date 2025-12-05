@@ -391,7 +391,7 @@ export async function getMatches<S extends z.ZodRawShape>(
  * @returns Entropy match records with timing and results
  */
 export async function getEntropy<S extends z.ZodRawShape>(
-  extras?: z.ZodObject<S>,
+  extras?: S,
 ) {
   const LAST_COLUMN = "L";
   const table = await readTable("Entropy!A4:" + LAST_COLUMN, 4);
@@ -402,7 +402,7 @@ export async function getEntropy<S extends z.ZodRawShape>(
     "PLAYER 2": z.string(),
     RESULT: z.string(),
     "Bot Messaged": z.coerce.boolean(),
-    ...extras?.shape,
+    ...extras,
   }, { ...table, rows: table.rows.filter((r) => r["PLAYER 2"]) });
   return {
     ...parsed,
@@ -424,7 +424,7 @@ export async function getAllMatches<
   SE extends z.ZodRawShape,
 >(
   matchExtras?: SM,
-  entropyExtras?: z.ZodObject<SE>,
+  entropyExtras?: SE,
   quotas?: Awaited<ReturnType<typeof getQuotas>>,
 ) {
   const [matches, entropy] = await Promise.all([
