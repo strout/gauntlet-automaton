@@ -108,7 +108,7 @@ export function makeChoice<T extends unknown[]>(
         const { selectMenu, submitButton, selectMenuRow, submitButtonRow } =
           parseComponents(interaction);
 
-        console.log("Selecting", interaction.values[0]);
+        console.debug("Selecting", interaction.values[0]);
 
         selectMenu.setOptions(selectMenu.options.map((opt) => ({
           ...opt.toJSON(),
@@ -174,7 +174,6 @@ export function makeChoice<T extends unknown[]>(
               interaction,
             );
           console.debug(`onChoice result: ${result}`);
-
           let finalContent = responseContent ||
             `Your choice "${selectedValue}" was processed.`;
 
@@ -210,7 +209,6 @@ export function makeChoice<T extends unknown[]>(
                 default: opt.toJSON().value === selectedValue,
               })));
             }
-
             submitButton.setCustomId(
               `${prefix}:submit:${selectedValue}`,
             );

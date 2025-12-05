@@ -1,4 +1,10 @@
-import { Client, Interaction, Message, TextChannel } from "discord.js";
+import {
+  Client,
+  DiscordAPIError,
+  Interaction,
+  Message,
+  TextChannel,
+} from "discord.js";
 import { Handler } from "../dispatch.ts";
 import { makeChoice } from "../util/choice.ts";
 import { CONFIG } from "../config.ts";
@@ -370,7 +376,7 @@ function makeBonusMessage(bonusCount: number) {
       {
         label: "Endure",
         value: "endure",
-        description: "Collect your bonus after a future match",
+        description: "Collect a bigger bonus after a future match",
       },
     ],
   });
@@ -402,7 +408,10 @@ async function onBonusChoice(chosen: string, interaction: Interaction) {
     }
     const sent = await sendBonus(interaction.client, player, bonusCount);
     if (!sent) return { result: "try-again" as const };
-    return { result: "success" as const, content: "Your pack is in #pack-generation" };
+    return {
+      result: "success" as const,
+      content: "Your pack is in #pack-generation",
+    };
   }
   return { result: "try-again" as const };
 }
@@ -426,10 +435,13 @@ async function sendBonus(client: Client, player: Player, bonusCount: number) {
 
   let bonusPack: ScryfallCard[] = [];
   try {
-      bonusPack = await generatePackFromSlots(bonusSlots);
+    bonusPack = await generatePackFromSlots(bonusSlots);
   } catch (error) {
-      console.error(`Error generating bonus pack for player ${player.Identification}:`, error);
-      return false;
+    console.error(
+      `Error generating bonus pack for player ${player.Identification}:`,
+      error,
+    );
+    return false;
   }
 
   if (bonusPack.length === 0) {
@@ -440,8 +452,9 @@ async function sendBonus(client: Client, player: Player, bonusCount: number) {
   }
 
   // 2. Format for Discord and send to pack generation channel
-  const discordMessageContent =
-    `<@${player["Discord ID"]}> received a bonus pack! (${bonusCount} Shrines, ${bonusCount} Learn Cards)`;
+  const discordMessageContent = `<@${
+    player["Discord ID"]
+  }> received a bonus pack! (${bonusCount} Shrines, ${bonusCount} Learn Cards)`;
   const discordMessage = await formatBoosterPackForDiscord(
     bonusPack,
     discordMessageContent,
@@ -575,7 +588,7 @@ async function handleLoser(
         await sendSetChoice(client, member.user.id);
       } catch (e: unknown) {
         // DiscordAPIError code 10007 means "Cannot send messages to this user"
-        if (e instanceof Error && e.message.includes("10007")) { // Simplified check for DiscordAPIError
+        if (e instanceof DiscordAPIError && e.code === 10007) {
           blocked = true;
         } else {
           throw e;
@@ -605,7 +618,6 @@ async function handleLoser(
       const member = await guild.members.fetch(loser["Discord ID"]);
       const userId = member.user.id; // Declare userId here
 
-
       const slots: BoosterSlot[] = [
         { rarity: "rare/mythic", count: 1, set: "TLA" },
         { rarity: "uncommon", count: 4, set: "TLA" },
@@ -633,7 +645,7 @@ async function handleLoser(
           "1",
         );
       } catch (e: unknown) {
-        if (e instanceof Error && e.message.includes("10007")) {
+        if (e instanceof DiscordAPIError && e.code === 10007) {
           console.warn(
             `Player ${loser.Identification} (${
               loser["Discord ID"]
@@ -708,10 +720,19 @@ async function handleWeek3(
   const matchCount = getMatchCount(matches, player, match);
   const poolChanges = await getPoolChanges();
   const hasBonus = poolChanges.rows.some((r) =>
-    r.Name === player.Identification
-    && r.Comment === "Bonus"
+    r.Name === player.Identification &&
+    r.Comment === "Bonus"
   );
   try {
+    const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+    const packGen = await guild.channels.fetch(
+      CONFIG.PACKGEN_CHANNEL_ID,
+    ) as TextChannel;
+    if (match["Loser Name"] === player.Identification) {
+      await packGen.send(
+        "!TLA <@!" + player["Discord ID"] + ">",
+      );
+    }
     if (
       !hasBonus &&
       matches.rows.findLast((m) =>
@@ -728,20 +749,21 @@ async function handleWeek3(
     }
     if (matchCount === 15) {
       // request 3 TLA boosters
-      const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-      const packGen = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as TextChannel;
-      await packGen.send("!TLA 3 <@!" + player["Discord ID"] + "> has completed their 15th match.");
+      await packGen.send(
+        "!TLA 3 <@!" + player["Discord ID"] +
+          "> has completed their 15th match.",
+      );
     }
     await recordMessaged(matches, match, messagedColumn, "1");
   } catch (e: unknown) {
-    if (e instanceof Error && e.message.includes("10007")) {
+    if (e instanceof DiscordAPIError && e.code === 10007) {
       console.warn(
         `Player ${player.Identification} (${
           player["Discord ID"]
         }) blocked DMs. Cannot send booster or choice.`,
       );
       // If blocked, update sheet immediately as no choice will be made
-      await recordMessaged(matches, match, "Bot Messaged", "-1");
+      await recordMessaged(matches, match, messagedColumn, "-1");
     } else {
       throw e;
     }
