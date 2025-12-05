@@ -392,7 +392,7 @@ async function onBonusChoice(chosen: string, interaction: Interaction) {
       matches.rows.filter((m) =>
         m["Your Name"] === player.Identification ||
         m["Loser Name"] === player.Identification
-      ).length,
+      ).length - 10,
     );
     if (bonusCount < 0) {
       return {
@@ -446,6 +446,7 @@ async function sendBonus(client: Client, player: Player, bonusCount: number) {
     bonusPack,
     discordMessageContent,
   );
+  discordMessage.content = discordMessageContent;
 
   const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
   const packGenChannel = await guild.channels.fetch(
