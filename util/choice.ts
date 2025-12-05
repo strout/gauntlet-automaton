@@ -93,6 +93,13 @@ export function makeChoice<T extends unknown[]>(
 
     try {
       if (interaction.isStringSelectMenu() && interactionType === "select") {
+        if (processingMessages.has(interaction.message.id)) {
+          await interaction.reply({
+            content: "Please wait for your previous choice to finish processing.",
+            ephemeral: true,
+          });
+          return;
+        }
         const selectedValue = interaction.values[0];
         console.debug(
           `Handling select menu interaction. Selected value: ${selectedValue}`,
@@ -146,10 +153,14 @@ export function makeChoice<T extends unknown[]>(
         try {
           const {
             submitButton,
+            selectMenu,
             selectMenuRow,
             submitButtonRow,
           } = parseComponents(interaction);
 
+          // Disable select menu and submit button
+          selectMenu.setDisabled(true);
+          selectMenuRow.setComponents(selectMenu);
           submitButton.setDisabled(true).setLabel("Processing...");
           submitButtonRow.setComponents(submitButton);
 
@@ -170,17 +181,24 @@ export function makeChoice<T extends unknown[]>(
           if (result === "failure") {
             finalContent = responseContent ||
               `There was an error processing your choice "${selectedValue}". Please try again.`;
+             // Re-enable select menu and submit button on failure
+            selectMenu.setDisabled(false);
+            selectMenuRow.setComponents(selectMenu);
+            submitButton.setDisabled(false).setLabel("Submit Choice");
+            submitButtonRow.setComponents(submitButton);
+            await interaction.editReply({
+              content: finalContent,
+              components: [selectMenuRow, submitButtonRow],
+              files: image ? [image] : undefined,
+            });
+            return;
           } else if (result === "try-again") {
             finalContent = responseContent ||
               `Your choice "${selectedValue}" requires further action or failed temporarily. Please try again.`;
 
-            const {
-              selectMenu,
-              submitButton,
-              selectMenuRow,
-              submitButtonRow,
-            } = parseComponents(interaction);
-
+            // Re-enable select menu and submit button on try-again
+            selectMenu.setDisabled(false);
+            selectMenuRow.setComponents(selectMenu);
             if (updatedOptions) {
               selectMenu.setOptions(updatedOptions.map((opt) => ({
                 ...opt,
@@ -196,7 +214,8 @@ export function makeChoice<T extends unknown[]>(
             submitButton.setCustomId(
               `${prefix}:submit:${selectedValue}`,
             );
-            submitButton.setDisabled(false);
+            submitButton.setDisabled(false).setLabel("Submit Choice");
+            submitButtonRow.setComponents(submitButton);
 
             await interaction.editReply({
               content: finalContent,
@@ -206,6 +225,7 @@ export function makeChoice<T extends unknown[]>(
             return;
           }
 
+          // If success, clear all components
           await interaction.editReply({
             content: finalContent,
             components: [],
