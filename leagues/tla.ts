@@ -368,7 +368,7 @@ async function checkForMatches(client: Client<boolean>) {
       continue; // TODO adjust when winner-only stuff happens
     }
 
-    // Calculate loss count for the player up to this match
+    // Calculate total matches played by the player up to this match
     const matchIndex = matches.rows.findIndex((m) =>
       m[ROWNUM] === match[ROWNUM] && m[MATCHTYPE] === match[MATCHTYPE]
     );
@@ -377,7 +377,7 @@ async function checkForMatches(client: Client<boolean>) {
       m["Your Name"] === loser.Identification
     ).length;
 
-    // Only send the choice message if the loss count is between 1 and 5
+    // Only send the choice message if the total matches played is between 1 and 5
     if (matchCount >= 1 && matchCount <= 5) {
       try {
         const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
@@ -433,7 +433,6 @@ async function checkForMatches(client: Client<boolean>) {
           "Week 2 pack. You must choose an option below before your next match.",
         );
 
-        let blocked = false;
         try {
           // Send the initial pack as a DM
           const sentMessage = await member.user.send(discordMessage);
@@ -451,7 +450,6 @@ async function checkForMatches(client: Client<boolean>) {
           );
         } catch (e: unknown) {
           if (e instanceof Error && e.message.includes("10007")) {
-            blocked = true;
             console.warn(
               `Player ${loser.Identification} (${
                 loser["Discord ID"]
@@ -477,7 +475,7 @@ async function checkForMatches(client: Client<boolean>) {
         );
       }
     }
-    // For other loss counts, do nothing and leave "Bot Messaged" untouched
+    // For other match counts, do nothing and leave "Bot Messaged" untouched
   }
 }
 

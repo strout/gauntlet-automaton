@@ -76,10 +76,10 @@ export function makeChoice<T extends unknown[]>(
     interaction,
     handle,
   ) => {
+    if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
     console.debug(
       `responseHandler called for customId: ${interaction.customId}`,
     );
-    if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
 
     const customId = interaction.customId;
     if (!customId.startsWith(prefix)) return;
