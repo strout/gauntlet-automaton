@@ -307,6 +307,8 @@ function configureClient(
   djs_client.on(
     djs.Events.InteractionCreate,
     async (interaction) => {
+      // TODO DO NOT PUSH NEXT LINE
+      if (interaction.user.id !== CONFIG.OWNER_ID) return;
       const { finish } = await dispatch(interaction, interactionHandlers);
       await finish;
     },

@@ -491,9 +491,7 @@ async function checkForMatches(client: Client<boolean>) {
 }
 
 async function getTlaMatches() {
-  return await getAllMatches({ "Bot Messaged Winner": z.coerce.number() }, {
-    "Bot Messaged Winner": z.coerce.number().optional(),
-  });
+  return await getAllMatches({ "Bot Messaged Winner": z.coerce.boolean() }, {});
 }
 
 function getMatchCount(
@@ -726,6 +724,12 @@ async function handleWeek3(
       } else {
         await sendBonus(client, player, bonusCount);
       }
+    }
+    if (matchCount === 15) {
+      // request 3 TLA boosters
+      const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+      const packGen = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as TextChannel;
+      await packGen.send("!TLA 3 <@!" + player["Discord ID"] + "> has completed their 15th match.");
     }
     await recordMessaged(matches, match, messagedColumn, "1");
   } catch (e: unknown) {
