@@ -14,6 +14,7 @@ import {
 import { ScryfallCard, searchCards } from "../scryfall.ts";
 import { fetchSealedDeck, makeSealedDeck } from "../sealeddeck.ts";
 import { mutex } from "../mutex.ts";
+import z from "zod";
 
 const packgenChannelUrl =
   `https://discord.com/channels/${CONFIG.GUILD_ID}/${CONFIG.PACKGEN_CHANNEL_ID}`;
@@ -344,13 +345,22 @@ const { sendChoice: sendSetChoice, responseHandler: setChoiceHandler } =
   makeChoice("TLA_week1", makeSetMessage, onSetChoice);
 
 async function checkForMatches(client: Client<boolean>) {
-  const matches = await getAllMatches();
+  const matches = await getTlaMatches();
   const players = await getPlayers();
 
   for (const match of matches.rows) {
     // Check if the match is handled by script and not yet messaged by bot
     if (!match["Script Handled"] || match["Bot Messaged"]) continue;
 
+    if (!match["Bot Messaged"]) await handleLoser(client, matches, players, match);
+  }
+}
+
+async function getTlaMatches() {
+  return await getAllMatches({ "Bot Messaged Winner": z.coerce.number() }, { "Bot Messaged Winner": z.coerce.number().optional() });
+}
+
+async function handleLoser(client: Client<boolean>, matches: Awaited<ReturnType<typeof getTlaMatches>>, players: Awaited<ReturnType<typeof getPlayers<Record<string, never>>>>, match: Awaited<ReturnType<typeof getTlaMatches>>['rows'][number]) {
     const loser = players.rows.find((p) =>
       p.Identification === match["Loser Name"]
     );
@@ -361,11 +371,11 @@ async function checkForMatches(client: Client<boolean>) {
           match[ROWNUM]
         }`,
       );
-      continue;
+      return;
     }
 
     if (loser["Losses"] >= 11) {
-      continue; // TODO adjust when winner-only stuff happens
+      return;
     }
 
     // Calculate total matches played by the player up to this match
@@ -396,13 +406,11 @@ async function checkForMatches(client: Client<boolean>) {
         }
 
         // Mark the match as messaged in the sheet
-        await sheetsWrite(
-          sheets,
-          CONFIG.LIVE_SHEET_ID,
-          `${matches.sheetName[match[MATCHTYPE]]}!R${match[ROWNUM]}C${
-            matches.headerColumns[match[MATCHTYPE]]["Bot Messaged"] + 1
-          }`,
-          [[blocked ? "-1" : "1"]], // -1 for blocked, 1 for sent
+        await recordMessaged(
+          matches,
+          match,
+          "Bot Messaged",
+          blocked ? "-1" : "1",
         );
       } catch (error) {
         console.error(
@@ -441,12 +449,11 @@ async function checkForMatches(client: Client<boolean>) {
           await sendPackModifyChoice(client, userId, sentMessage.id);
 
           // Mark the match as messaged in the sheet AFTER sending both messages
-          await sheetsWrite(
-            sheets,
-            CONFIG.LIVE_SHEET_ID,
-          `${matches.sheetName[match[MATCHTYPE]]}!R${match[ROWNUM]}C${
-            matches.headerColumns[match[MATCHTYPE]]["Bot Messaged"] + 1}`,
-            [["1"]], // 1 for sent
+          await recordMessaged(
+            matches,
+            match,
+            "Bot Messaged",
+            "1",
           );
         } catch (e: unknown) {
           if (e instanceof Error && e.message.includes("10007")) {
@@ -456,12 +463,7 @@ async function checkForMatches(client: Client<boolean>) {
               }) blocked DMs. Cannot send booster or choice.`,
             );
             // If blocked, update sheet immediately as no choice will be made
-            await sheetsWrite(
-              sheets,
-              CONFIG.LIVE_SHEET_ID,
-              `${matches.sheetName[match[MATCHTYPE]]}!R${rowNum}C${matches.headerColumns[match[MATCHTYPE]]["Bot Messaged"] + 1}`,
-              [["-1"]], // -1 for blocked
-            );
+            await recordMessaged(matches, match, "Bot Messaged", "-1");
           } else {
             throw e;
           }
@@ -474,9 +476,19 @@ async function checkForMatches(client: Client<boolean>) {
           error,
         );
       }
+    } else if (matchCount >= 11 && matchCount <= 15) {
+      await handleWeek3(loser, match, matches, "Bot Messaged");
     }
     // For other match counts, do nothing and leave "Bot Messaged" untouched
-  }
+}
+
+async function recordMessaged(matches: Awaited<ReturnType<typeof getTlaMatches>>, match: Awaited<ReturnType<typeof getTlaMatches>>['rows'][number], column: "Bot Messaged" | "Bot Messaged Winner", value: "1" | "-1") {
+  await sheetsWrite(
+    sheets,
+    CONFIG.LIVE_SHEET_ID,
+    `${matches.sheetName[match[MATCHTYPE]]}!R${match[ROWNUM]}C${matches.headerColumns[match[MATCHTYPE]][column] + 1}`,
+    [[value]]
+  );
 }
 
 export function setup(): Promise<{
@@ -494,4 +506,8 @@ export function setup(): Promise<{
     messageHandlers: [],
     interactionHandlers: [setChoiceHandler, packModifyChoiceHandler],
   });
+}
+
+function handleWeek3(player: Awaited<ReturnType<typeof getPlayers<Record<string,never>>>>['rows'][number], match: Awaited<ReturnType<typeof getTlaMatches>>['rows'][number], matches: Awaited<ReturnType<typeof getTlaMatches>>, messagedColumn: string) {
+  //
 }
