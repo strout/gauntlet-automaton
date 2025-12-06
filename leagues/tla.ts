@@ -393,7 +393,7 @@ async function onBonusChoice(chosen: string, interaction: Interaction) {
       p["Discord ID"] === interaction.user.id
     );
     if (!player) return { result: "try-again" as const };
-    const bonusCount = Math.max(
+    const bonusCount = Math.min(
       5,
       matches.rows.filter((m) =>
         m["Your Name"] === player.Identification ||
@@ -417,6 +417,7 @@ async function onBonusChoice(chosen: string, interaction: Interaction) {
 }
 
 async function sendBonus(client: Client, player: Player, bonusCount: number) {
+  using _ = await lockPlayer(player["Discord ID"]);
   const poolChanges = await getPoolChanges();
   const hasBonus = poolChanges.rows.some((r) =>
     r.Name === player.Identification && r.Comment === "Bonus"
@@ -687,6 +688,14 @@ async function recordMessaged(
   );
 }
 
+const manualBonus: Handler<Message> = async (message, handle) => {
+  // Not guarding this beyond content because submission logic should prevent ineligible submissions.
+  const [cmd, id, count] = message.content.split(" ");
+  if (cmd !== "!resend3") return;
+  handle.claim();
+  await sendBonusChoice(message.client, id, +count);
+}
+
 export function setup(): Promise<{
   watch: (client: Client) => Promise<void>;
   messageHandlers: Handler<Message>[];
@@ -699,7 +708,7 @@ export function setup(): Promise<{
         await delay(60_000); // Check every minute
       }
     },
-    messageHandlers: [],
+    messageHandlers: [manualBonus],
     interactionHandlers: [
       setChoiceHandler,
       packModifyChoiceHandler,
