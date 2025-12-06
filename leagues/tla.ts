@@ -581,11 +581,11 @@ async function handleLoser(
   // Only send the choice message if the total matches played is between 1 and 5
   if (matchCount >= 1 && matchCount <= 5) {
     try {
-      const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-      const member = await guild.members.fetch(loser["Discord ID"]);
-
       let blocked = false;
       try {
+        const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+        const member = await guild.members.fetch(loser["Discord ID"]);
+
         await sendSetChoice(client, member.user.id);
       } catch (e: unknown) {
         // DiscordAPIError code 10007 means "Cannot send messages to this user"
@@ -615,23 +615,23 @@ async function handleLoser(
   } else if (matchCount >= 6 && matchCount <= 10) {
     // Logic for matches 6-10: DM a booster pack and offer modification
     try {
-      const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-      const member = await guild.members.fetch(loser["Discord ID"]);
-      const userId = member.user.id; // Declare userId here
-
-      const slots: BoosterSlot[] = [
-        { rarity: "rare/mythic", count: 1, set: "TLA" },
-        { rarity: "uncommon", count: 4, set: "TLA" },
-        { rarity: "common", count: 9, set: "TLA" },
-      ];
-
-      const pack = await generatePackFromSlots(slots);
-      const discordMessage = await formatBoosterPackForDiscord(
-        pack,
-        "Week 2 pack. You must choose an option below before your next match.",
-      );
-
       try {
+        const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+        const member = await guild.members.fetch(loser["Discord ID"]);
+        const userId = member.user.id; // Declare userId here
+
+        const slots: BoosterSlot[] = [
+          { rarity: "rare/mythic", count: 1, set: "TLA" },
+          { rarity: "uncommon", count: 4, set: "TLA" },
+          { rarity: "common", count: 9, set: "TLA" },
+        ];
+
+        const pack = await generatePackFromSlots(slots);
+        const discordMessage = await formatBoosterPackForDiscord(
+          pack,
+          "Week 2 pack. You must choose an option below before your next match.",
+        );
+
         // Send the initial pack as a DM
         const sentMessage = await member.user.send(discordMessage);
 
@@ -694,7 +694,7 @@ const manualBonus: Handler<Message> = async (message, handle) => {
   if (cmd !== "!resend3") return;
   handle.claim();
   await sendBonusChoice(message.client, id, +count);
-}
+};
 
 export function setup(): Promise<{
   watch: (client: Client) => Promise<void>;
