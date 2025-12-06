@@ -155,8 +155,10 @@ async function recordPack(
   id: string,
   packPoolId: string,
   comment?: string,
+  alreadyLocked?: boolean
 ) {
-  using _ = await lockPlayer(id);
+  // TODO this is hacky but locks are not re-entrant
+  using _ = alreadyLocked ? ({[Symbol.dispose]() {}}) : await lockPlayer(id);
   const [players, poolChanges] = await Promise.all([
     getPlayers(),
     getPoolChanges(),
@@ -482,7 +484,8 @@ async function sendBonus(client: Client, player: Player, bonusCount: number) {
     sideboard: bonusPack.map((x) => ({ name: x.name, set: x.set })),
   });
 
-  await recordPack(player["Discord ID"], packPoolId, "Bonus");
+  // TODO this is hacky but locks are not re-entrant
+  await recordPack(player["Discord ID"], packPoolId, "Bonus", true);
 
   return true;
 }
