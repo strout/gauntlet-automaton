@@ -16,6 +16,8 @@ import {
   MATCHTYPE,
   Player,
   ROWNUM,
+  readTable,
+  parseTable,
 } from "../standings.ts";
 import { sheets, sheetsWrite } from "../sheets.ts";
 import { delay } from "@std/async";
@@ -508,6 +510,96 @@ async function checkForMatches(client: Client<boolean>) {
   }
 }
 
+async function checkForCometOptOut(client: Client<boolean>) {
+  const players = await getPlayers();
+  
+  // Read the Pools tab to check COMET MESSAGED column
+  // Headers are on row 6; data starts on row 7
+  const poolsTable = await readTable("Pools!A6:Z", 6);
+  
+  // Find the COMET MESSAGED column index
+  const cometMessagedColIndex = poolsTable.headerColumns["COMET MESSAGED"];
+  if (cometMessagedColIndex === undefined) {
+    console.warn("COMET MESSAGED column not found in Pools tab");
+    console.warn(poolsTable.headerColumns);
+    return;
+  }
+  
+  // Find the Name/Identification column (try common column names)
+  const nameColIndex = poolsTable.headerColumns["NAME"];
+  console.log(nameColIndex);
+  if (nameColIndex === undefined) {
+    console.warn("Name/Identification column not found in Pools tab");
+    return;
+  }
+
+  for (const player of players.rows) {
+    // Check if player has 10+ wins
+    if (player.Wins < 10) continue;
+    // Check if player has Discord ID
+    if (!player["Discord ID"]) continue;
+    
+    // Find the corresponding row in Pools tab
+    const poolRow = poolsTable.rows.find((row) => {
+      const rowName = row.NAME;
+      return rowName === player.Name
+    });
+    
+    if (!poolRow) {
+      console.warn(`Could not find pool row for player ${player.Identification}`);
+      continue;
+    }
+    
+    // Check if already messaged (COMET MESSAGED column should be empty or falsy)
+    const cometMessaged = poolRow["COMET MESSAGED"];
+    if (cometMessaged) {
+      continue; // Already messaged
+    }
+    
+    // Send DM message with form link
+    try {
+      const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+      const member = await guild.members.fetch(player["Discord ID"]);
+      
+      // TODO: Replace with actual form link
+      const formLink = "https://docs.google.com/forms/d/e/1FAIpQLSfjjwP_FhpomMd4fvyU3F1n7Xf5vVy2ADBj5H8UWcRjibh7Ew/viewform";
+      const messageContent = `Congratulations on surviving the Fire Nation Attack (by reaching 10 or more wins)! At the end of Week 4, you will be placed randomly into a team of 3 players with the same number of wins. If, for any reason, you do not wish (or are not available) to participate in the team portion (from December 19th to January 2nd) you may choose to opt out now by filling out this [form](${formLink}). Players who opt out now will still receive the $10CAD/$7USD prizing for surviving until Week 5.`;
+      
+      await member.user.send(messageContent);
+      
+      // Mark as messaged in the sheet (using R1C1 notation)
+      await sheetsWrite(
+        sheets,
+        CONFIG.LIVE_SHEET_ID,
+        `Pools!R${poolRow[ROWNUM]}C${cometMessagedColIndex + 1}`,
+        [["1"]],
+      );
+    } catch (e: unknown) {
+      if (e instanceof DiscordAPIError && e.code === 10007) {
+        console.warn(
+          `Player ${player.Identification} (${
+            player["Discord ID"]
+          }) blocked DMs. Cannot send comet opt-out message.`,
+        );
+        // Mark as blocked in the sheet (using R1C1 notation)
+        await sheetsWrite(
+          sheets,
+          CONFIG.LIVE_SHEET_ID,
+          `Pools!R${poolRow[ROWNUM]}C${cometMessagedColIndex + 1}`,
+          [["-1"]],
+        );
+      } else {
+        console.error(
+          `Error sending comet opt-out message to ${player.Identification} (${
+            player["Discord ID"]
+          }):`,
+          e,
+        );
+      }
+    }
+  }
+}
+
 async function getTlaMatches() {
   return await getAllMatches({ "Bot Messaged Winner": z.coerce.boolean() }, {});
 }
@@ -708,6 +800,7 @@ export function setup(): Promise<{
     watch: async (client: Client) => {
       while (true) {
         await checkForMatches(client);
+        await checkForCometOptOut(client);
         await delay(60_000); // Check every minute
       }
     },
