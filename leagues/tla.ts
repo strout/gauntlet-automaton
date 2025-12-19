@@ -15,9 +15,8 @@ import {
   getPoolChanges,
   MATCHTYPE,
   Player,
-  ROWNUM,
   readTable,
-  parseTable,
+  ROWNUM,
 } from "../standings.ts";
 import { sheets, sheetsWrite } from "../sheets.ts";
 import { delay } from "@std/async";
@@ -28,9 +27,14 @@ import {
 } from "../util/booster_generator.ts";
 
 import { ScryfallCard, searchCards } from "../scryfall.ts";
-import { fetchSealedDeck, makeSealedDeck } from "../sealeddeck.ts";
+import {
+  fetchSealedDeck,
+  makeSealedDeck,
+  SealedDeckPool,
+} from "../sealeddeck.ts";
 import { mutex } from "../mutex.ts";
 import z from "zod";
+import { waitForBoosterTutor } from "../pending.ts";
 
 const packgenChannelUrl =
   `https://discord.com/channels/${CONFIG.GUILD_ID}/${CONFIG.PACKGEN_CHANNEL_ID}`;
@@ -157,10 +161,10 @@ async function recordPack(
   id: string,
   packPoolId: string,
   comment?: string,
-  alreadyLocked?: boolean
+  alreadyLocked?: boolean,
 ) {
   // TODO this is hacky but locks are not re-entrant
-  using _ = alreadyLocked ? ({[Symbol.dispose]() {}}) : await lockPlayer(id);
+  using _ = alreadyLocked ? ({ [Symbol.dispose]() {} }) : await lockPlayer(id);
   const [players, poolChanges] = await Promise.all([
     getPlayers(),
     getPoolChanges(),
@@ -367,6 +371,11 @@ const { sendChoice: sendSetChoice, responseHandler: setChoiceHandler } =
 const { sendChoice: sendBonusChoice, responseHandler: bonusChoiceHandler } =
   makeChoice("TLA_week3", makeBonusMessage, onBonusChoice);
 
+const {
+  sendChoice: sendSwapCardChoice,
+  responseHandler: swapCardChoiceHandler,
+} = makeChoice("TLA_teammate", makeSwapMessage, onSwapChoice);
+
 function makeBonusMessage(bonusCount: number) {
   return Promise.resolve({
     content: "Take your bonus now, or endure and take it later?",
@@ -494,7 +503,7 @@ async function sendBonus(client: Client, player: Player, bonusCount: number) {
 
 async function checkForMatches(client: Client<boolean>) {
   const matches = await getTlaMatches();
-  const players = await getPlayers();
+  const players = await getTlaPlayers();
 
   for (const match of matches.rows) {
     // Check if the match is handled by script and not yet messaged by bot
@@ -512,11 +521,11 @@ async function checkForMatches(client: Client<boolean>) {
 
 async function checkForCometOptOut(client: Client<boolean>) {
   const players = await getPlayers();
-  
+
   // Read the Pools tab to check COMET MESSAGED column
   // Headers are on row 6; data starts on row 7
   const poolsTable = await readTable("Pools!A6:Z", 6);
-  
+
   // Find the COMET MESSAGED column index
   const cometMessagedColIndex = poolsTable.headerColumns["COMET MESSAGED"];
   if (cometMessagedColIndex === undefined) {
@@ -524,7 +533,7 @@ async function checkForCometOptOut(client: Client<boolean>) {
     console.warn(poolsTable.headerColumns);
     return;
   }
-  
+
   // Find the Name/Identification column (try common column names)
   const nameColIndex = poolsTable.headerColumns["NAME"];
   console.log(nameColIndex);
@@ -538,35 +547,39 @@ async function checkForCometOptOut(client: Client<boolean>) {
     if (player.Wins < 10) continue;
     // Check if player has Discord ID
     if (!player["Discord ID"]) continue;
-    
+
     // Find the corresponding row in Pools tab
     const poolRow = poolsTable.rows.find((row) => {
       const rowName = row.NAME;
-      return rowName === player.Name
+      return rowName === player.Name;
     });
-    
+
     if (!poolRow) {
-      console.warn(`Could not find pool row for player ${player.Identification}`);
+      console.warn(
+        `Could not find pool row for player ${player.Identification}`,
+      );
       continue;
     }
-    
+
     // Check if already messaged (COMET MESSAGED column should be empty or falsy)
     const cometMessaged = poolRow["COMET MESSAGED"];
     if (cometMessaged) {
       continue; // Already messaged
     }
-    
+
     // Send DM message with form link
     try {
       const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
       const member = await guild.members.fetch(player["Discord ID"]);
-      
+
       // TODO: Replace with actual form link
-      const formLink = "https://docs.google.com/forms/d/e/1FAIpQLSfjjwP_FhpomMd4fvyU3F1n7Xf5vVy2ADBj5H8UWcRjibh7Ew/viewform";
-      const messageContent = `Congratulations on surviving the Fire Nation Attack (by reaching 10 or more wins)! At the end of Week 4, you will be placed randomly into a team of 3 players with the same number of wins. If, for any reason, you do not wish (or are not available) to participate in the team portion (from December 19th to January 2nd) you may choose to opt out now by filling out this [form](${formLink}). Players who opt out now will still receive the $10CAD/$7USD prizing for surviving until Week 5.`;
-      
+      const formLink =
+        "https://docs.google.com/forms/d/e/1FAIpQLSfjjwP_FhpomMd4fvyU3F1n7Xf5vVy2ADBj5H8UWcRjibh7Ew/viewform";
+      const messageContent =
+        `Congratulations on surviving the Fire Nation Attack (by reaching 10 or more wins)! At the end of Week 4, you will be placed randomly into a team of 3 players with the same number of wins. If, for any reason, you do not wish (or are not available) to participate in the team portion (from December 19th to January 2nd) you may choose to opt out now by filling out this [form](${formLink}). Players who opt out now will still receive the $10CAD/$7USD prizing for surviving until Week 5.`;
+
       await member.user.send(messageContent);
-      
+
       // Mark as messaged in the sheet (using R1C1 notation)
       await sheetsWrite(
         sheets,
@@ -604,6 +617,10 @@ async function getTlaMatches() {
   return await getAllMatches({ "Bot Messaged Winner": z.coerce.boolean() }, {});
 }
 
+async function getTlaPlayers() {
+  return await getPlayers(undefined, { "Team": z.string() });
+}
+
 function getMatchCount(
   matches: Awaited<ReturnType<typeof getTlaMatches>>,
   player: Awaited<
@@ -624,9 +641,12 @@ function getMatchCount(
 async function handleWinner(
   client: Client<boolean>,
   matches: Awaited<ReturnType<typeof getTlaMatches>>,
-  players: Awaited<ReturnType<typeof getPlayers<Record<string, never>>>>,
+  players: Awaited<ReturnType<typeof getTlaPlayers>>,
   match: Awaited<ReturnType<typeof getTlaMatches>>["rows"][number],
 ) {
+  // all individual -- obsolete
+  return;
+
   const winner = players.rows.find((p) =>
     p.Identification === match["Your Name"]
   );
@@ -651,7 +671,7 @@ async function handleWinner(
 async function handleLoser(
   client: Client<boolean>,
   matches: Awaited<ReturnType<typeof getTlaMatches>>,
-  players: Awaited<ReturnType<typeof getPlayers<Record<string, never>>>>,
+  players: Awaited<ReturnType<typeof getTlaPlayers>>,
   match: Awaited<ReturnType<typeof getTlaMatches>>["rows"][number],
 ) {
   const loser = players.rows.find((p) =>
@@ -667,12 +687,38 @@ async function handleLoser(
     return;
   }
 
+  let blocked = false;
+  try {
+    const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+    const member = await guild.members.fetch(loser["Discord ID"]);
+
+    await sendPack(client, member.user.id, loser, players.rows);
+  } catch (e: unknown) {
+    // DiscordAPIError code 10007 means "Cannot send messages to this user"
+    if (e instanceof DiscordAPIError && e.code === 10007) {
+      blocked = true;
+    } else {
+      throw e;
+    }
+  }
+
+  // Mark the match as messaged in the sheet
+  await recordMessaged(
+    matches,
+    match,
+    "Bot Messaged",
+    blocked ? "-1" : "1",
+  );
+
+  /*
+
   if (loser["Losses"] >= 11) {
     return;
   }
 
   const matchCount = getMatchCount(matches, loser, match);
 
+  individual stuff: obsolete
   // Only send the choice message if the total matches played is between 1 and 5
   if (matchCount >= 1 && matchCount <= 5) {
     try {
@@ -765,6 +811,7 @@ async function handleLoser(
     await handleWeek3(client, loser, match, matches, "Bot Messaged");
   }
   // For other match counts, do nothing and leave "Bot Messaged" untouched
+  */
 }
 
 async function recordMessaged(
@@ -800,7 +847,7 @@ export function setup(): Promise<{
     watch: async (client: Client) => {
       while (true) {
         await checkForMatches(client);
-        await checkForCometOptOut(client);
+        // done with this -  await checkForCometOptOut(client);
         await delay(60_000); // Check every minute
       }
     },
@@ -809,6 +856,7 @@ export function setup(): Promise<{
       setChoiceHandler,
       packModifyChoiceHandler,
       bonusChoiceHandler,
+      swapCardChoiceHandler,
     ],
   });
 }
@@ -873,4 +921,69 @@ async function handleWeek3(
       throw e;
     }
   }
+}
+
+const messageCache = new Map<string, SealedDeckPool & { message: Message }>();
+
+async function sendPack(
+  client: Client<boolean>,
+  id: string,
+  loser: Awaited<ReturnType<typeof getTlaPlayers>>["rows"][number],
+  playerRows: Awaited<ReturnType<typeof getTlaPlayers>>["rows"],
+) {
+  const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+  const botBunker = await guild.channels.fetch(
+    CONFIG.PACKGEN_CHANNEL_ID,
+  ) as TextChannel;
+  const message$ = botBunker.send("!TLA <@" + id + "> (you will be DMed about sending cards to teammates)");
+  const pack = await waitForBoosterTutor(message$);
+  const message = await message$;
+  if ("error" in pack) {
+    await message.reply("Error prompting for card swap: " + pack.error);
+    return;
+  }
+  const teammates = playerRows.filter((pr) =>
+    pr.Team === loser.Team && pr.Identification !== loser.Identification
+  );
+  for (const teammate of teammates) {
+    await sendSwapCardChoice(client, id, teammate["Discord ID"], pack.success);
+  }
+}
+
+const tlaCards = await searchCards("set:tla is:booster");
+
+function makeSwapMessage(
+  destUserId: string,
+  entry: SealedDeckPool,
+) {
+  return Promise.resolve({
+    content: "Choose a card to send to <@" + destUserId + ">",
+    options: [
+      { label: "No Swap", value: destUserId + "_" },
+      ...entry.sideboard.map((x) => {
+        const sfc = tlaCards.find(c => c.name.toLowerCase() === x.name.toLowerCase());
+        if (!sfc) throw new Error("Could not find card " + x.name + " in the set.");
+        return {
+          label: sfc.name,
+          value: `${destUserId}_${sfc.collector_number}`,
+        };
+      }),
+    ],
+  });
+}
+
+async function onSwapChoice(choice: string, interaction: Interaction) {
+  const guild = await interaction.client.guilds.fetch(CONFIG.GUILD_ID);
+  const channel = await guild.channels.fetch(
+    CONFIG.PACKGEN_CHANNEL_ID,
+  ) as TextChannel;
+  const [destUserId, collectorNumber] = choice.split("_");
+  if (!collectorNumber) {
+    return { result: "success" as const, content: "No card sent to <@" + destUserId + ">" };
+  }
+  const card = tlaCards.find(x => x.collector_number === collectorNumber);
+  if (!card) throw new Error("No card with collector number " + collectorNumber + " found.");
+  const content = "<@" + interaction.user.id + "> sent " + card.name + " to <@" + destUserId + ">";
+  await channel.send(content);
+  return { result: "success" as const, content };
 }
