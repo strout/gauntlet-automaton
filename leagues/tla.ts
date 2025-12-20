@@ -10,6 +10,7 @@ import { makeChoice } from "../util/choice.ts";
 import { CONFIG } from "../config.ts";
 import {
   addPoolChange,
+  addPoolChanges,
   getAllMatches,
   getPlayers,
   getPoolChanges,
@@ -30,6 +31,7 @@ import { ScryfallCard, searchCards } from "../scryfall.ts";
 import {
   fetchSealedDeck,
   makeSealedDeck,
+  SealedDeckEntry,
   SealedDeckPool,
 } from "../sealeddeck.ts";
 import { mutex } from "../mutex.ts";
@@ -935,7 +937,9 @@ async function sendPack(
   const botBunker = await guild.channels.fetch(
     CONFIG.PACKGEN_CHANNEL_ID,
   ) as TextChannel;
-  const message$ = botBunker.send("!TLA <@" + id + "> (you will be DMed about sending cards to teammates)");
+  const message$ = botBunker.send(
+    "!TLA <@" + id + "> (you will be DMed about sending cards to teammates)",
+  );
   const pack = await waitForBoosterTutor(message$);
   const message = await message$;
   if ("error" in pack) {
@@ -961,8 +965,12 @@ function makeSwapMessage(
     options: [
       { label: "No Swap", value: destUserId + "_" },
       ...entry.sideboard.map((x) => {
-        const sfc = tlaCards.find(c => c.name.toLowerCase() === x.name.toLowerCase());
-        if (!sfc) throw new Error("Could not find card " + x.name + " in the set.");
+        const sfc = tlaCards.find((c) =>
+          c.name.toLowerCase() === x.name.toLowerCase()
+        );
+        if (!sfc) {
+          throw new Error("Could not find card " + x.name + " in the set.");
+        }
         return {
           label: sfc.name,
           value: `${destUserId}_${sfc.collector_number}`,
@@ -979,11 +987,83 @@ async function onSwapChoice(choice: string, interaction: Interaction) {
   ) as TextChannel;
   const [destUserId, collectorNumber] = choice.split("_");
   if (!collectorNumber) {
-    return { result: "success" as const, content: "No card sent to <@" + destUserId + ">" };
+    return {
+      result: "success" as const,
+      content: "No card sent to <@" + destUserId + ">",
+    };
   }
-  const card = tlaCards.find(x => x.collector_number === collectorNumber);
-  if (!card) throw new Error("No card with collector number " + collectorNumber + " found.");
-  const content = "<@" + interaction.user.id + "> sent " + card.name + " to <@" + destUserId + ">";
+  const card = tlaCards.find((x) => x.collector_number === collectorNumber);
+  if (!card) {
+    throw new Error(
+      "No card with collector number " + collectorNumber + " found.",
+    );
+  }
+  const content = "<@" + interaction.user.id + "> sent " + card.name +
+    " to <@" + destUserId + ">";
   await channel.send(content);
+  try {
+    await recordSwap(interaction.user.id, destUserId, card.name);
+  } catch (e: unknown) {
+    console.error(
+      "error recording swap on sheet",
+      interaction.user.id,
+      destUserId,
+      card.name,
+      e,
+    );
+  }
   return { result: "success" as const, content };
+}
+
+async function recordSwap(fromId: string, toId: string, name: string) {
+  using _1 = await lockPlayer([fromId, toId].toSorted()[0]);
+  using _2 = await lockPlayer([fromId, toId].toSorted()[1]);
+  const players = await getTlaPlayers();
+  const pools = await getPoolChanges();
+  const fromPlayer = players.rows.find((p) => p["Discord ID"] === fromId);
+  const toPlayer = players.rows.find((p) => p["Discord ID"] === toId);
+  const fromPool = pools.rows.findLast((p) =>
+    p.Name === fromPlayer?.Identification
+  );
+  const toPool = pools.rows.findLast((p) =>
+    p.Name === toPlayer?.Identification
+  );
+  if (!fromPool?.["Full Pool"] || !toPool?.["Full Pool"]) {
+    console.warn("Cannot record swap", fromId, toId, name);
+    return;
+  }
+  const oldPool = await fetchSealedDeck(fromPool["Full Pool"]);
+  let found = false;
+  const newOldPool = {
+    sideboard: [] as SealedDeckEntry[],
+    deck: [] as SealedDeckEntry[],
+  };
+  for (const c of oldPool.sideboard) {
+    if (!found && c.name.toLowerCase() === name.toLowerCase()) {
+      found = true;
+      newOldPool.sideboard.push({ name: c.name, count: c.count - 1 });
+    } else {
+      newOldPool.sideboard.push({ name: c.name, count: c.count });
+    }
+  }
+  for (const c of oldPool.deck) {
+    if (!found && c.name.toLowerCase() === name.toLowerCase()) {
+      found = true;
+      newOldPool.deck.push({ name: c.name, count: c.count - 1 });
+    } else {
+      newOldPool.deck.push({ name: c.name, count: c.count });
+    }
+  }
+  const newFromPoolId = await makeSealedDeck(newOldPool);
+  const newToPoolId = await makeSealedDeck(
+    { sideboard: [{ name, count: 1 }] },
+    toPool["Full Pool"],
+  );
+  await addPoolChanges([[
+    fromPlayer!.Name,
+    "remove card",
+    name,
+    "",
+    newFromPoolId,
+  ], [toPlayer!.Name, "add card", name, "", newToPoolId]]);
 }
