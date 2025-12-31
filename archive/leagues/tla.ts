@@ -5,9 +5,9 @@ import {
   Message,
   TextChannel,
 } from "discord.js";
-import { Handler } from "../dispatch.ts";
-import { makeChoice } from "../util/choice.ts";
-import { CONFIG } from "../config.ts";
+import { Handler } from "../../dispatch.ts";
+import { makeChoice } from "../../util/choice.ts";
+import { CONFIG } from "../../config.ts";
 import {
   addPoolChange,
   addPoolChanges,
@@ -18,25 +18,25 @@ import {
   Player,
   readTable,
   ROWNUM,
-} from "../standings.ts";
-import { sheets, sheetsWrite } from "../sheets.ts";
+} from "../../standings.ts";
+import { sheets, sheetsWrite } from "../../sheets.ts";
 import { delay } from "@std/async";
 import {
   BoosterSlot,
   formatBoosterPackForDiscord,
   generatePackFromSlots,
-} from "../util/booster_generator.ts";
+} from "../../util/booster_generator.ts";
 
-import { ScryfallCard, searchCards } from "../scryfall.ts";
+import { ScryfallCard, searchCards } from "../../scryfall.ts";
 import {
   fetchSealedDeck,
   makeSealedDeck,
   SealedDeckEntry,
   SealedDeckPool,
-} from "../sealeddeck.ts";
-import { mutex } from "../mutex.ts";
+} from "../../sealeddeck.ts";
+import { mutex } from "../../mutex.ts";
 import z from "zod";
-import { waitForBoosterTutor } from "../pending.ts";
+import { waitForBoosterTutor } from "../../pending.ts";
 
 const packgenChannelUrl =
   `https://discord.com/channels/${CONFIG.GUILD_ID}/${CONFIG.PACKGEN_CHANNEL_ID}`;

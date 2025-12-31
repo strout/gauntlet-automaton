@@ -36,7 +36,8 @@ import {
 
 import { ScryfallCard } from "./scryfall.ts";
 import { handleGuildMemberAdd, manageRoles } from "./role_management.ts";
-import { setup } from "./leagues/tla.ts";
+import { setup as setupRal } from "./leagues/ral/ral.ts";
+import { setup as setupTla } from "./archive/leagues/tla.ts";
 
 export { CONFIG };
 
@@ -232,9 +233,35 @@ if (import.meta.main) {
 
     const djs_client = makeClient();
 
-    const { watch, messageHandlers, interactionHandlers } = await setup();
+    const [ralSetup, tlaSetup] = await Promise.all([
+      setupRal(),
+      setupTla(),
+    ]);
 
-    configureClient(djs_client, watch, messageHandlers, interactionHandlers);
+    // Combine watch functions - run both in parallel
+    const combinedWatch = async (client: djs.Client<true>) => {
+      await Promise.all([
+        ralSetup.watch(client),
+        tlaSetup.watch(client),
+      ]);
+    };
+
+    // Combine message and interaction handlers
+    const combinedMessageHandlers = [
+      ...ralSetup.messageHandlers,
+      ...tlaSetup.messageHandlers,
+    ];
+    const combinedInteractionHandlers = [
+      ...ralSetup.interactionHandlers,
+      ...tlaSetup.interactionHandlers,
+    ];
+
+    configureClient(
+      djs_client,
+      combinedWatch,
+      combinedMessageHandlers,
+      combinedInteractionHandlers,
+    );
 
     await djs_client.login(DISCORD_TOKEN);
   }
