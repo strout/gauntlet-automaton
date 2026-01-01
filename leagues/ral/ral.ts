@@ -6,6 +6,7 @@ import {
   ActionRowBuilder,
   ButtonStyle,
   MessageFlags,
+  TextChannel,
 } from "discord.js";
 import { Handler } from "../../dispatch.ts";
 import { CONFIG } from "../../config.ts";
@@ -20,6 +21,7 @@ import {
 import { Event, EventId, START_EVENT } from "./cyoa_types.ts";
 import { onLossEvents, onWinEvents } from "./cyoa_data.ts";
 import { z } from "zod";
+import { makeSealedDeck, SealedDeckEntry } from "../../sealeddeck.ts";
 
 // Helper to delay execution
 function delay(ms: number): Promise<void> {
@@ -106,53 +108,86 @@ function filterOptions(
   });
 }
 
-// Give rewards to player
+// Give rewards to player and compile query-based cards into a sealeddeck.tech link
 async function giveRewards(
   client: Client,
   userId: string,
   rewards: Array<{ count: "PACK" | number; sets?: string[]; query?: string }>,
 ): Promise<string> {
   const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-  const packgenChannel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID);
+  const packgenChannel = await guild.channels.fetch(CONFIG.PACKGEN_CHANNEL_ID) as TextChannel | null;
 
-  const rewardMessages: string[] = [];
+  const allCards: Array<{ name: string; count: number; set?: string }> = [];
+  const packMessages: string[] = [];
 
+  // Process all rewards
   for (const reward of rewards) {
     if (reward.count === "PACK") {
-      // Request pack generation
-      if (packgenChannel && packgenChannel.isTextBased()) {
+      // Request pack generation (Booster Tutor will handle independently)
+      if (packgenChannel) {
         const sets = reward.sets || [];
         for (const set of sets) {
           await packgenChannel.send(`!${set} <@${userId}>`);
-          rewardMessages.push(`Requested ${set} pack`);
+          packMessages.push(`Requested ${set} pack`);
         }
       }
     } else if (reward.query) {
-      // Get cards from Scryfall query
+      // Get cards from Scryfall query and compile into sealeddeck.tech link
       const query = extractQueryFromUrl(reward.query);
       if (!query) {
         console.warn(`Could not extract query from URL: ${reward.query}`);
-        rewardMessages.push(`Error: Invalid card URL or query`);
         continue;
       }
       
       try {
         const cards = await searchCards(query);
         const selectedCards = cards.slice(0, reward.count);
-        const cardNames = selectedCards.map((c) => c.name).join(", ");
-        rewardMessages.push(
-          `Received ${selectedCards.length} card(s): ${cardNames}`,
-        );
-        // TODO: Actually add these cards to player's pool
-        // This would require integration with the sealed deck system
+        
+        // Add selected cards to our collection
+        for (const card of selectedCards) {
+          const existingIndex = allCards.findIndex(c => c.name === card.name && (!card.set || c.set === card.set));
+          if (existingIndex >= 0) {
+            allCards[existingIndex] = {
+              ...allCards[existingIndex],
+              count: allCards[existingIndex].count + 1,
+            };
+          } else {
+            allCards.push({ 
+              name: card.name, 
+              count: 1, 
+              set: card.set || undefined 
+            });
+          }
+        }
       } catch (error) {
         console.error(`Error fetching cards from query ${query}:`, error);
-        rewardMessages.push(`Error fetching cards from query`);
       }
     }
   }
 
-  return rewardMessages.join("\n");
+  // Build reward message
+  const messages: string[] = [];
+  
+  // Add pack messages
+  if (packMessages.length > 0) {
+    messages.push(...packMessages);
+  }
+  
+  // Add sealeddeck.tech link for query-based cards
+  if (allCards.length > 0) {
+    const poolId = await makeSealedDeck({
+      sideboard: allCards as SealedDeckEntry[],
+    });
+    const sealedDeckLink = `https://sealeddeck.tech/${poolId}`;
+    messages.push(`Your card rewards: ${sealedDeckLink}`);
+    
+    // Also post the link in the packgen channel
+    if (packgenChannel) {
+      await packgenChannel.send(`<@${userId}> got CYOA card rewards: ${sealedDeckLink}`);
+    }
+  }
+
+  return messages.length > 0 ? messages.join("\n") : "No rewards to give.";
 }
 
 // Send event message with buttons
