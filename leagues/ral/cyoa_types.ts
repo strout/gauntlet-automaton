@@ -3,7 +3,7 @@
 export type EventId = string | number;
 
 export interface Reward {
-  count: "PACK" | number;
+  count: "PACK" | "PACK_CHOICE" | number;
   sets?: string[];
   query?: string;
 }
@@ -27,5 +27,6 @@ export interface CyoaData {
   onWinEvents: Event[];
 }
 
-export const START_EVENT: EventId = "start_event";
+export const START_EVENT: EventId = "START_EVENT";
+export const COMPLETED_EVENT: EventId = "COMPLETED"; // Terminal event for players with 5 losses
 
