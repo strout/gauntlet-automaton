@@ -334,7 +334,7 @@ let quotas: undefined | {
  */
 export async function getQuotas() {
   if (quotas) return quotas;
-  const table = await readTable("Quotas!A7:E11", 4);
+  const table = await readTable("Quotas!A7:E11", 3);
   const parsed = parseTable({
     WEEK: z.number(),
     FROM: z.union([z.number(), z.literal("Registration")]),
