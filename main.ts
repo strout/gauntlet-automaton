@@ -36,7 +36,7 @@ import {
 
 import { ScryfallCard } from "./scryfall.ts";
 import { handleGuildMemberAdd, manageRoles } from "./role_management.ts";
-import { setup } from "./leagues/tla.ts";
+import { setup } from "./leagues/ral/ral.ts";
 
 export { CONFIG };
 
