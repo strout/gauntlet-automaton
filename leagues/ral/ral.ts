@@ -476,6 +476,7 @@ async function handleCyoaButton(
     // Column G (Next Event): The next event ID
     // For win events with no nextEvent, use the most recent loss event's Next Event
     // If player has 5 losses, use COMPLETED_EVENT as terminal event
+    // If no previous loss events, use START_EVENT
     let eventChosen = String(option.nextEvent || "");
     if (isWin && !option.nextEvent) {
       // Get player's loss count to check if they have 5 losses
@@ -491,8 +492,10 @@ async function handleCyoaButton(
         const mostRecentLossEventChosen = await getMostRecentLossEventChosen(userId);
         if (mostRecentLossEventChosen) {
           eventChosen = mostRecentLossEventChosen;
+        } else {
+          // If no recent loss event found, use START_EVENT
+          eventChosen = String(START_EVENT);
         }
-        // If no recent loss event found, eventChosen remains empty string
       }
     }
     await updateCyoaEntryChoice(
@@ -738,7 +741,10 @@ const packChoiceButtonHandler: Handler<Interaction> = async (interaction, handle
 
 // Get RAL matches from the Matches sheet
 async function getRalMatches() {
-  return await getAllMatches({ "Bot Messaged": z.coerce.boolean().optional() }, {});
+  return await getAllMatches({ 
+    "Bot Messaged": z.coerce.boolean().optional(),
+    "Bot Messaged Winner": z.coerce.boolean().optional(),
+  }, {});
 }
 
 // Get RAL players
@@ -765,13 +771,52 @@ function columnIndexToLetter(index: number): string {
   return result;
 }
 
+// Check if all previous matches for a player have been messaged
+// This checks both wins and losses - if the player was a loser, check "Bot Messaged"
+// If the player was a winner, check "Bot Messaged Winner"
+function allPreviousMatchesMessaged(
+  matchesData: Awaited<ReturnType<typeof getRalMatches>>,
+  playerIdentification: string,
+  currentMatch: Awaited<ReturnType<typeof getRalMatches>>["rows"][number],
+): boolean {
+  // Find the index of the current match in the sorted (by timestamp) array
+  const currentMatchIndex = matchesData.rows.findIndex((m) => 
+    m[ROWNUM] === currentMatch[ROWNUM] && m["Your Name"] === currentMatch["Your Name"] && m["Loser Name"] === currentMatch["Loser Name"]
+  );
+  
+  // Get all matches that come before the current match (matches are sorted by timestamp)
+  const previousMatches = matchesData.rows.slice(0, currentMatchIndex);
+  
+  // Find all matches where this player participated (either as winner or loser)
+  const playerPreviousMatches = previousMatches.filter((m) => {
+    if (!m["Script Handled"]) return false;
+    return m["Loser Name"] === playerIdentification || m["Your Name"] === playerIdentification;
+  });
+
+  // Check if all previous matches have been messaged appropriately:
+  // - If player was the loser, "Bot Messaged" must be set
+  // - If player was the winner, "Bot Messaged Winner" must be set
+  return playerPreviousMatches.every((m) => {
+    if (m["Loser Name"] === playerIdentification) {
+      // Player was the loser - check "Bot Messaged"
+      return m["Bot Messaged"] === true;
+    } else {
+      // Player was the winner - check "Bot Messaged Winner"
+      const botMessagedWinner = (m as Record<string, unknown>)["Bot Messaged Winner"] as boolean | undefined;
+      return botMessagedWinner === true;
+    }
+  });
+}
+
 // Check for matches and send CYOA events
 async function checkForMatches(client: Client<boolean>) {
+  console.log("[CYOA] checkForMatches called");
   let matchesData;
   let players;
   
   try {
     matchesData = await getRalMatches();
+    console.log(`[CYOA] Found ${matchesData.rows.length} matches`);
   } catch (error) {
     console.error("[CYOA] Error reading Matches sheet:", error);
     return; // Gracefully exit if we can't read matches
@@ -784,20 +829,23 @@ async function checkForMatches(client: Client<boolean>) {
     return; // Gracefully exit if we can't read players
   }
 
-  // Get the column index for "Bot Messaged" in the Matches sheet
+  // Get the column indices for "Bot Messaged" and "Bot Messaged Winner" in the Matches sheet
   const botMessagedColIndex = matchesData.headerColumns.match["Bot Messaged"];
+  const botMessagedWinnerColIndex = matchesData.headerColumns.match["Bot Messaged Winner"];
   if (botMessagedColIndex === undefined) {
     console.warn("Bot Messaged column not found in Matches sheet headers");
     return;
   }
+  if (botMessagedWinnerColIndex === undefined) {
+    console.warn("Bot Messaged Winner column not found in Matches sheet headers");
+    return;
+  }
   const botMessagedColLetter = columnIndexToLetter(botMessagedColIndex);
+  const botMessagedWinnerColLetter = columnIndexToLetter(botMessagedWinnerColIndex);
 
   for (const match of matchesData.rows) {
     // Only process matches that have been script handled
     if (!match["Script Handled"]) continue;
-    
-    // Skip if already messaged
-    if (match["Bot Messaged"]) continue;
 
     // Find the winner and loser players
     const _winner = players.rows.find(
@@ -807,22 +855,32 @@ async function checkForMatches(client: Client<boolean>) {
       (p) => p.Identification === match["Loser Name"]
     );
 
-    let loserProcessed = false;
-    let winnerProcessed = false;
-
     // Send CYOA event to loser (loss events)
-    if (loser && loser["Discord ID"]) {
+    if (loser && loser["Discord ID"] && !match["Bot Messaged"]) {
+      // Check if all previous matches (both wins and losses) have been messaged
+      if (!allPreviousMatchesMessaged(matchesData, loser.Identification, match)) {
+        console.log(`[CYOA] Skipping event for loser ${loser.Identification} - not all previous matches have been messaged yet`);
+        continue; // Skip this match, will check again next iteration
+      }
+
       // Skip if player has 6 or more losses (eliminated)
       if (loser.Losses >= 6) {
         console.log(`[CYOA] Skipping event for eliminated player ${loser.Identification} (${loser.Losses} losses)`);
-        loserProcessed = true; // Mark as processed (skipped for valid reason)
+        // Mark as messaged since we're skipping
+        const rowNum = match[ROWNUM];
+        await sheetsWrite(
+          sheets,
+          CONFIG.LIVE_SHEET_ID!,
+          `Matches!${botMessagedColLetter}${rowNum}`,
+          [["TRUE"]],
+        );
       } else {
         try {
           // Check if there's an event that was sent but doesn't have a choice yet
           const eventSentWithoutChoice = await getMostRecentEventSentWithoutChoice(loser["Discord ID"]);
           if (eventSentWithoutChoice) {
             console.log(`[CYOA] Player ${loser.Identification} (${loser["Discord ID"]}) has a pending event (${eventSentWithoutChoice.eventId}) that hasn't been chosen yet. Skipping new event.`);
-            // Don't mark as processed - wait for the player to make a choice
+            // Don't mark as messaged - wait for the player to make a choice
           } else {
             // Get the most recently chosen event from the CYOA sheet
             // This is the nextEvent ID that was stored when they made their last choice
@@ -848,7 +906,14 @@ async function checkForMatches(client: Client<boolean>) {
               false, // isWin = false for losses
               playerChosenEvents,
             );
-            loserProcessed = true;
+            // Mark as messaged
+            const rowNum = match[ROWNUM];
+            await sheetsWrite(
+              sheets,
+              CONFIG.LIVE_SHEET_ID!,
+              `Matches!${botMessagedColLetter}${rowNum}`,
+              [["TRUE"]],
+            );
           }
         } catch (error) {
           console.error(
@@ -857,23 +922,35 @@ async function checkForMatches(client: Client<boolean>) {
           );
         }
       }
-    } else {
-      loserProcessed = true; // No loser to process
     }
 
     // Send CYOA event to winner (win events)
-    if (_winner && _winner["Discord ID"]) {
+    const botMessagedWinner = (match as Record<string, unknown>)["Bot Messaged Winner"] as boolean | undefined;
+    if (_winner && _winner["Discord ID"] && !botMessagedWinner) {
+      // Check if all previous matches (both wins and losses) have been messaged
+      if (!allPreviousMatchesMessaged(matchesData, _winner.Identification, match)) {
+        console.log(`[CYOA] Skipping win event for winner ${_winner.Identification} - not all previous matches have been messaged yet`);
+        continue; // Skip this match, will check again next iteration
+      }
+
       // Skip if player has 6 or more losses (eliminated)
       if (_winner.Losses >= 6) {
         console.log(`[CYOA] Skipping win event for eliminated player ${_winner.Identification} (${_winner.Losses} losses)`);
-        winnerProcessed = true; // Mark as processed (skipped for valid reason)
+        // Mark as messaged since we're skipping
+        const rowNum = match[ROWNUM];
+        await sheetsWrite(
+          sheets,
+          CONFIG.LIVE_SHEET_ID!,
+          `Matches!${botMessagedWinnerColLetter}${rowNum}`,
+          [["TRUE"]],
+        );
       } else {
         try {
           // Check if there's an event that was sent but doesn't have a choice yet
           const eventSentWithoutChoice = await getMostRecentEventSentWithoutChoice(_winner["Discord ID"]);
           if (eventSentWithoutChoice) {
             console.log(`[CYOA] Player ${_winner.Identification} (${_winner["Discord ID"]}) has a pending event (${eventSentWithoutChoice.eventId}) that hasn't been chosen yet. Skipping new win event.`);
-            // Don't mark as processed - wait for the player to make a choice
+            // Don't mark as messaged - wait for the player to make a choice
           } else {
             // Get the loss count from the Player Database
             const lossCount = _winner.Losses;
@@ -886,7 +963,14 @@ async function checkForMatches(client: Client<boolean>) {
             
             if (!winEventId) {
               console.warn(`No win event found for winner ${_winner.Identification}, skipping`);
-              winnerProcessed = true; // Mark as processed (no event found)
+              // Mark as messaged since no event to send
+              const rowNum = match[ROWNUM];
+              await sheetsWrite(
+                sheets,
+                CONFIG.LIVE_SHEET_ID!,
+                `Matches!${botMessagedWinnerColLetter}${rowNum}`,
+                [["TRUE"]],
+              );
             } else {
               console.log(`[CYOA] Sending win event ${winEventId} to winner ${_winner.Identification} (${lossCount} losses)`);
               
@@ -899,7 +983,14 @@ async function checkForMatches(client: Client<boolean>) {
                 true, // isWin = true for wins
                 playerChosenEvents,
               );
-              winnerProcessed = true;
+              // Mark as messaged
+              const rowNum = match[ROWNUM];
+              await sheetsWrite(
+                sheets,
+                CONFIG.LIVE_SHEET_ID!,
+                `Matches!${botMessagedWinnerColLetter}${rowNum}`,
+                [["TRUE"]],
+              );
             }
           }
         } catch (error) {
@@ -909,20 +1000,6 @@ async function checkForMatches(client: Client<boolean>) {
           );
         }
       }
-    } else {
-      winnerProcessed = true; // No winner to process
-    }
-
-    // Mark the match as "Bot Messaged" only if both players have been processed (or skipped for valid reasons)
-    // If either player has a pending event, don't mark as messaged so we check again later
-    if (loserProcessed && winnerProcessed) {
-      const rowNum = match[ROWNUM];
-      await sheetsWrite(
-        sheets,
-        CONFIG.LIVE_SHEET_ID!,
-        `Matches!${botMessagedColLetter}${rowNum}`,
-        [["TRUE"]],
-      );
     }
   }
 }
@@ -934,6 +1011,7 @@ export function setup(): Promise<{
 }> {
   return Promise.resolve({
     watch: async (client: Client) => {
+      console.log("[CYOA] Watch function started");
       while (true) {
         try {
           await checkForMatches(client);
