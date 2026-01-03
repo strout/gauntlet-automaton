@@ -152,9 +152,9 @@ None of the guilds are in a spot to be turning away people with your kind of tal
 
 A man sits down on the other side of the bench. You're not sure how he got so close without you noticing. You also can't see his face. You should be able to see his face - the park isn't so dark, but you can't. You're not sure he has a face. A mouth you won't ever be able to see starts to move; his voice starts to speak.
 
-"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
+"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
 
-His voice sounds like it's coming from somwehre a couple feet to the left of where it should be.
+His voice sounds like it's coming from somewhere a couple feet to the left of where it should be.
 
 "I represent an individual who believes that the guild system has led to a cycle of factional infighting which is holding back the plane. What Ravnica needs is a radical restructuring. Unification under a single hand."
 
@@ -190,7 +190,7 @@ The faceless man's voice drops to a whisper.
 
 A man sits down on the other side of the bench. You're not sure how he got so close without you noticing. You also can't see his face. You should be able to see his face - the park isn't so dark, but you can't. You're not sure he has a face. A mouth you won't ever be able to see starts to move; his voice starts to speak.
 
-"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
+"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
 
 His voice sounds like it's coming from somwehre a couple feet to the left of where it should be.
 
@@ -228,7 +228,7 @@ The faceless man's voice drops to a whisper.
 
 A man sits down on the other side of the bench. You're not sure how he got so close without you noticing. You also can't see his face. You should be able to see his face - the park isn't so dark, but you can't. You're not sure he has a face. A mouth you won't ever be able to see starts to move; his voice starts to speak.
 
-"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
+"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
 
 His voice sounds like it's coming from somwehre a couple feet to the left of where it should be.
 
@@ -266,7 +266,7 @@ The faceless man's voice drops to a whisper.
 
 A man sits down on the other side of the bench. You're not sure how he got so close without you noticing. You also can't see his face. You should be able to see his face - the park isn't so dark, but you can't. You're not sure he has a face. A mouth you won't ever be able to see starts to move; his voice starts to speak.
 
-"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
+"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
 
 His voice sounds like it's coming from somwehre a couple feet to the left of where it should be.
 
@@ -304,7 +304,7 @@ The faceless man's voice drops to a whisper.
 
 A man sits down on the other side of the bench. You're not sure how he got so close without you noticing. You also can't see his face. You should be able to see his face - the park isn't so dark, but you can't. You're not sure he has a face. A mouth you won't ever be able to see starts to move; his voice starts to speak.
 
-"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
+"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
 
 His voice sounds like it's coming from somwehre a couple feet to the left of where it should be.
 
@@ -342,7 +342,7 @@ The faceless man's voice drops to a whisper.
 
 A man sits down on the other side of the bench. You're not sure how he got so close without you noticing. You also can't see his face. You should be able to see his face - the park isn't so dark, but you can't. You're not sure he has a face. A mouth you won't ever be able to see starts to move; his voice starts to speak.
 
-"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
+"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
 
 His voice sounds like it's coming from somwehre a couple feet to the left of where it should be.
 
@@ -380,7 +380,7 @@ The faceless man's voice drops to a whisper.
 
 A man sits down on the other side of the bench. You're not sure how he got so close without you noticing. You also can't see his face. You should be able to see his face - the park isn't so dark, but you can't. You're not sure he has a face. A mouth you won't ever be able to see starts to move; his voice starts to speak.
 
-"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
+"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
 
 His voice sounds like it's coming from somwehre a couple feet to the left of where it should be.
 
@@ -418,7 +418,7 @@ The faceless man's voice drops to a whisper.
 
 A man sits down on the other side of the bench. You're not sure how he got so close without you noticing. You also can't see his face. You should be able to see his face - the park isn't so dark, but you can't. You're not sure he has a face. A mouth you won't ever be able to see starts to move; his voice starts to speak.
 
-"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
+"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
 
 His voice sounds like it's coming from somwehre a couple feet to the left of where it should be.
 
@@ -456,7 +456,7 @@ The faceless man's voice drops to a whisper.
 
 A man sits down on the other side of the bench. You're not sure how he got so close without you noticing. You also can't see his face. You should be able to see his face - the park isn't so dark, but you can't. You're not sure he has a face. A mouth you won't ever be able to see starts to move; his voice starts to speak.
 
-"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
+"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
 
 His voice sounds like it's coming from somwehre a couple feet to the left of where it should be.
 
@@ -494,7 +494,7 @@ The faceless man's voice drops to a whisper.
 
 A man sits down on the other side of the bench. You're not sure how he got so close without you noticing. You also can't see his face. You should be able to see his face - the park isn't so dark, but you can't. You're not sure he has a face. A mouth you won't ever be able to see starts to move; his voice starts to speak.
 
-"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
+"First of all, let me apologize for inconvienceing you today. I have a proposal I wish to make to you, one I needed to make where we weren't going to be overheard. I ask you only to hear this proposal and I will return your ring to you." 
 
 His voice sounds like it's coming from somwehre a couple feet to the left of where it should be.
 
@@ -555,7 +555,7 @@ The further into the future you look, the blurrier the images get. The kaleidosc
         optionLabel: "Explore the possiblilies of the near-future",
         postSelectionText: "The device powers down. Two paths remain open before you. You are free to choose among them.",
         rewards: [
-          // empty here, but there's code to open an RNA pack and a GRN pack, pick 1 of 2
+          { count: "PACK_CHOICE", sets: ["RNA", "GRN"] },
         ],
         nextEvent: "WAR_START.LOYAL_PRESENT",
       },
@@ -622,7 +622,7 @@ Through the largest of the portals, a winged shadow is looming. You see the shap
         optionLabel: "The guilds rally together",
         postSelectionText: "Guild spellcasters have devised new ways to combine their magic, and Ravnica's strongest champions prepare to fight by your side. It might not be enough.",
         rewards: [
-          { count: "PACK", sets: ["RNA", "GRN"] },
+          { count: "PACK_CHOICE", sets: ["RNA", "GRN"] },
           { count: 1, query: "https://scryfall.com/search?q=%28type%3Alegendary%29+%28game%3Apaper%29+%28set%3Arna+OR+set%3Agrn%29+rarity%3Am+prefer%3Abest+is%3Abooster&unique=cards&as=grid&order=name" },
           { count: 1, query: "https://scryfall.com/card/war/249/mobilized-district" },
           { count: 1, query: "https://scryfall.com/card/war/6/bond-of-discipline" },
@@ -652,7 +652,7 @@ Through the largest of the portals, a winged shadow is looming. You see the shap
         optionLabel: "The guilds rally together",
         postSelectionText: "Guild spellcasters have devised new ways to combine their magic, and Ravnica's strongest champions prepare to fight by your side. It might not be enough.",
         rewards: [
-          { count: "PACK", sets: ["RNA", "GRN"] },
+          { count: "PACK_CHOICE", sets: ["RNA", "GRN"] },
           { count: 1, query: "https://scryfall.com/search?q=%28type%3Alegendary%29+%28game%3Apaper%29+%28set%3Arna+OR+set%3Agrn%29+rarity%3Am+prefer%3Abest+is%3Abooster&unique=cards&as=grid&order=name" },
           { count: 1, query: "https://scryfall.com/card/war/249/mobilized-district" },
           { count: 1, query: "https://scryfall.com/card/war/6/bond-of-discipline" },

@@ -8,6 +8,7 @@ import {
   MessageFlags,
   TextChannel,
   GuildMember,
+  DiscordAPIError,
 } from "discord.js";
 import { Handler } from "../../dispatch.ts";
 import { CONFIG } from "../../config.ts";
@@ -300,65 +301,82 @@ async function giveRewards(
 }
 
 // Send event message with buttons
+// Returns true if message was sent successfully, false if DM failed (e.g., user has DMs disabled)
 async function sendEventMessage(
   client: Client,
   userId: string,
   eventId: EventId,
   isWin: boolean,
   playerChosenEvents: string[],
-): Promise<void> {
-  const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-  const member = await guild.members.fetch(userId);
-  const dmChannel = await member.createDM();
+): Promise<boolean> {
+  try {
+    const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+    const member = await guild.members.fetch(userId);
+    const dmChannel = await member.createDM();
 
-  const event = getEventById(eventId, isWin);
-  if (!event) {
-    await dmChannel.send("Event not found.");
-    return;
-  }
+    const event = getEventById(eventId, isWin);
+    if (!event) {
+      await dmChannel.send("Event not found.");
+      return false;
+    }
 
-  const availableOptions = filterOptions(event.options, playerChosenEvents);
+    const availableOptions = filterOptions(event.options, playerChosenEvents);
 
-  if (availableOptions.length === 0) {
-    await dmChannel.send("No options available for this event.");
-    return;
-  }
+    if (availableOptions.length === 0) {
+      await dmChannel.send("No options available for this event.");
+      return false;
+    }
 
-  // Create buttons for each option (max 5 buttons per row, max 5 rows = 25 buttons total)
-  const buttonRows: ActionRowBuilder<ButtonBuilder>[] = [];
-  let currentRow = new ActionRowBuilder<ButtonBuilder>();
+    // Create buttons for each option (max 5 buttons per row, max 5 rows = 25 buttons total)
+    const buttonRows: ActionRowBuilder<ButtonBuilder>[] = [];
+    let currentRow = new ActionRowBuilder<ButtonBuilder>();
 
-  for (let idx = 0; idx < availableOptions.length; idx++) {
-    const option = availableOptions[idx];
-    // Provide default label for empty labels (defensive fallback)
-    const label = option.optionLabel || `Option ${idx + 1}`;
-    
-    const button = new ButtonBuilder()
-      .setCustomId(`RAL_CYOA:${eventId}:${idx}`)
-      .setLabel(label)
-      .setStyle(ButtonStyle.Primary);
+    for (let idx = 0; idx < availableOptions.length; idx++) {
+      const option = availableOptions[idx];
+      // Provide default label for empty labels (defensive fallback)
+      const label = option.optionLabel || `Option ${idx + 1}`;
+      
+      const button = new ButtonBuilder()
+        .setCustomId(`RAL_CYOA:${eventId}:${idx}`)
+        .setLabel(label)
+        .setStyle(ButtonStyle.Primary);
 
-    currentRow.addComponents(button);
+      currentRow.addComponents(button);
 
-    // Discord allows max 5 buttons per row
-    if (currentRow.components.length >= 5 || idx === availableOptions.length - 1) {
-      buttonRows.push(currentRow);
-      if (idx < availableOptions.length - 1) {
-        currentRow = new ActionRowBuilder<ButtonBuilder>();
+      // Discord allows max 5 buttons per row
+      if (currentRow.components.length >= 5 || idx === availableOptions.length - 1) {
+        buttonRows.push(currentRow);
+        if (idx < availableOptions.length - 1) {
+          currentRow = new ActionRowBuilder<ButtonBuilder>();
+        }
       }
     }
-  }
 
-  const content = event.mainText || "Choose your path:";
-  await dmChannel.send({
-    content,
-    components: buttonRows,
-  });
+    const content = event.mainText || "Choose your path:";
+    await dmChannel.send({
+      content,
+      components: buttonRows,
+    });
 
-  // Record that the event was sent (Event column filled, Next Event column empty)
-  const playerIdentification = await getPlayerIdentification(userId);
-  if (playerIdentification) {
-    await recordCyoaMessageSent(playerIdentification, userId, String(eventId));
+    // Record that the event was sent (Event column filled, Next Event column empty)
+    const playerIdentification = await getPlayerIdentification(userId);
+    if (playerIdentification) {
+      await recordCyoaMessageSent(playerIdentification, userId, String(eventId));
+    }
+    
+    return true;
+  } catch (error) {
+    // Handle Discord API error 50007: Cannot send messages to this user
+    // This happens when the user has DMs disabled or has blocked the bot
+    if (error instanceof DiscordAPIError && error.code === 50007) {
+      const playerIdentification = await getPlayerIdentification(userId);
+      console.warn(
+        `[CYOA] Cannot send DM to user ${userId}${playerIdentification ? ` (${playerIdentification})` : ""} - user has DMs disabled or has blocked the bot`
+      );
+      return false;
+    }
+    // Re-throw other errors
+    throw error;
   }
 }
 
@@ -530,12 +548,36 @@ async function handleCyoaButton(
       await initiatePackChoice(interaction.client, userId, member, `${option.postSelectionText}${rewardText}`, sets);
     } else if (regularRewards.length > 0) {
       // No pack choice, just send regular rewards
-      const dmChannel = await member.createDM();
-      await dmChannel.send(`${option.postSelectionText}\n\n${rewardMessage}`);
+      try {
+        const dmChannel = await member.createDM();
+        await dmChannel.send(`${option.postSelectionText}\n\n${rewardMessage}`);
+      } catch (error) {
+        if (error instanceof DiscordAPIError && error.code === 50007) {
+          console.warn(`[CYOA] Cannot send DM to user ${userId} - user has DMs disabled or has blocked the bot`);
+          await interaction.followUp({ 
+            content: "I tried to send you a DM with your rewards, but I couldn't reach you. Please check your Discord privacy settings to allow DMs from server members.", 
+            flags: MessageFlags.Ephemeral 
+          });
+        } else {
+          throw error;
+        }
+      }
     } else {
       // No rewards at all, just send postSelectionText
-      const dmChannel = await member.createDM();
-      await dmChannel.send(option.postSelectionText);
+      try {
+        const dmChannel = await member.createDM();
+        await dmChannel.send(option.postSelectionText);
+      } catch (error) {
+        if (error instanceof DiscordAPIError && error.code === 50007) {
+          console.warn(`[CYOA] Cannot send DM to user ${userId} - user has DMs disabled or has blocked the bot`);
+          await interaction.followUp({ 
+            content: "I tried to send you a DM, but I couldn't reach you. Please check your Discord privacy settings to allow DMs from server members.", 
+            flags: MessageFlags.Ephemeral 
+          });
+        } else {
+          throw error;
+        }
+      }
     }
   } catch (error) {
     console.error("Error processing CYOA choice:", error);
@@ -563,13 +605,15 @@ async function initiatePackChoice(
   const botBunkerChannel = await guild.channels.fetch(CONFIG.BOT_BUNKER_CHANNEL_ID) as TextChannel | null;
 
   if (!packgenChannel || !botBunkerChannel) {
-    console.error("Packgen or bot bunker channel not found");
-    return;
+    const error = new Error(`Packgen or bot bunker channel not found. Packgen: ${!!packgenChannel}, BotBunker: ${!!botBunkerChannel}`);
+    console.error(`[CYOA] ${error.message}`);
+    throw error;
   }
 
   if (sets.length !== 2) {
-    console.error(`Pack choice requires exactly 2 sets, got ${sets.length}`);
-    return;
+    const error = new Error(`Pack choice requires exactly 2 sets, got ${sets.length}`);
+    console.error(`[CYOA] ${error.message}`);
+    throw error;
   }
 
   const [set1, set2] = sets;
@@ -608,24 +652,44 @@ async function initiatePackChoice(
       );
 
     // Send DM with buttons
-    const dmChannel = await member.createDM();
-    const choiceMessage = await dmChannel.send({
-      content: `${postSelectionText}\n\nChoose which pack you want:\n**${set1} Pack**: https://sealeddeck.tech/${pack1.poolId}\n**${set2} Pack**: https://sealeddeck.tech/${pack2.poolId}`,
-      components: [row],
-    });
+    try {
+      const dmChannel = await member.createDM();
+      const choiceMessage = await dmChannel.send({
+        content: `${postSelectionText}\n\nChoose which pack you want:\n**${set1} Pack**: https://sealeddeck.tech/${pack1.poolId}\n**${set2} Pack**: https://sealeddeck.tech/${pack2.poolId}`,
+        components: [row],
+      });
 
-    // Store the pending choice
-    pendingPackChoices.set(userId, {
-      set1Pack: pack1,
-      set2Pack: pack2,
-      set1,
-      set2,
-      messageId: choiceMessage.id,
-    });
+      // Store the pending choice
+      pendingPackChoices.set(userId, {
+        set1Pack: pack1,
+        set2Pack: pack2,
+        set1,
+        set2,
+        messageId: choiceMessage.id,
+      });
+    } catch (dmError) {
+      // Handle Discord API error 50007: Cannot send messages to this user
+      if (dmError instanceof DiscordAPIError && dmError.code === 50007) {
+        console.warn(`[CYOA] Cannot send DM to user ${userId} for pack choice - user has DMs disabled or has blocked the bot`);
+        throw new Error("Cannot send DM to user - user has DMs disabled");
+      }
+      throw dmError;
+    }
   } catch (error) {
-    console.error("Error initiating pack choice:", error);
-    const dmChannel = await member.createDM();
-    await dmChannel.send(`Error generating packs for your choice. Please contact an administrator.`);
+    console.error(`[CYOA] Error initiating pack choice for user ${userId}:`, error);
+    // Try to send error message via DM, but handle DM errors gracefully
+    try {
+      const dmChannel = await member.createDM();
+      await dmChannel.send(`Error generating packs for your choice. Please contact an administrator.`);
+    } catch (dmError) {
+      if (dmError instanceof DiscordAPIError && dmError.code === 50007) {
+        console.warn(`[CYOA] Cannot send error DM to user ${userId} - user has DMs disabled or has blocked the bot`);
+      } else {
+        console.error("Error sending error message via DM:", dmError);
+      }
+    }
+    // Re-throw the error so the caller knows it failed
+    throw error;
   }
 }
 
@@ -810,13 +874,11 @@ function allPreviousMatchesMessaged(
 
 // Check for matches and send CYOA events
 async function checkForMatches(client: Client<boolean>) {
-  console.log("[CYOA] checkForMatches called");
   let matchesData;
   let players;
   
   try {
     matchesData = await getRalMatches();
-    console.log(`[CYOA] Found ${matchesData.rows.length} matches`);
   } catch (error) {
     console.error("[CYOA] Error reading Matches sheet:", error);
     return; // Gracefully exit if we can't read matches
@@ -906,7 +968,9 @@ async function checkForMatches(client: Client<boolean>) {
               false, // isWin = false for losses
               playerChosenEvents,
             );
-            // Mark as messaged
+            
+            // Mark as messaged even if DM failed (so we don't keep retrying)
+            // The sendEventMessage function handles logging for DM failures
             const rowNum = match[ROWNUM];
             await sheetsWrite(
               sheets,
@@ -983,7 +1047,9 @@ async function checkForMatches(client: Client<boolean>) {
                 true, // isWin = true for wins
                 playerChosenEvents,
               );
-              // Mark as messaged
+              
+              // Mark as messaged even if DM failed (so we don't keep retrying)
+              // The sendEventMessage function handles logging for DM failures
               const rowNum = match[ROWNUM];
               await sheetsWrite(
                 sheets,
