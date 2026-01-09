@@ -9,10 +9,12 @@ import {
   TextChannel,
   GuildMember,
   DiscordAPIError,
+  AttachmentBuilder,
 } from "discord.js";
+import { Buffer } from "node:buffer";
 import { Handler } from "../../dispatch.ts";
 import { CONFIG } from "../../config.ts";
-import { searchCards } from "../../scryfall.ts";
+import { searchCards, fetchCardImage } from "../../scryfall.ts";
 import { getAllMatches, getPlayers, ROWNUM, addPoolChange, getPoolChanges } from "../../standings.ts";
 import { sheets, sheetsWrite } from "../../sheets.ts";
 import {
@@ -496,6 +498,7 @@ async function handleCyoaButton(
     // If player has 5 losses, use COMPLETED_EVENT as terminal event
     // If no previous loss events, use START_EVENT
     let eventChosen = String(option.nextEvent || "");
+    
     if (isWin && !option.nextEvent) {
       // Get player's loss count to check if they have 5 losses
       const playersData = await getRalPlayers();
@@ -872,6 +875,100 @@ function allPreviousMatchesMessaged(
   });
 }
 
+// Send an event message without interactive buttons (for terminal events like elimination)
+async function sendEventMessageWithoutButtons(
+  client: Client,
+  userId: string,
+  eventId: EventId,
+  isWin: boolean,
+): Promise<boolean> {
+  try {
+    const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+    const member = await guild.members.fetch(userId);
+    const dmChannel = await member.createDM();
+
+    const event = getEventById(eventId, isWin);
+    if (!event) {
+      await dmChannel.send("Event not found.");
+      return false;
+    }
+
+    // Send the main text
+    if (event.mainText) {
+      await dmChannel.send(event.mainText);
+    }
+
+    // If there's an option with postSelectionText, extract card URL and send image
+    if (event.options && event.options.length > 0 && event.options[0].postSelectionText) {
+      const postSelectionText = event.options[0].postSelectionText;
+      
+      // Extract card URL from postSelectionText (format: https://scryfall.com/card/...)
+      const cardUrlMatch = postSelectionText.match(/https:\/\/scryfall\.com\/card\/[^\s\n]+/);
+      
+      if (cardUrlMatch) {
+        const cardUrl = cardUrlMatch[0];
+        
+        try {
+          // Extract query from card URL
+          const query = extractQueryFromUrl(cardUrl);
+          if (query) {
+            // Search for the card
+            const cards = await searchCards(query);
+            if (cards.length > 0) {
+              const card = cards[0];
+              
+              // Fetch the card image
+              const imageBlob = await fetchCardImage(card, "normal");
+              
+              // Convert blob to buffer for Discord attachment
+              const arrayBuffer = await imageBlob.arrayBuffer();
+              const buffer = Buffer.from(arrayBuffer);
+              
+              // Create attachment and send the card image
+              const attachment = new AttachmentBuilder(buffer, {
+                name: `${card.name.replace(/[^a-z0-9]/gi, "_")}.png`,
+              });
+              
+              await dmChannel.send({
+                files: [attachment],
+              });
+            }
+          }
+        } catch (error) {
+          console.error(`Error fetching card image for ${cardUrl}:`, error);
+          // Fallback to sending the URL if image fetch fails
+          await dmChannel.send(cardUrl);
+        }
+      }
+      
+      // Extract and send the closing message (everything after the card URL)
+      const closingMessage = postSelectionText.replace(/https:\/\/scryfall\.com\/card\/[^\s\n]+[\s\n]*/, "").trim();
+      if (closingMessage) {
+        await dmChannel.send(closingMessage);
+      }
+    }
+
+    // Record that the event was sent (Event column filled, Next Event column empty)
+    const playerIdentification = await getPlayerIdentification(userId);
+    if (playerIdentification) {
+      await recordCyoaMessageSent(playerIdentification, userId, String(eventId));
+    }
+
+    return true;
+  } catch (error) {
+    // Handle Discord API error 50007: Cannot send messages to this user
+    if (error instanceof DiscordAPIError && error.code === 50007) {
+      const playerIdentification = await getPlayerIdentification(userId);
+      console.warn(
+        `[CYOA] Cannot send DM to user ${userId}${playerIdentification ? ` (${playerIdentification})` : ""} - user has DMs disabled or has blocked the bot`
+      );
+      return false;
+    }
+    // Re-throw other errors
+    throw error;
+  }
+}
+
 // Check for matches and send CYOA events
 async function checkForMatches(client: Client<boolean>) {
   let matchesData;
@@ -925,35 +1022,74 @@ async function checkForMatches(client: Client<boolean>) {
         continue; // Skip this match, will check again next iteration
       }
 
-      // Skip if player has 6 or more losses (eliminated)
-      if (loser.Losses >= 6) {
-        console.log(`[CYOA] Skipping event for eliminated player ${loser.Identification} (${loser.Losses} losses)`);
-        // Mark as messaged since we're skipping
-        const rowNum = match[ROWNUM];
-        await sheetsWrite(
-          sheets,
-          CONFIG.LIVE_SHEET_ID!,
-          `Matches!${botMessagedColLetter}${rowNum}`,
-          [["TRUE"]],
-        );
-      } else {
-        try {
-          // Check if there's an event that was sent but doesn't have a choice yet
-          const eventSentWithoutChoice = await getMostRecentEventSentWithoutChoice(loser["Discord ID"]);
-          if (eventSentWithoutChoice) {
-            console.log(`[CYOA] Player ${loser.Identification} (${loser["Discord ID"]}) has a pending event (${eventSentWithoutChoice.eventId}) that hasn't been chosen yet. Skipping new event.`);
-            // Don't mark as messaged - wait for the player to make a choice
+      // Process events in order - always check for pending events first (regardless of loss count)
+      try {
+        // Check if there's an event that was sent but doesn't have a choice yet
+        const eventSentWithoutChoice = await getMostRecentEventSentWithoutChoice(loser["Discord ID"]);
+        if (eventSentWithoutChoice) {
+          console.log(`[CYOA] Player ${loser.Identification} (${loser["Discord ID"]}) has a pending event (${eventSentWithoutChoice.eventId}) that hasn't been chosen yet. Skipping new event.`);
+          // Don't mark as messaged - wait for the player to make a choice
+        } else {
+          // Get the most recently chosen event from the CYOA sheet
+          // This is the nextEvent ID that was stored when they made their last choice
+          const nextEventId = await getMostRecentChosenEvent(loser["Discord ID"]);
+          
+          console.log(`[CYOA] Player ${loser.Identification} (${loser["Discord ID"]}): most recent chosen event = ${nextEventId || "null"}`);
+          
+          // If no chosen event found, this is their first loss - send start event
+          // Otherwise, send the event they should receive next based on their last choice
+          // Skip if nextEventId is COMPLETED_EVENT (terminal event for 5 losses)
+          if (nextEventId === String(COMPLETED_EVENT)) {
+            // Player has 5 losses and reached terminal event - skip
+            console.log(`[CYOA] Player ${loser.Identification} has reached COMPLETED_EVENT (terminal for 5 losses)`);
+            const rowNum = match[ROWNUM];
+            await sheetsWrite(
+              sheets,
+              CONFIG.LIVE_SHEET_ID!,
+              `Matches!${botMessagedColLetter}${rowNum}`,
+              [["TRUE"]],
+            );
+          } else if (nextEventId && nextEventId.startsWith("ELIMINATION.")) {
+            // Player has an elimination event as nextEvent
+            // Only send it if they have 6+ losses AND no pending events, otherwise skip (they'll get it on 6th loss)
+            if (loser.Losses >= 6) {
+              console.log(`[CYOA] Sending elimination DM to player ${loser.Identification} (${loser["Discord ID"]}) - reached 6 losses with ${nextEventId}`);
+              
+              // Send the elimination event without buttons (terminal event)
+              const sent = await sendEventMessageWithoutButtons(
+                client,
+                loser["Discord ID"],
+                nextEventId,
+                false, // isWin = false, it's in onLossEvents
+              );
+              
+              if (sent) {
+                console.log(`[CYOA] Successfully sent elimination DM to ${loser.Identification}`);
+              }
+              
+              // Mark as messaged since we sent the elimination event
+              const rowNum = match[ROWNUM];
+              await sheetsWrite(
+                sheets,
+                CONFIG.LIVE_SHEET_ID!,
+                `Matches!${botMessagedColLetter}${rowNum}`,
+                [["TRUE"]],
+              );
+            } else {
+              // Player has elimination event as nextEvent but hasn't reached 6 losses yet
+              // Skip sending it, they'll get it on 6th loss
+              console.log(`[CYOA] Player ${loser.Identification} has ${nextEventId} as nextEvent (has taken a WAR_END event) - skipping event, will get elimination DM on 6th loss`);
+              const rowNum = match[ROWNUM];
+              await sheetsWrite(
+                sheets,
+                CONFIG.LIVE_SHEET_ID!,
+                `Matches!${botMessagedColLetter}${rowNum}`,
+                [["TRUE"]],
+              );
+            }
           } else {
-            // Get the most recently chosen event from the CYOA sheet
-            // This is the nextEvent ID that was stored when they made their last choice
-            const nextEventId = await getMostRecentChosenEvent(loser["Discord ID"]);
-            
-            console.log(`[CYOA] Player ${loser.Identification} (${loser["Discord ID"]}): most recent chosen event = ${nextEventId || "null"}`);
-            
-            // If no chosen event found, this is their first loss - send start event
-            // Otherwise, send the event they should receive next based on their last choice
-            // Skip if nextEventId is COMPLETED_EVENT (terminal event for 5 losses)
-            const eventIdToSend: EventId = (nextEventId && nextEventId !== String(COMPLETED_EVENT)) ? nextEventId : START_EVENT;
+            // Normal event processing - send the next event in sequence
+            const eventIdToSend: EventId = nextEventId || START_EVENT;
             
             // Get the player's chosen events (for filtering options that require previous selections)
             const playerChosenEvents = await getPlayerChosenEvents(loser["Discord ID"]);
@@ -968,7 +1104,7 @@ async function checkForMatches(client: Client<boolean>) {
               false, // isWin = false for losses
               playerChosenEvents,
             );
-            
+          
             // Mark as messaged even if DM failed (so we don't keep retrying)
             // The sendEventMessage function handles logging for DM failures
             const rowNum = match[ROWNUM];
@@ -979,12 +1115,12 @@ async function checkForMatches(client: Client<boolean>) {
               [["TRUE"]],
             );
           }
-        } catch (error) {
-          console.error(
-            `Error sending CYOA event to loser ${loser.Identification} (${loser["Discord ID"]}) for match ${match[ROWNUM]}:`,
-            error,
-          );
         }
+      } catch (error) {
+        console.error(
+          `Error sending CYOA event to loser ${loser.Identification} (${loser["Discord ID"]}) for match ${match[ROWNUM]}:`,
+          error,
+        );
       }
     }
 
@@ -997,74 +1133,62 @@ async function checkForMatches(client: Client<boolean>) {
         continue; // Skip this match, will check again next iteration
       }
 
-      // Skip if player has 6 or more losses (eliminated)
-      if (_winner.Losses >= 6) {
-        console.log(`[CYOA] Skipping win event for eliminated player ${_winner.Identification} (${_winner.Losses} losses)`);
-        // Mark as messaged since we're skipping
-        const rowNum = match[ROWNUM];
-        await sheetsWrite(
-          sheets,
-          CONFIG.LIVE_SHEET_ID!,
-          `Matches!${botMessagedWinnerColLetter}${rowNum}`,
-          [["TRUE"]],
-        );
-      } else {
-        try {
-          // Check if there's an event that was sent but doesn't have a choice yet
-          const eventSentWithoutChoice = await getMostRecentEventSentWithoutChoice(_winner["Discord ID"]);
-          if (eventSentWithoutChoice) {
-            console.log(`[CYOA] Player ${_winner.Identification} (${_winner["Discord ID"]}) has a pending event (${eventSentWithoutChoice.eventId}) that hasn't been chosen yet. Skipping new win event.`);
-            // Don't mark as messaged - wait for the player to make a choice
+      // Process win events normally - check for pending events first (regardless of loss count)
+      try {
+        // Check if there's an event that was sent but doesn't have a choice yet
+        const eventSentWithoutChoice = await getMostRecentEventSentWithoutChoice(_winner["Discord ID"]);
+        if (eventSentWithoutChoice) {
+          console.log(`[CYOA] Player ${_winner.Identification} (${_winner["Discord ID"]}) has a pending event (${eventSentWithoutChoice.eventId}) that hasn't been chosen yet. Skipping new win event.`);
+          // Don't mark as messaged - wait for the player to make a choice
+        } else {
+          // Get the loss count from the Player Database
+          const lossCount = _winner.Losses;
+          
+          // Get the player's chosen events (for filtering options that require previous selections)
+          const playerChosenEvents = await getPlayerChosenEvents(_winner["Discord ID"]);
+          
+          // Select an appropriate win event based on player's loss count, excluding events they've already received
+          const winEventId = await selectWinEvent(lossCount, _winner["Discord ID"]);
+          
+          if (!winEventId) {
+            console.warn(`No win event found for winner ${_winner.Identification}, skipping`);
+            // Mark as messaged since no event to send
+            const rowNum = match[ROWNUM];
+            await sheetsWrite(
+              sheets,
+              CONFIG.LIVE_SHEET_ID!,
+              `Matches!${botMessagedWinnerColLetter}${rowNum}`,
+              [["TRUE"]],
+            );
           } else {
-            // Get the loss count from the Player Database
-            const lossCount = _winner.Losses;
+            console.log(`[CYOA] Sending win event ${winEventId} to winner ${_winner.Identification} (${lossCount} losses)`);
             
-            // Get the player's chosen events (for filtering options that require previous selections)
-            const playerChosenEvents = await getPlayerChosenEvents(_winner["Discord ID"]);
+            // Send the win event as a DM to the winning player
+            // The requiredSelections in the event options will automatically filter available options
+            await sendEventMessage(
+              client,
+              _winner["Discord ID"],
+              winEventId,
+              true, // isWin = true for wins
+              playerChosenEvents,
+            );
             
-            // Select an appropriate win event based on player's loss count, excluding events they've already received
-            const winEventId = await selectWinEvent(lossCount, _winner["Discord ID"]);
-            
-            if (!winEventId) {
-              console.warn(`No win event found for winner ${_winner.Identification}, skipping`);
-              // Mark as messaged since no event to send
-              const rowNum = match[ROWNUM];
-              await sheetsWrite(
-                sheets,
-                CONFIG.LIVE_SHEET_ID!,
-                `Matches!${botMessagedWinnerColLetter}${rowNum}`,
-                [["TRUE"]],
-              );
-            } else {
-              console.log(`[CYOA] Sending win event ${winEventId} to winner ${_winner.Identification} (${lossCount} losses)`);
-              
-              // Send the win event as a DM to the winning player
-              // The requiredSelections in the event options will automatically filter available options
-              await sendEventMessage(
-                client,
-                _winner["Discord ID"],
-                winEventId,
-                true, // isWin = true for wins
-                playerChosenEvents,
-              );
-              
-              // Mark as messaged even if DM failed (so we don't keep retrying)
-              // The sendEventMessage function handles logging for DM failures
-              const rowNum = match[ROWNUM];
-              await sheetsWrite(
-                sheets,
-                CONFIG.LIVE_SHEET_ID!,
-                `Matches!${botMessagedWinnerColLetter}${rowNum}`,
-                [["TRUE"]],
-              );
-            }
+            // Mark as messaged even if DM failed (so we don't keep retrying)
+            // The sendEventMessage function handles logging for DM failures
+            const rowNum = match[ROWNUM];
+            await sheetsWrite(
+              sheets,
+              CONFIG.LIVE_SHEET_ID!,
+              `Matches!${botMessagedWinnerColLetter}${rowNum}`,
+              [["TRUE"]],
+            );
           }
-        } catch (error) {
-          console.error(
-            `Error sending CYOA event to winner ${_winner.Identification} (${_winner["Discord ID"]}) for match ${match[ROWNUM]}:`,
-            error,
-          );
         }
+      } catch (error) {
+        console.error(
+          `Error sending CYOA event to winner ${_winner.Identification} (${_winner["Discord ID"]}) for match ${match[ROWNUM]}:`,
+          error,
+        );
       }
     }
   }
