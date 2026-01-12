@@ -217,7 +217,11 @@ async function giveRewards(
         }
       }
     } else {
-      // Query-based card reward
+      // Query-based card reward (count is a number)
+      if (typeof reward.count !== "number") {
+        console.warn(`Query-based reward has invalid count type:`, reward);
+        continue;
+      }
       if (!reward.query) {
         console.warn(`Reward has no query:`, reward);
         continue;
@@ -231,7 +235,21 @@ async function giveRewards(
       
       try {
         const cards = await searchCards(query);
-        const selectedCards = cards.slice(0, reward.count);
+        if (cards.length === 0) {
+          console.warn(`Query returned no cards: ${query}`);
+          continue;
+        }
+        
+        // Randomly select cards from the query results based on reward.count
+        const selectedCards: Array<typeof cards[number]> = [];
+        const availableCards = [...cards]; // Copy array for random selection
+        const countToSelect = Math.min(reward.count, availableCards.length); // Don't request more than available
+        
+        for (let i = 0; i < countToSelect; i++) {
+          const randomIndex = Math.floor(Math.random() * availableCards.length);
+          selectedCards.push(availableCards[randomIndex]);
+          availableCards.splice(randomIndex, 1); // Remove selected card to avoid duplicates
+        }
         
         // Add selected cards to our collection
         for (const card of selectedCards) {
