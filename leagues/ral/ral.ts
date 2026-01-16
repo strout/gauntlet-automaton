@@ -824,6 +824,75 @@ const packChoiceButtonHandler: Handler<Interaction> = async (interaction, handle
   await handlePackChoiceButton(interaction);
 };
 
+// Manual command handler for !sendEvent [DISCORD_ID] [EVENT_ID]
+const sendEventCommandHandler: Handler<Message> = async (message, handle) => {
+  const content = message.content.trim();
+  if (!content.startsWith("!sendEvent")) return;
+  
+  handle.claim();
+  
+  // Parse command: !sendEvent [DISCORD_ID] [EVENT_ID]
+  const parts = content.split(/\s+/);
+  if (parts.length < 3) {
+    await message.reply("Usage: `!sendEvent [DISCORD_ID] [EVENT_ID]`");
+    return;
+  }
+  
+  const discordId = parts[1];
+  const eventId = parts[2];
+  
+  // Validate Discord ID format (should be numeric)
+  if (!/^\d+$/.test(discordId)) {
+    await message.reply(`Invalid Discord ID: ${discordId}`);
+    return;
+  }
+  
+  // Determine if this is a win or loss event
+  const isWin = onWinEvents.some(e => e.id === eventId);
+  const isLoss = onLossEvents.some(e => e.id === eventId);
+  const isElimination = typeof eventId === "string" && eventId.startsWith("ELIMINATION.");
+  
+  if (!isWin && !isLoss) {
+    await message.reply(`Event ID "${eventId}" not found in win or loss events.`);
+    return;
+  }
+  
+  try {
+    let sent = false;
+    
+    if (isElimination) {
+      // ELIMINATION events use sendEventMessageWithoutButtons (no interactive buttons)
+      // These are terminal events that don't require player choice
+      sent = await sendEventMessageWithoutButtons(
+        message.client,
+        discordId,
+        eventId,
+        false, // ELIMINATION events are always loss events
+      );
+    } else {
+      // Regular events use sendEventMessage (with interactive buttons)
+      const playerChosenEvents = await getPlayerChosenEvents(discordId);
+      sent = await sendEventMessage(
+        message.client,
+        discordId,
+        eventId,
+        isWin,
+        playerChosenEvents,
+      );
+    }
+    
+    if (sent) {
+      // Event is already recorded in CYOA sheet by sendEventMessage/sendEventMessageWithoutButtons
+      await message.reply(`✅ Successfully sent event ${eventId} to <@${discordId}> and recorded in CYOA sheet.`);
+    } else {
+      await message.reply(`❌ Failed to send event ${eventId} to <@${discordId}>. The user may have DMs disabled.`);
+    }
+  } catch (error) {
+    console.error(`[CYOA] Error in sendEvent command:`, error);
+    await message.reply(`❌ Error sending event: ${error instanceof Error ? error.message : String(error)}`);
+  }
+};
+
 // Get RAL matches from the Matches sheet
 async function getRalMatches() {
   return await getAllMatches({ 
@@ -863,27 +932,50 @@ function allPreviousMatchesMessaged(
   matchesData: Awaited<ReturnType<typeof getRalMatches>>,
   playerIdentification: string,
   currentMatch: Awaited<ReturnType<typeof getRalMatches>>["rows"][number],
+  isLossEvent: boolean = false,
 ): boolean {
   // Find the index of the current match in the sorted (by timestamp) array
+  // Matches are already sorted chronologically by getAllMatches, ensuring we process oldest first
   const currentMatchIndex = matchesData.rows.findIndex((m) => 
     m[ROWNUM] === currentMatch[ROWNUM] && m["Your Name"] === currentMatch["Your Name"] && m["Loser Name"] === currentMatch["Loser Name"]
   );
   
+  if (currentMatchIndex === -1) {
+    // Match not found - this shouldn't happen, but be safe
+    console.warn(`[CYOA] Could not find current match in matchesData for ${playerIdentification}`);
+    return false;
+  }
+  
   // Get all matches that come before the current match (matches are sorted by timestamp)
+  // This ensures we process the oldest unprocessed match first
   const previousMatches = matchesData.rows.slice(0, currentMatchIndex);
   
-  // Find all matches where this player participated (either as winner or loser)
+  // Find all matches where this player participated
+  // For loss events: only check previous LOSS matches (where player was the loser)
+  //   - This includes both regular match losses and entropy losses
+  //   - A player might have 2 losses in Matches sheet but 4 losses total (2 from entropy)
+  //   - We need to ensure all previous loss matches (including entropy) have been messaged
+  //   - Win matches don't block loss event processing
+  // For win events: check all previous matches (both wins and losses)
   const playerPreviousMatches = previousMatches.filter((m) => {
     if (!m["Script Handled"]) return false;
-    return m["Loser Name"] === playerIdentification || m["Your Name"] === playerIdentification;
+    if (isLossEvent) {
+      // For loss events, only check previous losses (where player was the loser)
+      // This includes both regular matches and entropy (entropy always has PLAYER 2 as loser)
+      return m["Loser Name"] === playerIdentification;
+    } else {
+      // For win events, check all previous matches (both wins and losses)
+      return m["Loser Name"] === playerIdentification || m["Your Name"] === playerIdentification;
+    }
   });
 
   // Check if all previous matches have been messaged appropriately:
-  // - If player was the loser, "Bot Messaged" must be set
+  // - If player was the loser, "Bot Messaged" must be set (applies to both regular matches and entropy)
   // - If player was the winner, "Bot Messaged Winner" must be set
   return playerPreviousMatches.every((m) => {
     if (m["Loser Name"] === playerIdentification) {
       // Player was the loser - check "Bot Messaged"
+      // This applies to both regular match losses and entropy losses
       return m["Bot Messaged"] === true;
     } else {
       // Player was the winner - check "Bot Messaged Winner"
@@ -1028,15 +1120,19 @@ async function checkForMatches(client: Client<boolean>) {
     const _winner = players.rows.find(
       (p) => p.Identification === match["Your Name"]
     );
+    if (match["Loser Name"] === "Entropy") continue;
     const loser = players.rows.find(
       (p) => p.Identification === match["Loser Name"]
     );
 
+
+    console.log(`[CYOA] Processing match ${match[ROWNUM]} - winner: ${_winner?.Identification}, loser: ${loser?.Identification}`);
     // Send CYOA event to loser (loss events)
-    if (loser && loser["Discord ID"] && !match["Bot Messaged"]) {
-      // Check if all previous matches (both wins and losses) have been messaged
-      if (!allPreviousMatchesMessaged(matchesData, loser.Identification, match)) {
-        console.log(`[CYOA] Skipping event for loser ${loser.Identification} - not all previous matches have been messaged yet`);
+    // Only process if the player is actually the loser in this match (not the winner)
+    if (loser && loser["Discord ID"] && loser.Identification === match["Loser Name"] && !match["Bot Messaged"]) {
+      // Check if all previous LOSS matches have been messaged (wins don't block loss processing)
+      if (!allPreviousMatchesMessaged(matchesData, loser.Identification, match, true)) {
+        console.log(`[CYOA] Skipping event for loser ${loser.Identification} - not all previous loss matches have been messaged yet`);
         continue; // Skip this match, will check again next iteration
       }
 
@@ -1045,8 +1141,16 @@ async function checkForMatches(client: Client<boolean>) {
         // Check if there's an event that was sent but doesn't have a choice yet
         const eventSentWithoutChoice = await getMostRecentEventSentWithoutChoice(loser["Discord ID"]);
         if (eventSentWithoutChoice) {
-          console.log(`[CYOA] Player ${loser.Identification} (${loser["Discord ID"]}) has a pending event (${eventSentWithoutChoice.eventId}) that hasn't been chosen yet. Skipping new event.`);
-          // Don't mark as messaged - wait for the player to make a choice
+          // Check if the pending event is a win event - if so, don't send loss events
+          const isPendingWinEvent = onWinEvents.some(e => e.id === eventSentWithoutChoice.eventId);
+          if (isPendingWinEvent) {
+            console.log(`[CYOA] Player ${loser.Identification} (${loser["Discord ID"]}) has a pending WIN event (${eventSentWithoutChoice.eventId}) that hasn't been chosen yet. Skipping loss event.`);
+            // Don't mark as messaged - wait for the player to respond to the win event first
+            continue;
+          } else {
+            console.log(`[CYOA] Player ${loser.Identification} (${loser["Discord ID"]}) has a pending event (${eventSentWithoutChoice.eventId}) that hasn't been chosen yet. Skipping new event.`);
+            // Don't mark as messaged - wait for the player to make a choice
+          }
         } else {
           // Get the most recently chosen event from the CYOA sheet
           // This is the nextEvent ID that was stored when they made their last choice
@@ -1143,8 +1247,9 @@ async function checkForMatches(client: Client<boolean>) {
     }
 
     // Send CYOA event to winner (win events)
+    // Only process if the player is actually the winner in this match (not the loser)
     const botMessagedWinner = (match as Record<string, unknown>)["Bot Messaged Winner"] as boolean | undefined;
-    if (_winner && _winner["Discord ID"] && !botMessagedWinner) {
+    if (_winner && _winner["Discord ID"] && _winner.Identification === match["Your Name"] && !botMessagedWinner) {
       // Check if all previous matches (both wins and losses) have been messaged
       if (!allPreviousMatchesMessaged(matchesData, _winner.Identification, match)) {
         console.log(`[CYOA] Skipping win event for winner ${_winner.Identification} - not all previous matches have been messaged yet`);
@@ -1230,7 +1335,7 @@ export function setup(): Promise<{
         await delay(60_000); // Check every minute
       }
     },
-    messageHandlers: [],
+    messageHandlers: [sendEventCommandHandler],
     interactionHandlers: [cyoaButtonHandler, packChoiceButtonHandler],
   });
 }
