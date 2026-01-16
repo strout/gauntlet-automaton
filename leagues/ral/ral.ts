@@ -975,14 +975,9 @@ function allPreviousMatchesMessaged(
   });
 
   // Check if all previous matches have been messaged appropriately:
-<<<<<<< Updated upstream
-  // - If player was the loser, "Bot Messaged" must be set (applies to both regular matches and entropy)
-  // - If player was the winner, "Bot Messaged Winner" must be set
-=======
   // - If player was the loser, "Bot Messaged" must be set
   // - If player was the winner, "Bot Messaged Winner" must be set (only for regular matches, not entropy)
   // - For entropy matches, only check "Bot Messaged" since there's no winner
->>>>>>> Stashed changes
   return playerPreviousMatches.every((m) => {
     const isEntropy = m[MATCHTYPE] === "entropy";
     if (m["Loser Name"] === playerIdentification) {
@@ -1282,16 +1277,10 @@ async function checkForMatches(client: Client<boolean>) {
     }
 
     // Send CYOA event to winner (win events)
-<<<<<<< Updated upstream
-    // Only process if the player is actually the winner in this match (not the loser)
-    const botMessagedWinner = (match as Record<string, unknown>)["Bot Messaged Winner"] as boolean | undefined;
-    if (_winner && _winner["Discord ID"] && _winner.Identification === match["Your Name"] && !botMessagedWinner) {
-=======
     // Skip winner handling for entropy matches - they don't have winners
     const isEntropy = match[MATCHTYPE] === "entropy";
     const botMessagedWinner = (match as Record<string, unknown>)["Bot Messaged Winner"] as boolean | undefined;
     if (!isEntropy && _winner && _winner["Discord ID"] && !botMessagedWinner) {
->>>>>>> Stashed changes
       // Check if all previous matches (both wins and losses) have been messaged
       if (!allPreviousMatchesMessaged(matchesData, _winner.Identification, match)) {
         console.log(`[CYOA] Skipping win event for winner ${_winner.Identification} - not all previous matches have been messaged yet`);
