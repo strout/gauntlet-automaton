@@ -1,5 +1,6 @@
 import {
   Client,
+  ComponentType,
   DiscordAPIError,
   Interaction,
   Message,
@@ -252,7 +253,9 @@ const onPackModifyChoice = async (
 
   let originalPack: readonly ScryfallCard[] = [];
   try {
-    const allTlaBoosterCards = await searchCards("set:tla is:booster");
+    const allTlaBoosterCards = await searchCards(
+      "(set:tla or set:tle) is:booster",
+    );
     const tlaBoosterCardMap = new Map<string, ScryfallCard>();
     for (const card of allTlaBoosterCards) {
       tlaBoosterCardMap.set(card.name, card);
@@ -681,11 +684,13 @@ async function handleLoser(
   );
 
   if (!loser) {
-    console.warn(
-      `Unidentified loser ${match["Loser Name"]} for ${match[MATCHTYPE]} ${
-        match[ROWNUM]
-      }`,
-    );
+    if (match[MATCHTYPE] === "match") {
+      console.warn(
+        `Unidentified loser ${match["Loser Name"]} for ${match[MATCHTYPE]} ${
+          match[ROWNUM]
+        }`,
+      );
+    }
     return;
   }
 
@@ -702,15 +707,15 @@ async function handleLoser(
     } else {
       throw e;
     }
+  } finally {
+    // Mark the match as messaged in the sheet
+    await recordMessaged(
+      matches,
+      match,
+      "Bot Messaged",
+      blocked ? "-1" : "1",
+    );
   }
-
-  // Mark the match as messaged in the sheet
-  await recordMessaged(
-    matches,
-    match,
-    "Bot Messaged",
-    blocked ? "-1" : "1",
-  );
 
   /*
 
@@ -950,30 +955,29 @@ async function sendPack(
     pr.Team === loser.Team && pr.Identification !== loser.Identification
   );
   for (const teammate of teammates) {
-    await sendSwapCardChoice(client, id, teammate["Discord ID"], pack.success);
+    await sendSwapCardChoice(
+      client,
+      id,
+      pack.success.message.url,
+      teammate["Discord ID"],
+      pack.success,
+    );
   }
 }
 
-const tlaCards = await searchCards("set:tla is:booster");
-
 function makeSwapMessage(
+  url: string,
   destUserId: string,
   entry: SealedDeckPool,
 ) {
   return Promise.resolve({
-    content: "Choose a card to send to <@" + destUserId + ">",
+    content: "Choose a card to send to <@" + destUserId + "> from pack " + url,
     options: [
       { label: "No Swap", value: destUserId + "_" },
-      ...entry.sideboard.map((x) => {
-        const sfc = tlaCards.find((c) =>
-          c.name.toLowerCase() === x.name.toLowerCase()
-        );
-        if (!sfc) {
-          throw new Error("Could not find card " + x.name + " in the set.");
-        }
+      ...entry.sideboard.map((x, i) => {
         return {
-          label: sfc.name,
-          value: `${destUserId}_${sfc.collector_number}`,
+          label: x.name,
+          value: `${destUserId}_idx.${i}`,
         };
       }),
     ],
@@ -985,30 +989,32 @@ async function onSwapChoice(choice: string, interaction: Interaction) {
   const channel = await guild.channels.fetch(
     CONFIG.PACKGEN_CHANNEL_ID,
   ) as TextChannel;
-  const [destUserId, collectorNumber] = choice.split("_");
-  if (!collectorNumber) {
-    return {
-      result: "success" as const,
-      content: "No card sent to <@" + destUserId + ">",
-    };
+  if (!interaction.isButton()) throw new Error("not a button");
+  const [destUserId, idx] = choice.split("_");
+  if (idx === "") {
+    return { result: "success" as const, content: "Confirmed no swap" };
   }
-  const card = tlaCards.find((x) => x.collector_number === collectorNumber);
+  const card = interaction.message.components.find((x) =>
+    x.type === ComponentType.ActionRow
+  )
+    ?.components.find((x) => x.type === ComponentType.StringSelect)
+    ?.options.find((x) => x.default)?.label;
   if (!card) {
     throw new Error(
-      "No card with collector number " + collectorNumber + " found.",
+      "Could not find selected card",
     );
   }
-  const content = "<@" + interaction.user.id + "> sent " + card.name +
+  const content = "<@" + interaction.user.id + "> sent " + card +
     " to <@" + destUserId + ">";
   await channel.send(content);
   try {
-    await recordSwap(interaction.user.id, destUserId, card.name);
+    await recordSwap(interaction.user.id, destUserId, card);
   } catch (e: unknown) {
     console.error(
       "error recording swap on sheet",
       interaction.user.id,
       destUserId,
-      card.name,
+      card,
       e,
     );
   }
@@ -1041,7 +1047,9 @@ async function recordSwap(fromId: string, toId: string, name: string) {
   for (const c of oldPool.sideboard) {
     if (!found && c.name.toLowerCase() === name.toLowerCase()) {
       found = true;
-      newOldPool.sideboard.push({ name: c.name, count: c.count - 1 });
+      if (c.count > 1) {
+        newOldPool.sideboard.push({ name: c.name, count: c.count - 1 });
+      }
     } else {
       newOldPool.sideboard.push({ name: c.name, count: c.count });
     }
@@ -1049,21 +1057,29 @@ async function recordSwap(fromId: string, toId: string, name: string) {
   for (const c of oldPool.deck) {
     if (!found && c.name.toLowerCase() === name.toLowerCase()) {
       found = true;
-      newOldPool.deck.push({ name: c.name, count: c.count - 1 });
+      if (c.count > 1) {
+        newOldPool.deck.push({ name: c.name, count: c.count - 1 });
+      }
     } else {
       newOldPool.deck.push({ name: c.name, count: c.count });
     }
   }
-  const newFromPoolId = await makeSealedDeck(newOldPool);
+  let newFromPoolId;
+  if (!found) {
+    newFromPoolId = fromPool["Full Pool"];
+    console.warn("could not find", name, "in pool", newFromPoolId);
+  } else {
+    newFromPoolId = await makeSealedDeck(newOldPool);
+  }
   const newToPoolId = await makeSealedDeck(
     { sideboard: [{ name, count: 1 }] },
     toPool["Full Pool"],
   );
   await addPoolChanges([[
-    fromPlayer!.Name,
+    fromPlayer!.Identification,
     "remove card",
     name,
     "",
     newFromPoolId,
-  ], [toPlayer!.Name, "add card", name, "", newToPoolId]]);
+  ], [toPlayer!.Identification, "add card", name, "", newToPoolId]]);
 }

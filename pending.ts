@@ -79,7 +79,7 @@ export function withPending<T>(cont: Cont<djs.Message, T>): Promise<T> {
 }
 
 export function waitForBoosterTutor(reference: Promise<djs.Message>) {
-  return withPending<{ success: SealedDeckPool } | { error: string }>(
+  return withPending<{ success: SealedDeckPool & { message: djs.Message} } | { error: string }>(
     async (message, handle) => {
       if (message.author.id !== CONFIG.BOOSTER_TUTOR_USER_ID) {
         return;
@@ -95,7 +95,7 @@ export function waitForBoosterTutor(reference: Promise<djs.Message>) {
       }
       // return a pack if there is one; otherwise keep waiting.
       const pack = await extractPool(message);
-      if (pack) return { done: { success: pack } };
+      if (pack) return { done: { success: {...pack, message} } };
     },
   );
 }

@@ -152,6 +152,26 @@ const assignLeagueRole = async (
     }
     console.log("Recorded pre-matched one", m);
   }
+
+  // Remove role from members who have it but are not registered
+  if (extraRoles.size) {
+    console.log("Removing league role from:");
+    console.table(
+      extraRoles.map((e) => ({
+        name: e.displayName,
+        id: e.id,
+      })),
+    );
+  }
+
+  for (const member of extraRoles.values()) {
+    console.log("Removing role", member.displayName, role.id);
+    if (!pretend) {
+      await removeRole(member, role.id);
+    }
+    console.log("Removed role", member.displayName, role.id);
+    await delay(250); // Rate limit protection
+  }
 };
 
 const assignNewPlayerRole = async (

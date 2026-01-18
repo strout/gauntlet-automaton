@@ -15,7 +15,7 @@ import { Buffer } from "node:buffer";
 import { Handler } from "../../dispatch.ts";
 import { CONFIG } from "../../config.ts";
 import { searchCards, fetchCardImage } from "../../scryfall.ts";
-import { getAllMatches, getPlayers, ROWNUM, addPoolChange, getPoolChanges } from "../../standings.ts";
+import { getAllMatches, getPlayers, ROWNUM, addPoolChange, getPoolChanges, MATCHTYPE } from "../../standings.ts";
 import { sheets, sheetsWrite } from "../../sheets.ts";
 import {
   getPlayerChosenEvents,
@@ -898,7 +898,9 @@ async function getRalMatches() {
   return await getAllMatches({ 
     "Bot Messaged": z.coerce.boolean().optional(),
     "Bot Messaged Winner": z.coerce.boolean().optional(),
-  }, {});
+  }, {
+    "Bot Messaged": z.coerce.boolean().optional(),
+  });
 }
 
 // Get RAL players
@@ -937,7 +939,10 @@ function allPreviousMatchesMessaged(
   // Find the index of the current match in the sorted (by timestamp) array
   // Matches are already sorted chronologically by getAllMatches, ensuring we process oldest first
   const currentMatchIndex = matchesData.rows.findIndex((m) => 
-    m[ROWNUM] === currentMatch[ROWNUM] && m["Your Name"] === currentMatch["Your Name"] && m["Loser Name"] === currentMatch["Loser Name"]
+    m[ROWNUM] === currentMatch[ROWNUM] && 
+    m["Your Name"] === currentMatch["Your Name"] && 
+    m["Loser Name"] === currentMatch["Loser Name"] &&
+    m[MATCHTYPE] === currentMatch[MATCHTYPE]
   );
   
   if (currentMatchIndex === -1) {
@@ -970,15 +975,22 @@ function allPreviousMatchesMessaged(
   });
 
   // Check if all previous matches have been messaged appropriately:
-  // - If player was the loser, "Bot Messaged" must be set (applies to both regular matches and entropy)
-  // - If player was the winner, "Bot Messaged Winner" must be set
+  // - If player was the loser, "Bot Messaged" must be set
+  // - If player was the winner, "Bot Messaged Winner" must be set (only for regular matches, not entropy)
+  // - For entropy matches, only check "Bot Messaged" since there's no winner
   return playerPreviousMatches.every((m) => {
+    const isEntropy = m[MATCHTYPE] === "entropy";
     if (m["Loser Name"] === playerIdentification) {
       // Player was the loser - check "Bot Messaged"
       // This applies to both regular match losses and entropy losses
       return m["Bot Messaged"] === true;
     } else {
-      // Player was the winner - check "Bot Messaged Winner"
+      // Player was the winner - check "Bot Messaged Winner" (only for regular matches)
+      // Entropy matches don't have winners, so if we get here for entropy, something is wrong
+      if (isEntropy) {
+        // Entropy matches don't have winners, so if the player is not the loser, they shouldn't be in this match
+        return true; // This shouldn't happen, but return true to avoid blocking
+      }
       const botMessagedWinner = (m as Record<string, unknown>)["Bot Messaged Winner"] as boolean | undefined;
       return botMessagedWinner === true;
     }
@@ -1101,6 +1113,7 @@ async function checkForMatches(client: Client<boolean>) {
   // Get the column indices for "Bot Messaged" and "Bot Messaged Winner" in the Matches sheet
   const botMessagedColIndex = matchesData.headerColumns.match["Bot Messaged"];
   const botMessagedWinnerColIndex = matchesData.headerColumns.match["Bot Messaged Winner"];
+  const botMessagedEntropyColIndex = matchesData.headerColumns.entropy["Bot Messaged"];
   if (botMessagedColIndex === undefined) {
     console.warn("Bot Messaged column not found in Matches sheet headers");
     return;
@@ -1109,8 +1122,13 @@ async function checkForMatches(client: Client<boolean>) {
     console.warn("Bot Messaged Winner column not found in Matches sheet headers");
     return;
   }
+  if (botMessagedEntropyColIndex === undefined) {
+    console.warn("Bot Messaged column not found in Entropy sheet headers");
+    return;
+  }
   const botMessagedColLetter = columnIndexToLetter(botMessagedColIndex);
   const botMessagedWinnerColLetter = columnIndexToLetter(botMessagedWinnerColIndex);
+  const botMessagedEntropyColLetter = columnIndexToLetter(botMessagedEntropyColIndex);
 
   for (const match of matchesData.rows) {
     // Only process matches that have been script handled
@@ -1165,10 +1183,13 @@ async function checkForMatches(client: Client<boolean>) {
             // Player has 5 losses and reached terminal event - skip
             console.log(`[CYOA] Player ${loser.Identification} has reached COMPLETED_EVENT (terminal for 5 losses)`);
             const rowNum = match[ROWNUM];
+            const isEntropy = match[MATCHTYPE] === "entropy";
+            const sheetName = isEntropy ? "Entropy" : "Matches";
+            const colLetter = isEntropy ? botMessagedEntropyColLetter : botMessagedColLetter;
             await sheetsWrite(
               sheets,
               CONFIG.LIVE_SHEET_ID!,
-              `Matches!${botMessagedColLetter}${rowNum}`,
+              `${sheetName}!${colLetter}${rowNum}`,
               [["TRUE"]],
             );
           } else if (nextEventId && nextEventId.startsWith("ELIMINATION.")) {
@@ -1191,10 +1212,13 @@ async function checkForMatches(client: Client<boolean>) {
               
               // Mark as messaged since we sent the elimination event
               const rowNum = match[ROWNUM];
+              const isEntropy = match[MATCHTYPE] === "entropy";
+              const sheetName = isEntropy ? "Entropy" : "Matches";
+              const colLetter = isEntropy ? botMessagedEntropyColLetter : botMessagedColLetter;
               await sheetsWrite(
                 sheets,
                 CONFIG.LIVE_SHEET_ID!,
-                `Matches!${botMessagedColLetter}${rowNum}`,
+                `${sheetName}!${colLetter}${rowNum}`,
                 [["TRUE"]],
               );
             } else {
@@ -1202,10 +1226,13 @@ async function checkForMatches(client: Client<boolean>) {
               // Skip sending it, they'll get it on 6th loss
               console.log(`[CYOA] Player ${loser.Identification} has ${nextEventId} as nextEvent (has taken a WAR_END event) - skipping event, will get elimination DM on 6th loss`);
               const rowNum = match[ROWNUM];
+              const isEntropy = match[MATCHTYPE] === "entropy";
+              const sheetName = isEntropy ? "Entropy" : "Matches";
+              const colLetter = isEntropy ? botMessagedEntropyColLetter : botMessagedColLetter;
               await sheetsWrite(
                 sheets,
                 CONFIG.LIVE_SHEET_ID!,
-                `Matches!${botMessagedColLetter}${rowNum}`,
+                `${sheetName}!${colLetter}${rowNum}`,
                 [["TRUE"]],
               );
             }
@@ -1230,10 +1257,13 @@ async function checkForMatches(client: Client<boolean>) {
             // Mark as messaged even if DM failed (so we don't keep retrying)
             // The sendEventMessage function handles logging for DM failures
             const rowNum = match[ROWNUM];
+            const isEntropy = match[MATCHTYPE] === "entropy";
+            const sheetName = isEntropy ? "Entropy" : "Matches";
+            const colLetter = isEntropy ? botMessagedEntropyColLetter : botMessagedColLetter;
             await sheetsWrite(
               sheets,
               CONFIG.LIVE_SHEET_ID!,
-              `Matches!${botMessagedColLetter}${rowNum}`,
+              `${sheetName}!${colLetter}${rowNum}`,
               [["TRUE"]],
             );
           }
@@ -1247,9 +1277,10 @@ async function checkForMatches(client: Client<boolean>) {
     }
 
     // Send CYOA event to winner (win events)
-    // Only process if the player is actually the winner in this match (not the loser)
+    // Skip winner handling for entropy matches - they don't have winners
+    const isEntropy = match[MATCHTYPE] === "entropy";
     const botMessagedWinner = (match as Record<string, unknown>)["Bot Messaged Winner"] as boolean | undefined;
-    if (_winner && _winner["Discord ID"] && _winner.Identification === match["Your Name"] && !botMessagedWinner) {
+    if (!isEntropy && _winner && _winner["Discord ID"] && !botMessagedWinner) {
       // Check if all previous matches (both wins and losses) have been messaged
       if (!allPreviousMatchesMessaged(matchesData, _winner.Identification, match)) {
         console.log(`[CYOA] Skipping win event for winner ${_winner.Identification} - not all previous matches have been messaged yet`);
