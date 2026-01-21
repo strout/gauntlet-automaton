@@ -3,7 +3,8 @@ import { ScryfallCard, searchCards, tileCardImages } from "../../scryfall.ts";
 import { Buffer } from "node:buffer";
 import { choice, weightedChoice } from "../../random.ts";
 import { makeSealedDeck } from "../../sealeddeck.ts";
-import { getPlayers, addPoolChange } from "../../standings.ts";
+import { getPlayers } from "../../standings.ts";
+import { delay } from "@std/async";
 
 const ECL_BASE_POOL_SEARCH = "set:ecl -type:basic";
 
@@ -33,7 +34,7 @@ export async function rollLorwynPool(): Promise<ScryfallCard[]> {
 
     // Pre-calculate weight mappings for rare/mythic (7:1 ratio - rares appear 7 times as often as mythics)
     const rareMythicWeights: [ScryfallCard, number][] = [
-      ...rares.map((card): [ScryfallCard, number] => [card, 7]),
+      ...rares.map((card): [ScryfallCard, number] => [card, 2]),
       ...mythics.map((card): [ScryfallCard, number] => [card, 1]),
     ];
 
@@ -162,29 +163,17 @@ export async function generateAndPostLorwynPool(
     // Create response message
     const response = `**Lorwyn Pool for ${playerIdentification}**\n\n${poolLink}`;
 
-    const sentMessage = await replyTo.reply({
+    await replyTo.reply({
       content: response,
       files: rareImageAttachment ? [rareImageAttachment] : [],
     });
 
-    // Add pool change record to Pool Changes sheet
-    try {
-      await addPoolChange(
-        playerIdentification, // Column B: Identification
-        "starting pool", // Column C: Type
-        poolId, // Column D: Value (pool ID only)
-        sentMessage.url, // Column E: Comment (link to discord message)
-        poolId, // Column F: Full Pool (pool ID only)
-      );
-      console.log(
-        `Added starting pool record for ${playerIdentification} (${poolId})`,
-      );
-    } catch (error) {
-      console.error("Error adding pool change record:", error);
-      // Don't throw - this shouldn't break the user experience
-    }
-
     console.log(`Successfully generated and posted Lorwyn pool for ${playerIdentification}`);
+
+    // Wait 1 second, then send Booster Tutor command
+    await delay(1000);
+    await channel.send(`!pool TDM|EOE|DSK|BLB|FDN|DFT <@${discordId}>`);
+    console.log(`Sent Booster Tutor command for ${playerIdentification}`);
   } catch (error) {
     console.error(`Error generating Lorwyn pool for Discord ID ${discordId}:`, error);
     throw error;
