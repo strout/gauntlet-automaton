@@ -3,7 +3,6 @@ import { ScryfallCard, searchCards, tileCardImages } from "../../scryfall.ts";
 import { Buffer } from "node:buffer";
 import { choice, weightedChoice } from "../../random.ts";
 import { makeSealedDeck } from "../../sealeddeck.ts";
-import { getPlayers } from "../../standings.ts";
 import { delay } from "@std/async";
 
 const ECL_BASE_POOL_SEARCH = "set:ecl -type:basic";
@@ -95,18 +94,6 @@ export async function generateAndPostLorwynPool(
   try {
     console.log(`Generating Lorwyn pool for Discord ID ${discordId}...`);
 
-    // Get player from Player Database using Discord ID
-    const players = await getPlayers();
-    const player = players.rows.find((p) => p["Discord ID"] === discordId);
-
-    if (!player) {
-      await replyTo.reply(`❌ Could not find player with Discord ID ${discordId} in the Player Database.`);
-      return;
-    }
-
-    const playerIdentification = player.Identification;
-    console.log(`Found player: ${playerIdentification} for Discord ID ${discordId}`);
-
     // Show typing indicator
     await channel.sendTyping();
 
@@ -161,19 +148,19 @@ export async function generateAndPostLorwynPool(
     }
 
     // Create response message
-    const response = `**Lorwyn Pool for ${playerIdentification}**\n\n${poolLink}`;
+    const response = `**Lorwyn Pool for <@${discordId}>**\n\n${poolLink}`;
 
     await replyTo.reply({
       content: response,
       files: rareImageAttachment ? [rareImageAttachment] : [],
     });
 
-    console.log(`Successfully generated and posted Lorwyn pool for ${playerIdentification}`);
+    console.log(`Successfully generated and posted Lorwyn pool for Discord ID ${discordId}`);
 
     // Wait 1 second, then send Booster Tutor command
     await delay(1000);
     await channel.send(`!pool TDM|EOE|DSK|BLB|FDN|DFT <@${discordId}>`);
-    console.log(`Sent Booster Tutor command for ${playerIdentification}`);
+    console.log(`Sent Booster Tutor command for Discord ID ${discordId}`);
   } catch (error) {
     console.error(`Error generating Lorwyn pool for Discord ID ${discordId}:`, error);
     throw error;
