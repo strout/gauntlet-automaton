@@ -231,12 +231,12 @@ export function makeChoice<T extends unknown[]>(
             return;
           }
 
-          // If success, clear all components
+          // If success, clear all components and files (unless new files provided)
           await interaction.editReply({
             content: finalContent,
             components: [],
             embeds: [],
-            files: allFiles.length > 0 ? allFiles : undefined,
+            files: allFiles,
           });
         } finally {
           processingMessages.delete(interaction.message.id);
