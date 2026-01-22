@@ -12,6 +12,7 @@ export function makeChoice<T extends unknown[]>(
       content: string;
       options: djs.APISelectMenuOption[];
       image?: string | Buffer;
+      files?: (string | Buffer | djs.AttachmentBuilder)[];
     }
   >,
   onChoice: (
@@ -23,6 +24,7 @@ export function makeChoice<T extends unknown[]>(
       content?: string;
       updatedOptions?: { value: string; label: string }[];
       image?: string | Buffer;
+      files?: (string | Buffer | djs.AttachmentBuilder)[];
     }
   >,
 ): {
@@ -44,7 +46,7 @@ export function makeChoice<T extends unknown[]>(
     const member = await guild.members.fetch(userId);
     const dmChannel = await member.createDM();
 
-    const { content, options, image } = await makeMessage(...args);
+    const { content, options, image, files } = await makeMessage(...args);
 
     const selectCustomId = `${prefix}:select`;
     const submitCustomId = `${prefix}:submit:null`;
@@ -65,10 +67,13 @@ export function makeChoice<T extends unknown[]>(
     const buttonRow = new djs.ActionRowBuilder<djs.ButtonBuilder>()
       .addComponents(submitButton);
 
+    const allFiles = [...(files || [])];
+    if (image) allFiles.push(image);
+
     await dmChannel.send({
       content: content,
       components: [actionRow, buttonRow],
-      files: image ? [image] : [],
+      files: allFiles,
     });
   };
 
@@ -168,7 +173,7 @@ export function makeChoice<T extends unknown[]>(
             components: [selectMenuRow, submitButtonRow],
           });
 
-          const { result, content: responseContent, updatedOptions, image } =
+          const { result, content: responseContent, updatedOptions, image, files } =
             await onChoice(
               selectedValue,
               interaction,
@@ -176,6 +181,9 @@ export function makeChoice<T extends unknown[]>(
           console.debug(`onChoice result: ${result}`);
           let finalContent = responseContent ||
             `Your choice "${selectedValue}" was processed.`;
+
+          const allFiles = [...(files || [])];
+          if (image) allFiles.push(image);
 
           if (result === "failure") {
             finalContent = responseContent ||
@@ -188,7 +196,7 @@ export function makeChoice<T extends unknown[]>(
             await interaction.editReply({
               content: finalContent,
               components: [selectMenuRow, submitButtonRow],
-              files: image ? [image] : undefined,
+              files: allFiles.length > 0 ? allFiles : undefined,
             });
             return;
           } else if (result === "try-again") {
@@ -218,7 +226,7 @@ export function makeChoice<T extends unknown[]>(
             await interaction.editReply({
               content: finalContent,
               components: [selectMenuRow, submitButtonRow],
-              files: image ? [image] : undefined,
+              files: allFiles.length > 0 ? allFiles : undefined,
             });
             return;
           }
@@ -228,7 +236,7 @@ export function makeChoice<T extends unknown[]>(
             content: finalContent,
             components: [],
             embeds: [],
-            files: image ? [image] : undefined,
+            files: allFiles.length > 0 ? allFiles : undefined,
           });
         } finally {
           processingMessages.delete(interaction.message.id);

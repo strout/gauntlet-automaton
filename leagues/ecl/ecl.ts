@@ -1,5 +1,6 @@
 import {
   APISelectMenuOption,
+  AttachmentBuilder,
   Client,
   Interaction,
   Message,
@@ -111,35 +112,41 @@ const lorwynPoolHandler: Handler<Message> = async (message, handle) => {
 };
 
 /**
+ * Tilers a single pack, preserving order and duplicates.
+ */
+async function tilePack(pack: SealedDeckPool, name: string) {
+  const cardNames = [
+    ...pack.sideboard.flatMap((c) => Array(c.count).fill(c.name)),
+    ...pack.deck.flatMap((c) => Array(c.count).fill(c.name)),
+    ...pack.hidden.flatMap((c) => Array(c.count).fill(c.name)),
+  ];
+
+  const uniqueCardNames = [...new Set(cardNames)];
+  const scryfallCards = await searchCards(
+    `set:ecl (${uniqueCardNames.map((name) => `!"${name}"`).join(" OR ")})`,
+  );
+
+  const cardsToTile = cardNames
+    .map((name) => scryfallCards.find((c) => c.name === name))
+    .filter((c) => c !== undefined);
+
+  const tiledImage = await tileCardImages(cardsToTile, "small");
+  return new AttachmentBuilder(Buffer.from(await tiledImage.arrayBuffer()), {
+    name,
+  });
+}
+
+/**
  * Logic for the allocation choice message.
  */
 const makeAllocationMessage = async (
   pack1: SealedDeckPool,
   pack2: SealedDeckPool,
 ) => {
-  const cardNames = [
-    ...pack1.sideboard.map((c) => c.name),
-    ...pack1.deck.map((c) => c.name),
-    ...pack1.hidden.map((c) => c.name),
-    ...pack2.sideboard.map((c) => c.name),
-    ...pack2.deck.map((c) => c.name),
-    ...pack2.hidden.map((c) => c.name),
-  ];
-
-  // Fetch all unique cards in these packs to tile them
-  const uniqueCardNames = [...new Set(cardNames)];
-  // Targeted search for these cards
-  const scryfallCards = await searchCards(
-    `set:ecl (${uniqueCardNames.map((name) => `!"${name}"`).join(" OR ")})`,
-  );
-
-  // Map back to the full list (including duplicates across packs)
-  const cardsToTile = cardNames
-    .map((name) => scryfallCards.find((c) => c.name === name))
-    .filter((c) => c !== undefined);
-
-  const tiledImage = await tileCardImages(cardsToTile, "small");
-  const imageBuffer = Buffer.from(await tiledImage.arrayBuffer());
+  const [image1, image2] = await Promise.all([
+    tilePack(pack1, "pack1.png"),
+    tilePack(pack2, "pack2.png"),
+  ]);
 
   const content = `You have two ECL packs to allocate!
   
@@ -167,7 +174,7 @@ Please choose how to allocate them:`;
   return {
     content,
     options,
-    image: imageBuffer,
+    files: [image1, image2],
   };
 };
 
