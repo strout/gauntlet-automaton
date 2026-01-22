@@ -173,17 +173,19 @@ export function makeChoice<T extends unknown[]>(
             components: [selectMenuRow, submitButtonRow],
           });
 
-          const { result, content: responseContent, updatedOptions, image, files } =
-            await onChoice(
-              selectedValue,
-              interaction,
-            );
+          const choiceResult = await onChoice(
+            selectedValue,
+            interaction,
+          );
+          const { result, content: responseContent, updatedOptions, image, files } = choiceResult;
           console.debug(`onChoice result: ${result}`);
           let finalContent = responseContent ||
             `Your choice "${selectedValue}" was processed.`;
 
+          const hasNewFiles = ("files" in choiceResult) || ("image" in choiceResult);
           const allFiles = [...(files || [])];
           if (image) allFiles.push(image);
+          const filesArg = hasNewFiles ? allFiles : undefined;
 
           if (result === "failure") {
             finalContent = responseContent ||
@@ -196,7 +198,7 @@ export function makeChoice<T extends unknown[]>(
             await interaction.editReply({
               content: finalContent,
               components: [selectMenuRow, submitButtonRow],
-              files: allFiles.length > 0 ? allFiles : undefined,
+              files: filesArg,
             });
             return;
           } else if (result === "try-again") {
@@ -226,17 +228,17 @@ export function makeChoice<T extends unknown[]>(
             await interaction.editReply({
               content: finalContent,
               components: [selectMenuRow, submitButtonRow],
-              files: allFiles.length > 0 ? allFiles : undefined,
+              files: filesArg,
             });
             return;
           }
 
-          // If success, clear all components and files (unless new files provided)
+          // If success, clear all components and files (unless new files provided or explicitly omitted)
           await interaction.editReply({
             content: finalContent,
             components: [],
             embeds: [],
-            files: allFiles,
+            files: filesArg,
           });
         } finally {
           processingMessages.delete(interaction.message.id);

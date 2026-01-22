@@ -204,6 +204,7 @@ const onAllocationChoice = (
   return Promise.resolve({
     result: "success" as const,
     content: `Choice recorded: ${responseText}`,
+    files: [],
   });
 };
 
