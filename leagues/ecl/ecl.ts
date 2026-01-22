@@ -1,6 +1,20 @@
 import { Client, Interaction, Message, TextChannel } from "discord.js";
 import { Handler } from "../../dispatch.ts";
 import { generateAndPostLorwynPool } from "./pools.ts";
+import {
+  getAllMatches,
+  getPlayers,
+  MATCHTYPE,
+  Player,
+  ROWNUM,
+} from "../../standings.ts";
+import { sheets, sheetsWrite } from "../../sheets.ts";
+import { mutex } from "../../mutex.ts";
+import { delay } from "@std/async";
+import { CONFIG } from "../../config.ts";
+
+const pollingLock = mutex();
+
 
 /**
  * Handler for !lorwyn command to roll ECL pools
@@ -86,14 +100,100 @@ const lorwynPoolHandler: Handler<Message> = async (message, handle) => {
   }
 };
 
+/**
+ * Placeholder logic for when a player loses a match.
+ */
+// deno-lint-ignore no-explicit-any
+async function handleLoss(
+  client: Client,
+  loser: any,
+  match: any,
+  lossCount: number,
+) {
+  // TODO: Implement ECL-specific loss logic (e.g. awarding a pack)
+  console.log(
+    `[ECL] Handling loss for ${loser.Identification} (Loss #${lossCount})`,
+  );
+}
+
+async function checkForMatches(client: Client<true>) {
+  using _ = await pollingLock();
+
+  const [allMatchesData, players] = await Promise.all([
+    getAllMatches(),
+    getPlayers(),
+  ]);
+
+  const allMatches = allMatchesData.rows;
+
+  for (let i = 0; i < allMatches.length; i++) {
+    const m = allMatches[i];
+    if (!m["Script Handled"] || m["Bot Messaged"]) continue;
+
+    const loser = players.rows.find((p) =>
+      p.Identification === m["Loser Name"]
+    );
+    if (!loser) {
+      console.error(`[ECL] Could not find loser "${m["Loser Name"]}"`);
+      continue;
+    }
+
+    // Calculate loss count for this player up to this match
+    const lossCount = allMatches.slice(0, i + 1).filter((match) =>
+      match["Loser Name"] === loser.Identification
+    ).length;
+
+    try {
+      await handleLoss(client, loser, m, lossCount);
+
+      // Mark as handled in the spreadsheet
+      const type = m[MATCHTYPE] as "match" | "entropy";
+      const sheetName = allMatchesData.sheetName[type];
+      const colIndex = allMatchesData.headerColumns[type]["Bot Messaged"];
+
+      if (colIndex === undefined) {
+        throw new Error(`Could not find "Bot Messaged" column in ${sheetName}`);
+      }
+
+      await sheetsWrite(
+        sheets,
+        CONFIG.LIVE_SHEET_ID,
+        `${sheetName}!R${m[ROWNUM]}C${colIndex + 1}`,
+        [[true]],
+      );
+    } catch (error) {
+      console.error(
+        `[ECL] Error processing loss for ${loser.Identification}:`,
+        error,
+      );
+    }
+  }
+}
+
 export function setup(): Promise<{
   watch: (client: Client) => Promise<void>;
   messageHandlers: Handler<Message>[];
   interactionHandlers: Handler<Interaction>[];
 }> {
   return Promise.resolve({
-    watch: () => Promise.resolve(),
+    watch: async (client: Client) => {
+      if (!client.readyAt) {
+        await new Promise((resolve) => client.once("ready", resolve));
+      }
+      const readyClient = client as Client<true>;
+
+      console.log("[ECL] Starting loss polling loop...");
+      while (true) {
+        try {
+          await checkForMatches(readyClient);
+        } catch (error) {
+          console.error("[ECL] Error in loss polling loop:", error);
+        }
+        await delay(30_000);
+      }
+    },
     messageHandlers: [lorwynPoolHandler],
     interactionHandlers: [],
   });
 }
+
