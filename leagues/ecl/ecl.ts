@@ -1,4 +1,10 @@
-import { Client, Interaction, Message, TextChannel } from "discord.js";
+import {
+  APISelectMenuOption,
+  Client,
+  Interaction,
+  Message,
+  TextChannel,
+} from "discord.js";
 import { Handler } from "../../dispatch.ts";
 import { generateAndPostLorwynPool } from "./pools.ts";
 import {
@@ -12,9 +18,13 @@ import { sheets, sheetsWrite } from "../../sheets.ts";
 import { mutex } from "../../mutex.ts";
 import { delay } from "@std/async";
 import { CONFIG } from "../../config.ts";
+import { waitForBoosterTutor } from "../../pending.ts";
+import { makeChoice } from "../../util/choice.ts";
+import { searchCards, tileCardImages } from "../../scryfall.ts";
+import { formatPool, SealedDeckPool } from "../../sealeddeck.ts";
+import { Buffer } from "node:buffer";
 
 const pollingLock = mutex();
-
 
 /**
  * Handler for !lorwyn command to roll ECL pools
@@ -101,19 +111,143 @@ const lorwynPoolHandler: Handler<Message> = async (message, handle) => {
 };
 
 /**
+ * Logic for the allocation choice message.
+ */
+const makeAllocationMessage = async (
+  pack1: SealedDeckPool,
+  pack2: SealedDeckPool,
+) => {
+  const cardNames = [
+    ...pack1.sideboard.map((c) => c.name),
+    ...pack1.deck.map((c) => c.name),
+    ...pack1.hidden.map((c) => c.name),
+    ...pack2.sideboard.map((c) => c.name),
+    ...pack2.deck.map((c) => c.name),
+    ...pack2.hidden.map((c) => c.name),
+  ];
+
+  // Fetch all unique cards in these packs to tile them
+  const uniqueCardNames = [...new Set(cardNames)];
+  // Targeted search for these cards
+  const scryfallCards = await searchCards(
+    `set:ecl (${uniqueCardNames.map((name) => `!"${name}"`).join(" OR ")})`,
+  );
+
+  // Map back to the full list (including duplicates across packs)
+  const cardsToTile = cardNames
+    .map((name) => scryfallCards.find((c) => c.name === name))
+    .filter((c) => c !== undefined);
+
+  const tiledImage = await tileCardImages(cardsToTile, "small");
+  const imageBuffer = Buffer.from(await tiledImage.arrayBuffer());
+
+  const content = `You have two ECL packs to allocate!
+  
+**Pack 1 (https://sealeddeck.tech/${pack1.poolId})**:
+${formatPool(pack1)}
+
+**Pack 2 (https://sealeddeck.tech/${pack2.poolId})**:
+${formatPool(pack2)}
+
+Please choose how to allocate them:`;
+
+  const options: APISelectMenuOption[] = [
+    {
+      label: "Pack 1 -> Lorwyn, Pack 2 -> Shadowmoor",
+      value: `1L2S:${pack1.poolId}:${pack2.poolId}`,
+      description: "Assign the first pack to Lorwyn and the second to Shadowmoor",
+    },
+    {
+      label: "Pack 1 -> Shadowmoor, Pack 2 -> Lorwyn",
+      value: `1S2L:${pack1.poolId}:${pack2.poolId}`,
+      description: "Assign the first pack to Shadowmoor and the second to Lorwyn",
+    },
+  ];
+
+  return {
+    content,
+    options,
+    image: imageBuffer,
+  };
+};
+
+/**
+ * Handler for when the user makes an allocation choice.
+ */
+const onAllocationChoice = (
+  chosen: string,
+  _interaction: Interaction,
+) => {
+  const [allocation, pack1Id, pack2Id] = chosen.split(":");
+
+  // Stub for future pool updates
+  console.log(
+    `[ECL] Player chose allocation ${allocation} for packs ${pack1Id} and ${pack2Id}`,
+  );
+
+  let responseText = "";
+  if (allocation === "1L2S") {
+    responseText =
+      "Allocated Pack 1 to Lorwyn and Pack 2 to Shadowmoor. (Stubbed)";
+  } else {
+    responseText =
+      "Allocated Pack 1 to Shadowmoor and Pack 2 to Lorwyn. (Stubbed)";
+  }
+
+  return Promise.resolve({
+    result: "success" as const,
+    content: `Choice recorded: ${responseText}`,
+  });
+};
+
+const { sendChoice: sendAllocationChoice, responseHandler: allocationChoiceHandler } = 
+  makeChoice("ECL_ALLOC", makeAllocationMessage, onAllocationChoice);
+
+/**
  * Placeholder logic for when a player loses a match.
  */
-// deno-lint-ignore no-explicit-any
 async function handleLoss(
   client: Client,
-  loser: any,
-  match: any,
+  loser: Player<Record<string, never>>,
+  _match: Record<string, unknown>,
   lossCount: number,
 ) {
-  // TODO: Implement ECL-specific loss logic (e.g. awarding a pack)
   console.log(
     `[ECL] Handling loss for ${loser.Identification} (Loss #${lossCount})`,
   );
+
+  try {
+    const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+    const botBunker = await guild.channels.fetch(CONFIG.BOT_BUNKER_CHANNEL_ID) as TextChannel;
+
+    if (!botBunker) {
+      throw new Error("Could not find bot bunker channel");
+    }
+
+    // Request two packs
+    const pack1Promise = waitForBoosterTutor(
+      botBunker.send(`!pool ECL <@${loser["Discord ID"]}> (Pack 1 for loss ${lossCount})`)
+    );
+    const pack2Promise = waitForBoosterTutor(
+      botBunker.send(`!pool ECL <@${loser["Discord ID"]}> (Pack 2 for loss ${lossCount})`)
+    );
+
+    const [pack1Result, pack2Result] = await Promise.all([pack1Promise, pack2Promise]);
+
+    if ("error" in pack1Result) {
+      throw new Error(`Error generating Pack 1: ${pack1Result.error}`);
+    }
+    if ("error" in pack2Result) {
+      throw new Error(`Error generating Pack 2: ${pack2Result.error}`);
+    }
+
+    // Trigger the DM choice
+    await sendAllocationChoice(client, loser["Discord ID"], pack1Result.success, pack2Result.success);
+
+  } catch (error) {
+    console.error(`[ECL] Error in handleLoss for ${loser.Identification}:`, error);
+    // Notify owner or log more details if needed
+  }
 }
 
 async function checkForMatches(client: Client<true>) {
@@ -193,7 +327,6 @@ export function setup(): Promise<{
       }
     },
     messageHandlers: [lorwynPoolHandler],
-    interactionHandlers: [],
+    interactionHandlers: [allocationChoiceHandler],
   });
 }
-
