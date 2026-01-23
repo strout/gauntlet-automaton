@@ -35,10 +35,10 @@ import { Buffer } from "node:buffer";
 
 const pollingLock = mutex();
 
-// ECL embed colors - Lorwyn (green/nature) and Shadowmoor (blue/shadow)
+// ECL embed colors - Lorwyn (day) and Shadowmoor (night)
 const ECL_COLORS = {
-  LORWYN: 0x00733E, // Forest Green
-  SHADOWMOOR: 0x0E68AB, // Mystic Blue
+  LORWYN: 0xFFD700,     // Gold (sunlight/day)
+  SHADOWMOOR: 0x191970,  // Midnight Blue (night/shadow)
 } as const;
 
 // ECL-specific helper functions for dual pool sheets
