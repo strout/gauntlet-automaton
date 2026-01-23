@@ -279,7 +279,7 @@ async function announcePackAllocation(
 
   // Create themed embeds - Lorwyn first, then Shadowmoor
   const lorwynEmbed = new EmbedBuilder()
-    .setTitle("🌳 Lorwyn Pool")
+    .setTitle("☀️ Lorwyn Pool")
     .setColor(ECL_COLORS.LORWYN)
     .setDescription(formatPool(lorwynPack))
     .addFields([
