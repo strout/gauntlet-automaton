@@ -53,10 +53,12 @@ if (args.help) {
    or: deno run main.ts <command> [options]
 
 Commands:
-  bot      Run the Discord bot
-  pop      Populate pools
-  check    Check pools
-  rebuild  Rebuild pools
+  bot             Run the Discord bot
+  pop             Populate pools
+  pop-lorwyn      Populate Lorwyn pools only
+  pop-shadowmoor  Populate Shadowmoor pools only
+  check           Check pools
+  rebuild         Rebuild pools
 
 Options:
   --pretend  Run in pretend mode (prevent actual Discord role modifications)
@@ -280,6 +282,30 @@ if (import.meta.main) {
     const channel = await guild.channels
       .fetch(CONFIG.STARTING_POOL_CHANNEL_ID);
     await populatePools(CONFIG.LIVE_SHEET_ID, channel!);
+  }
+  if (command === "pop-lorwyn") {
+    console.log("init sheets");
+    await initSheets();
+    console.log("login");
+    const djs_client = makeClient();
+    await djs_client.login(DISCORD_TOKEN);
+    console.log("populate lorwyn");
+    const guild = await djs_client.guilds.fetch(CONFIG.GUILD_ID);
+    const channel = await guild.channels
+      .fetch(CONFIG.STARTING_POOL_CHANNEL_ID);
+    await populateLorwynPools(CONFIG.LIVE_SHEET_ID, channel!);
+  }
+  if (command === "pop-shadowmoor") {
+    console.log("init sheets");
+    await initSheets();
+    console.log("login");
+    const djs_client = makeClient();
+    await djs_client.login(DISCORD_TOKEN);
+    console.log("populate shadowmoor");
+    const guild = await djs_client.guilds.fetch(CONFIG.GUILD_ID);
+    const channel = await guild.channels
+      .fetch(CONFIG.STARTING_POOL_CHANNEL_ID);
+    await populateShadowmoorPools(CONFIG.LIVE_SHEET_ID, channel!);
   }
   if (command === "check") {
     await initSheets();
