@@ -1,10 +1,12 @@
 import {
+APIEmbed,
   APISelectMenuOption,
   AttachmentBuilder,
   Client,
   EmbedBuilder,
   Interaction,
   Message,
+  StringSelectMenuInteraction,
   TextChannel,
 } from "discord.js";
 import { Handler } from "../../dispatch.ts";
@@ -407,10 +409,35 @@ const onAllocationChoice = async (
   }
 };
 
+/**
+ * Updates embed colors when user selects allocation option.
+ */
+const onSelectAllocation = (
+  selectedValue: string,
+  interaction: StringSelectMenuInteraction,
+): Promise<{ embeds?: APIEmbed[] }> => {
+  const [allocation] = selectedValue.split(":");
+  
+  // Extract existing embeds from message
+  const existingEmbeds = interaction.message.embeds;
+  
+  if (!existingEmbeds || existingEmbeds.length < 2) {
+    return Promise.resolve({});
+  }
+  
+  // Apply colors based on allocation: (index === 0) === (allocation === "1L2S") ? lorwyn : shadowmoor
+  const newEmbeds = existingEmbeds.map((embed, index) => ({
+    ...embed.toJSON(),
+    color: (index === 0) === (allocation === "1L2S") ? ECL_COLORS.LORWYN : ECL_COLORS.SHADOWMOOR,
+  }));
+  
+  return Promise.resolve({ embeds: newEmbeds });
+};
+
 const {
   sendChoice: sendAllocationChoice,
   responseHandler: allocationChoiceHandler,
-} = makeChoice("ECL_ALLOC", makeAllocationMessage, onAllocationChoice);
+} = makeChoice("ECL_ALLOC", makeAllocationMessage, onAllocationChoice, onSelectAllocation);
 
 /**
  * Placeholder logic for when a player loses a match.

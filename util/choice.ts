@@ -29,6 +29,12 @@ export function makeChoice<T extends unknown[]>(
       embeds?: djs.APIEmbed[];
     }
   >,
+  onSelect?: (
+    selectedValue: string,
+    interaction: djs.StringSelectMenuInteraction,
+  ) => Promise<{
+    embeds?: djs.APIEmbed[];
+  }>,
 ): {
   sendChoice: (
     client: djs.Client,
@@ -131,12 +137,19 @@ export function makeChoice<T extends unknown[]>(
         submitButton.setCustomId(newSubmitCustomId);
         submitButton.setDisabled(false);
 
+        // Update embeds if onSelect callback provided
+        let embedUpdate: { embeds?: djs.APIEmbed[] } = {};
+        if (onSelect) {
+          embedUpdate = await onSelect(selectedValue, interaction);
+        }
+
         // Update the action rows with the modified components
         selectMenuRow.setComponents(selectMenu);
         submitButtonRow.setComponents(submitButton);
 
         await interaction.update({
           components: [selectMenuRow, submitButtonRow],
+          ...embedUpdate,
         });
       } else if (interaction.isButton() && interactionType === "submit") {
         if (processingMessages.has(interaction.message.id)) {
