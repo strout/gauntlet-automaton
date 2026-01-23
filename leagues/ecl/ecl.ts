@@ -375,7 +375,6 @@ const onAllocationChoice = async (
       content: allocation === "1L2S"
         ? "Pack 1 allocated to Lorwyn and Pack 2 allocated to Shadowmoor."
         : "Pack 1 allocated to Shadowmoor and Pack 2 allocated to Lorwyn.",
-      files: [],
     };
   } catch (error) {
     console.error(`[ECL] Error recording allocation for ${chosen}:`, error);
