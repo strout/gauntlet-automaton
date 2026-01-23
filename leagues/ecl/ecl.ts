@@ -9,8 +9,10 @@ import {
 import { Handler } from "../../dispatch.ts";
 import { generateAndPostLorwynPool } from "./pools.ts";
 import {
+  addPoolChange,
   getAllMatches,
   getPlayers,
+  getPoolChanges,
   MATCHTYPE,
   Player,
   ROWNUM,
@@ -22,10 +24,59 @@ import { CONFIG } from "../../config.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
 import { makeChoice } from "../../util/choice.ts";
 import { searchCards, tileCardImages } from "../../scryfall.ts";
-import { formatPool, SealedDeckPool } from "../../sealeddeck.ts";
+import { formatPool, fetchSealedDeck, makeSealedDeck, SealedDeckPool } from "../../sealeddeck.ts";
 import { Buffer } from "node:buffer";
 
 const pollingLock = mutex();
+
+// ECL-specific helper functions for dual pool sheets
+type EclPoolType = "Lorwyn" | "Shadowmoor";
+
+const getEclPoolChanges = (poolType: EclPoolType) =>
+  getPoolChanges(CONFIG.LIVE_SHEET_ID, `${poolType} Pool Changes`);
+
+async function recordPack(
+  discordId: string,
+  packPoolId: string,
+  poolType: EclPoolType,
+) {
+  // Get player identification from Discord ID
+  const players = await getPlayers();
+  const player = players.rows.find((p) => p["Discord ID"] === discordId);
+  if (!player) {
+    console.warn(`Could not find player with Discord ID ${discordId} to record pack`);
+    return;
+  }
+  
+  // Get current pool state for the specified pool type
+  const poolChanges = await getEclPoolChanges(poolType);
+  const lastChange = poolChanges.rows.findLast((change) =>
+    change.Name === player.Identification
+  );
+  if (!lastChange) {
+    console.warn(
+      `Could not find last pool change for ${player.Identification} in ${poolType} pool`,
+    );
+    return;
+  }
+
+  // Build full pool with new pack
+  const packContents = await fetchSealedDeck(packPoolId);
+  const fullPool = await makeSealedDeck(
+    packContents,
+    lastChange["Full Pool"] ?? undefined,
+  );
+  
+  await addPoolChange(
+    player.Identification,
+    "add pack",
+    packPoolId,
+    "",
+    fullPool,
+    CONFIG.LIVE_SHEET_ID,
+    `${poolType} Pool Changes`,
+  );
+}
 
 /**
  * Handler for !lorwyn command to roll ECL pools
@@ -188,31 +239,58 @@ const makeAllocationMessage = async (
 /**
  * Handler for when the user makes an allocation choice.
  */
-const onAllocationChoice = (
+const onAllocationChoice = async (
   chosen: string,
-  _interaction: Interaction,
+  interaction: Interaction,
 ) => {
   const [allocation, pack1Id, pack2Id] = chosen.split(":");
 
-  // Stub for future pool updates
-  console.log(
-    `[ECL] Player chose allocation ${allocation} for packs ${pack1Id} and ${pack2Id}`,
-  );
+  try {
+    // Get player identification from Discord ID
+    const players = await getPlayers();
+    const player = players.rows.find((p) => p["Discord ID"] === interaction.user.id);
+    if (!player) {
+      return {
+        result: "failure" as const,
+        content: "Could not find player record. Contact league administrator.",
+        files: [],
+      };
+    }
 
-  let responseText = "";
-  if (allocation === "1L2S") {
-    responseText =
-      "Allocated Pack 1 to Lorwyn and Pack 2 to Shadowmoor. (Stubbed)";
-  } else {
-    responseText =
-      "Allocated Pack 1 to Shadowmoor and Pack 2 to Lorwyn. (Stubbed)";
+    // Record packs to appropriate pools based on allocation
+    if (allocation === "1L2S") {
+      // Pack 1 -> Lorwyn, Pack 2 -> Shadowmoor
+      await Promise.all([
+        recordPack(interaction.user.id, pack1Id, "Lorwyn"),
+        recordPack(interaction.user.id, pack2Id, "Shadowmoor"),
+      ]);
+    } else {
+      // Pack 1 -> Shadowmoor, Pack 2 -> Lorwyn
+      await Promise.all([
+        recordPack(interaction.user.id, pack1Id, "Shadowmoor"),
+        recordPack(interaction.user.id, pack2Id, "Lorwyn"),
+      ]);
+    }
+
+    console.log(
+      `[ECL] Player ${player.Identification} allocated packs: ${allocation} (${pack1Id}, ${pack2Id})`,
+    );
+
+    return {
+      result: "success" as const,
+      content: allocation === "1L2S"
+        ? "Pack 1 allocated to Lorwyn and Pack 2 allocated to Shadowmoor."
+        : "Pack 1 allocated to Shadowmoor and Pack 2 allocated to Lorwyn.",
+      files: [],
+    };
+  } catch (error) {
+    console.error(`[ECL] Error recording allocation for ${chosen}:`, error);
+    return {
+      result: "failure" as const,
+      content: "Error recording allocation. Please try again or contact league administrator.",
+      files: [],
+    };
   }
-
-  return Promise.resolve({
-    result: "success" as const,
-    content: `Choice recorded: ${responseText}`,
-    files: [],
-  });
 };
 
 const { sendChoice: sendAllocationChoice, responseHandler: allocationChoiceHandler } = 
