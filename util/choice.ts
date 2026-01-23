@@ -15,9 +15,8 @@ export function makeChoice<T extends unknown[]>(
         image?: string | Buffer;
         files?: (string | Buffer | djs.AttachmentBuilder)[];
       }
-    >,
+  >,
     onChoice: (
-
     chosen: string,
     interaction: djs.Interaction,
   ) => Promise<
@@ -27,6 +26,7 @@ export function makeChoice<T extends unknown[]>(
       updatedOptions?: { value: string; label: string }[];
       image?: string | Buffer;
       files?: (string | Buffer | djs.AttachmentBuilder)[];
+      embeds?: djs.APIEmbed[];
     }
   >,
 ): {
@@ -180,7 +180,7 @@ export function makeChoice<T extends unknown[]>(
             selectedValue,
             interaction,
           );
-          const { result, content: responseContent, updatedOptions, image, files } = choiceResult;
+          const { result, content: responseContent, updatedOptions, image, files, embeds } = choiceResult;
           console.debug(`onChoice result: ${result}`);
           let finalContent = responseContent ||
             `Your choice "${selectedValue}" was processed.`;
@@ -240,7 +240,7 @@ export function makeChoice<T extends unknown[]>(
           await interaction.editReply({
             content: finalContent,
             components: [],
-            embeds: [],
+            embeds: embeds,
             files: filesArg,
           });
         } finally {
