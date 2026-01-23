@@ -36,7 +36,7 @@ import {
 
 import { ScryfallCard } from "./scryfall.ts";
 import { handleGuildMemberAdd, manageRoles } from "./role_management.ts";
-import { setup } from "./leagues/ral/ral.ts";
+import { setup } from "./leagues/ecl/ecl.ts";
 
 export { CONFIG };
 
@@ -53,10 +53,12 @@ if (args.help) {
    or: deno run main.ts <command> [options]
 
 Commands:
-  bot      Run the Discord bot
-  pop      Populate pools
-  check    Check pools
-  rebuild  Rebuild pools
+  bot             Run the Discord bot
+  pop             Populate pools
+  pop-lorwyn      Populate Lorwyn pools only
+  pop-shadowmoor  Populate Shadowmoor pools only
+  check           Check pools
+  rebuild         Rebuild pools
 
 Options:
   --pretend  Run in pretend mode (prevent actual Discord role modifications)
@@ -106,6 +108,35 @@ const populateHandler: Handler<djs.Message> = async (message, handle) => {
   );
 };
 
+const populateLorwynHandler: Handler<djs.Message> = async (message, handle) => {
+  if (
+    !isDM(message) || message.content !== "!populate-lorwyn" ||
+    message.author.id !== CONFIG.OWNER_ID
+  ) return;
+  handle.claim();
+  await populateLorwynPools(
+    CONFIG.LIVE_SHEET_ID,
+    (await (await message.client.guilds.fetch(CONFIG.GUILD_ID))
+      .channels.fetch(CONFIG.STARTING_POOL_CHANNEL_ID))!,
+  );
+};
+
+const populateShadowmoorHandler: Handler<djs.Message> = async (
+  message,
+  handle,
+) => {
+  if (
+    !isDM(message) || message.content !== "!populate-shadowmoor" ||
+    message.author.id !== CONFIG.OWNER_ID
+  ) return;
+  handle.claim();
+  await populateShadowmoorPools(
+    CONFIG.LIVE_SHEET_ID,
+    (await (await message.client.guilds.fetch(CONFIG.GUILD_ID))
+      .channels.fetch(CONFIG.STARTING_POOL_CHANNEL_ID))!,
+  );
+};
+
 export const makeClient = () =>
   new djs.Client({
     intents: [
@@ -146,6 +177,8 @@ async function handleMessage(
     speakHandler,
     rebuildHandler,
     populateHandler,
+    populateLorwynHandler,
+    populateShadowmoorHandler,
     pendingHandler,
     clearChoiceHandler,
     deckCheckHandler,
@@ -249,6 +282,30 @@ if (import.meta.main) {
     const channel = await guild.channels
       .fetch(CONFIG.STARTING_POOL_CHANNEL_ID);
     await populatePools(CONFIG.LIVE_SHEET_ID, channel!);
+  }
+  if (command === "pop-lorwyn") {
+    console.log("init sheets");
+    await initSheets();
+    console.log("login");
+    const djs_client = makeClient();
+    await djs_client.login(DISCORD_TOKEN);
+    console.log("populate lorwyn");
+    const guild = await djs_client.guilds.fetch(CONFIG.GUILD_ID);
+    const channel = await guild.channels
+      .fetch(CONFIG.STARTING_POOL_CHANNEL_ID);
+    await populateLorwynPools(CONFIG.LIVE_SHEET_ID, channel!);
+  }
+  if (command === "pop-shadowmoor") {
+    console.log("init sheets");
+    await initSheets();
+    console.log("login");
+    const djs_client = makeClient();
+    await djs_client.login(DISCORD_TOKEN);
+    console.log("populate shadowmoor");
+    const guild = await djs_client.guilds.fetch(CONFIG.GUILD_ID);
+    const channel = await guild.channels
+      .fetch(CONFIG.STARTING_POOL_CHANNEL_ID);
+    await populateShadowmoorPools(CONFIG.LIVE_SHEET_ID, channel!);
   }
   if (command === "check") {
     await initSheets();
@@ -376,6 +433,170 @@ function parseSay(message: djs.Message<boolean>) {
     );
   }
   return { args, body };
+}
+
+export async function populateLorwynPools(
+  sheetId: string,
+  channel: djs.GuildBasedChannel,
+) {
+  if (!channel.isTextBased() || !channel.isSendable()) {
+    throw new Error("only valid for text based channels.");
+  }
+  console.log("read lorwyn pools");
+  const players = await getPlayers(sheetId);
+  const poolChanges = await getPoolChanges(sheetId, "Lorwyn Pool Changes");
+  console.log("got players", players.rows.length);
+  console.log("got lorwyn pool changes", poolChanges.rows.length);
+  const botId = channel.client.user?.id;
+  if (!botId) {
+    throw new Error("Could not get bot user ID from client");
+  }
+  const batches: djs.Collection<djs.Snowflake, djs.Message<true>>[] = [];
+  for (const player of players.rows) {
+    if (
+      poolChanges.rows.some((p) =>
+        p.Name === player.Identification && p.Type === "starting pool"
+      )
+    ) continue; // already there
+    const discordId = player["Discord ID"];
+    const name = player.Identification;
+    if (!discordId) {
+      console.warn("No discord id for " + name);
+      continue;
+    }
+    console.log(name);
+    // find bot's lorwyn pool message that mentions them; bail after 1000 messages.
+    let lastMessageId: djs.Snowflake | undefined = undefined;
+    batches: for (let i = 0; i < 10; i++) {
+      let batch: djs.Collection<djs.Snowflake, djs.Message<true>>;
+      if (batches.length > i) {
+        batch = batches[i];
+        console.log("reusing batch", i, "of", batches.length);
+      } else {
+        const options: djs.FetchMessagesOptions = {
+          limit: 100,
+          before: lastMessageId,
+        };
+        console.log("fetching batch", i, "with options", options);
+        batch = await channel.messages.fetch(options);
+        // TODO figure out why it's *slower* if we reuse batche batches.push(batch);
+      }
+      lastMessageId = batch.last()?.id;
+      for (
+        const [, msg] of batch.filter((m) => m.author.id === botId)
+      ) {
+        try {
+          const ref = await msg.fetchReference();
+          if (
+            ref && ref.content.match(new RegExp(`^!lorwyn <@!?${discordId}>`))
+          ) {
+            // Look for any sealeddeck.tech link in the bot's message
+            const sealeddeckMatch = msg.content.match(
+              /(https:\/\/sealeddeck\.tech\/\w+)/,
+            );
+            if (sealeddeckMatch) {
+              const sealeddeckLink = sealeddeckMatch[1];
+              const sealeddeckId = sealeddeckLink.split("/").pop();
+              if (sealeddeckId) {
+                console.log(name, sealeddeckLink);
+                console.log("fixing...");
+                const pool = await fetchSealedDeck(sealeddeckId);
+                await addPoolChange(
+                  name,
+                  "starting pool",
+                  pool.poolId,
+                  msg.url,
+                  pool.poolId,
+                  sheetId,
+                  "Lorwyn Pool Changes",
+                );
+                break batches;
+              }
+            }
+          }
+        } catch (e) {
+          // Message doesn't reference another message, skip it
+          continue;
+        }
+      }
+    }
+  }
+}
+
+export async function populateShadowmoorPools(
+  sheetId: string,
+  channel: djs.GuildBasedChannel,
+) {
+  if (!channel.isTextBased() || !channel.isSendable()) {
+    throw new Error("only valid for text based channels.");
+  }
+  console.log("read shadowmoor pools");
+  const players = await getPlayers(sheetId);
+  const poolChanges = await getPoolChanges(sheetId, "Shadowmoor Pool Changes");
+  console.log("got players", players.rows.length);
+  console.log("got shadowmoor pool changes", poolChanges.rows.length);
+  const batches: djs.Collection<djs.Snowflake, djs.Message<true>>[] = [];
+  for (const player of players.rows) {
+    if (
+      poolChanges.rows.some((p) =>
+        p.Name === player.Identification && p.Type === "starting pool"
+      )
+    ) continue; // already there
+    const discordId = player["Discord ID"];
+    const name = player.Identification;
+    if (!discordId) {
+      console.warn("No discord id for " + name);
+      continue;
+    }
+    console.log(name);
+    // find booster tutor message that mentions them; bail after 1000 messages.
+    let lastMessageId: djs.Snowflake | undefined = undefined;
+    batches: for (let i = 0; i < 10; i++) {
+      let batch: djs.Collection<djs.Snowflake, djs.Message<true>>;
+      if (batches.length > i) {
+        batch = batches[i];
+        console.log("reusing batch", i, "of", batches.length);
+      } else {
+        const options: djs.FetchMessagesOptions = {
+          limit: 100,
+          before: lastMessageId,
+        };
+        console.log("fetching batch", i, "with options", options);
+        batch = await channel.messages.fetch(options);
+        // TODO figure out why it's *slower* if we reuse batche batches.push(batch);
+      }
+      lastMessageId = batch.last()?.id;
+      for (
+        const [, msg] of batch.filter((m) =>
+          m.author.id === CONFIG.BOOSTER_TUTOR_USER_ID
+        )
+      ) {
+        const ref = await msg.fetchReference();
+        if (ref?.mentions.has(discordId)) { // this is the one!
+          const sealeddeckIdField = msg
+            .embeds[0]?.fields.find((f) => f.name === "SealedDeck.Tech ID");
+          const sealeddeckId = sealeddeckIdField?.value.replace(/`/g, "")
+            .trim();
+          if (sealeddeckId) {
+            const sealeddeckLink = "https://sealeddeck.tech/" + sealeddeckId;
+            console.log(name, sealeddeckLink);
+            console.log("fixing...");
+            const pool = await fetchSealedDeck(sealeddeckId);
+            await addPoolChange(
+              name,
+              "starting pool",
+              pool.poolId,
+              msg.url,
+              pool.poolId,
+              sheetId,
+              "Shadowmoor Pool Changes",
+            );
+            break batches;
+          }
+        }
+      }
+    }
+  }
 }
 
 export async function populatePools(

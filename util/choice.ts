@@ -11,7 +11,9 @@ export function makeChoice<T extends unknown[]>(
     {
       content: string;
       options: djs.APISelectMenuOption[];
+      embeds?: djs.APIEmbed[];
       image?: string | Buffer;
+      files?: (string | Buffer | djs.AttachmentBuilder)[];
     }
   >,
   onChoice: (
@@ -23,8 +25,16 @@ export function makeChoice<T extends unknown[]>(
       content?: string;
       updatedOptions?: { value: string; label: string }[];
       image?: string | Buffer;
+      files?: (string | Buffer | djs.AttachmentBuilder)[];
+      embeds?: djs.APIEmbed[];
     }
   >,
+  onSelect?: (
+    selectedValue: string,
+    interaction: djs.StringSelectMenuInteraction,
+  ) => Promise<{
+    embeds?: djs.APIEmbed[];
+  }>,
 ): {
   sendChoice: (
     client: djs.Client,
@@ -44,7 +54,9 @@ export function makeChoice<T extends unknown[]>(
     const member = await guild.members.fetch(userId);
     const dmChannel = await member.createDM();
 
-    const { content, options, image } = await makeMessage(...args);
+    const { content, options, embeds, image, files } = await makeMessage(
+      ...args,
+    );
 
     const selectCustomId = `${prefix}:select`;
     const submitCustomId = `${prefix}:submit:null`;
@@ -65,10 +77,14 @@ export function makeChoice<T extends unknown[]>(
     const buttonRow = new djs.ActionRowBuilder<djs.ButtonBuilder>()
       .addComponents(submitButton);
 
+    const allFiles = [...(files || [])];
+    if (image) allFiles.push(image);
+
     await dmChannel.send({
       content: content,
+      embeds: embeds,
       components: [actionRow, buttonRow],
-      files: image ? [image] : [],
+      files: allFiles,
     });
   };
 
@@ -95,7 +111,8 @@ export function makeChoice<T extends unknown[]>(
       if (interaction.isStringSelectMenu() && interactionType === "select") {
         if (processingMessages.has(interaction.message.id)) {
           await interaction.reply({
-            content: "Please wait for your previous choice to finish processing.",
+            content:
+              "Please wait for your previous choice to finish processing.",
             ephemeral: true,
           });
           return;
@@ -120,12 +137,19 @@ export function makeChoice<T extends unknown[]>(
         submitButton.setCustomId(newSubmitCustomId);
         submitButton.setDisabled(false);
 
+        // Update embeds if onSelect callback provided
+        let embedUpdate: { embeds?: djs.APIEmbed[] } = {};
+        if (onSelect) {
+          embedUpdate = await onSelect(selectedValue, interaction);
+        }
+
         // Update the action rows with the modified components
         selectMenuRow.setComponents(selectMenu);
         submitButtonRow.setComponents(submitButton);
 
         await interaction.update({
           components: [selectMenuRow, submitButtonRow],
+          ...embedUpdate,
         });
       } else if (interaction.isButton() && interactionType === "submit") {
         if (processingMessages.has(interaction.message.id)) {
@@ -168,19 +192,32 @@ export function makeChoice<T extends unknown[]>(
             components: [selectMenuRow, submitButtonRow],
           });
 
-          const { result, content: responseContent, updatedOptions, image } =
-            await onChoice(
-              selectedValue,
-              interaction,
-            );
+          const choiceResult = await onChoice(
+            selectedValue,
+            interaction,
+          );
+          const {
+            result,
+            content: responseContent,
+            updatedOptions,
+            image,
+            files,
+            embeds,
+          } = choiceResult;
           console.debug(`onChoice result: ${result}`);
           let finalContent = responseContent ||
             `Your choice "${selectedValue}" was processed.`;
 
+          const hasNewFiles = ("files" in choiceResult) ||
+            ("image" in choiceResult);
+          const allFiles = [...(files || [])];
+          if (image) allFiles.push(image);
+          const filesArg = hasNewFiles ? allFiles : undefined;
+
           if (result === "failure") {
             finalContent = responseContent ||
               `There was an error processing your choice "${selectedValue}". Please try again.`;
-             // Re-enable select menu and submit button on failure
+            // Re-enable select menu and submit button on failure
             selectMenu.setDisabled(false);
             selectMenuRow.setComponents(selectMenu);
             submitButton.setDisabled(false).setLabel("Submit Choice");
@@ -188,7 +225,7 @@ export function makeChoice<T extends unknown[]>(
             await interaction.editReply({
               content: finalContent,
               components: [selectMenuRow, submitButtonRow],
-              files: image ? [image] : undefined,
+              files: filesArg,
             });
             return;
           } else if (result === "try-again") {
@@ -218,17 +255,17 @@ export function makeChoice<T extends unknown[]>(
             await interaction.editReply({
               content: finalContent,
               components: [selectMenuRow, submitButtonRow],
-              files: image ? [image] : undefined,
+              files: filesArg,
             });
             return;
           }
 
-          // If success, clear all components
+          // If success, clear all components and files (unless new files provided or explicitly omitted)
           await interaction.editReply({
             content: finalContent,
             components: [],
-            embeds: [],
-            files: image ? [image] : undefined,
+            embeds: embeds,
+            files: filesArg,
           });
         } finally {
           processingMessages.delete(interaction.message.id);

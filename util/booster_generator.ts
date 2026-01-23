@@ -90,7 +90,6 @@ export async function generatePackFromSlots(
 ): Promise<ScryfallCard[]> {
   const pack: ScryfallCard[] = [];
 
-
   for (const slot of slots) {
     if (slot.rarity === "rare/mythic") {
       // Create a temporary slot without rarity to generate the base query
@@ -121,7 +120,6 @@ export async function generatePackFromSlots(
         const selectedCard = weightedChoice(weightedCards);
         if (selectedCard) {
           cardsForThisSlot.push(selectedCard);
-
         }
         attempts++;
       }
@@ -162,8 +160,7 @@ export async function generatePackFromSlots(
     ) {
       const selectedCard = choice(possibleCards);
       if (selectedCard) {
-          cardsForThisSlot.push(selectedCard);
-
+        cardsForThisSlot.push(selectedCard);
       }
       attempts++;
     }

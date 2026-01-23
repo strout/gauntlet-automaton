@@ -100,14 +100,19 @@ export const addPoolChange = (
   comment: string,
   newPoolId?: string,
   sheetId = CONFIG.LIVE_SHEET_ID,
+  sheetName = POOL_CHANGES_SHEET_NAME,
 ) =>
-  addPoolChanges([[
-    name,
-    type,
-    value,
-    comment,
-    ...[newPoolId].filter(Boolean) as [newPoolId?: string],
-  ]], sheetId);
+  addPoolChanges(
+    [[
+      name,
+      type,
+      value,
+      comment,
+      ...[newPoolId].filter(Boolean) as [newPoolId?: string],
+    ]],
+    sheetId,
+    sheetName,
+  );
 
 /**
  * Adds multiple pool changes to the spreadsheet with timestamps.
@@ -122,12 +127,13 @@ export async function addPoolChanges(
     newPoolId?: string,
   ][],
   sheetId = CONFIG.LIVE_SHEET_ID,
+  sheetName = POOL_CHANGES_SHEET_NAME,
 ) {
   const timestamp = new Date().toISOString();
   await sheetsAppend(
     sheets,
     sheetId,
-    "Pool Changes!A1:F",
+    `${sheetName}!A1:F`,
     changes.map((c) => [timestamp, ...c as string[]]),
   );
 }
@@ -142,11 +148,12 @@ const POOL_CHANGES_SHEET_NAME = "Pool Changes";
 export async function deletePoolChange(
   rowNum: number,
   sheetId = CONFIG.LIVE_SHEET_ID,
+  sheetName = POOL_CHANGES_SHEET_NAME,
 ) {
   return await sheetsDeleteRow(
     sheets,
     sheetId,
-    POOL_CHANGES_SHEET_NAME,
+    sheetName,
     rowNum,
   );
 }
@@ -157,9 +164,10 @@ export async function deletePoolChange(
  */
 export async function getPoolChanges<S extends z.ZodRawShape>(
   sheetId = CONFIG.LIVE_SHEET_ID,
+  sheetName = POOL_CHANGES_SHEET_NAME,
   extras?: z.ZodObject<S>,
 ) {
-  const table = await readTable("Pool Changes!A:F", 1, sheetId);
+  const table = await readTable(`${sheetName}!A:F`, 1, sheetId);
   return parseTable(
     {
       Timestamp: z.union([z.string(), z.number()]),
