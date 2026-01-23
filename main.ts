@@ -485,29 +485,38 @@ export async function populateLorwynPools(
       for (
         const [, msg] of batch.filter((m) => m.author.id === botId)
       ) {
-        // Check if message contains Lorwyn pool for this player
-        const lorwynPoolPattern = new RegExp(
-          `\\*\\*Lorwyn Pool for <@!?${discordId}>\\*\\*\\s*\\n\\s*(https://sealeddeck\\.tech/\\w+)`,
-        );
-        const match = msg.content.match(lorwynPoolPattern);
-        if (match) {
-          const sealeddeckLink = match[1];
-          const sealeddeckId = sealeddeckLink.split("/").pop();
-          if (sealeddeckId) {
-            console.log(name, sealeddeckLink);
-            console.log("fixing...");
-            const pool = await fetchSealedDeck(sealeddeckId);
-            await addPoolChange(
-              name,
-              "starting pool",
-              pool.poolId,
-              msg.url,
-              pool.poolId,
-              sheetId,
-              "Lorwyn Pool Changes",
+        try {
+          const ref = await msg.fetchReference();
+          if (
+            ref && ref.content.match(new RegExp(`^!lorwyn <@!?${discordId}>`))
+          ) {
+            // Look for any sealeddeck.tech link in the bot's message
+            const sealeddeckMatch = msg.content.match(
+              /(https:\/\/sealeddeck\.tech\/\w+)/,
             );
-            break batches;
+            if (sealeddeckMatch) {
+              const sealeddeckLink = sealeddeckMatch[1];
+              const sealeddeckId = sealeddeckLink.split("/").pop();
+              if (sealeddeckId) {
+                console.log(name, sealeddeckLink);
+                console.log("fixing...");
+                const pool = await fetchSealedDeck(sealeddeckId);
+                await addPoolChange(
+                  name,
+                  "starting pool",
+                  pool.poolId,
+                  msg.url,
+                  pool.poolId,
+                  sheetId,
+                  "Lorwyn Pool Changes",
+                );
+                break batches;
+              }
+            }
           }
+        } catch (e) {
+          // Message doesn't reference another message, skip it
+          continue;
         }
       }
     }
