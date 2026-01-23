@@ -51,7 +51,7 @@ async function recordPack(
   discordId: string,
   packPoolId: string,
   poolType: EclPoolType,
-) {
+): Promise<string> {
   // Get player identification from Discord ID
   const players = await getPlayers();
   const player = players.rows.find((p) => p["Discord ID"] === discordId);
@@ -59,7 +59,7 @@ async function recordPack(
     console.warn(
       `Could not find player with Discord ID ${discordId} to record pack`,
     );
-    return;
+    throw new Error("Player not found");
   }
 
   // Get current pool state for the specified pool type
@@ -71,7 +71,7 @@ async function recordPack(
     console.warn(
       `Could not find last pool change for ${player.Identification} in ${poolType} pool`,
     );
-    return;
+    throw new Error("Pool change not found");
   }
 
   // Build full pool with new pack
@@ -90,6 +90,8 @@ async function recordPack(
     CONFIG.LIVE_SHEET_ID,
     `${poolType} Pool Changes`,
   );
+  
+  return fullPool;
 }
 
 /**
@@ -263,18 +265,15 @@ const makeAllocationMessage = async (
 async function announcePackAllocation(
   client: Client,
   userId: string,
-  pack1Id: string,
-  pack2Id: string,
-  allocation: string,
+  lorwynPackId: string,
+  shadowmoorPackId: string,
+  lorwynFullPoolId: string,
+  shadowmoorFullPoolId: string,
 ) {
-  // Determine which pool ID goes to which set
-  const lorwynPoolId = allocation === "1L2S" ? pack1Id : pack2Id;
-  const shadowmoorPoolId = allocation === "1L2S" ? pack2Id : pack1Id;
-
   // Fetch pack details for embeds
   const [lorwynPack, shadowmoorPack] = await Promise.all([
-    fetchSealedDeck(lorwynPoolId),
-    fetchSealedDeck(shadowmoorPoolId),
+    fetchSealedDeck(lorwynPackId),
+    fetchSealedDeck(shadowmoorPackId),
   ]);
 
   // Create new pack images for the announcement
@@ -291,11 +290,15 @@ async function announcePackAllocation(
     .setImage("attachment://lorwyn-pack.png")
     .addFields([
       {
-        name: "🔗 SealedDeck Link",
-        value: `[View Pack](https://sealeddeck.tech/${lorwynPoolId})`,
+        name: "🔗 Pack",
+        value: `[View Pack](https://sealeddeck.tech/${lorwynPackId})`,
         inline: true,
       },
-      { name: "🆔 SealedDeck ID", value: `\`${lorwynPoolId}\``, inline: true },
+      {
+        name: "📦 Full Pool",
+        value: `[View Pool](https://sealeddeck.tech/${lorwynFullPoolId})`,
+        inline: true,
+      },
     ]);
 
   const shadowmoorEmbed = new EmbedBuilder()
@@ -305,13 +308,13 @@ async function announcePackAllocation(
     .setImage("attachment://shadowmoor-pack.png")
     .addFields([
       {
-        name: "🔗 SealedDeck Link",
-        value: `[View Pack](https://sealeddeck.tech/${shadowmoorPoolId})`,
+        name: "🔗 Pack",
+        value: `[View Pack](https://sealeddeck.tech/${shadowmoorPackId})`,
         inline: true,
       },
       {
-        name: "🆔 SealedDeck ID",
-        value: `\`${shadowmoorPoolId}\``,
+        name: "📦 Full Pool",
+        value: `[View Pool](https://sealeddeck.tech/${shadowmoorFullPoolId})`,
         inline: true,
       },
     ]);
@@ -351,18 +354,25 @@ const onAllocationChoice = async (
       };
     }
 
-    // Record packs to appropriate pools based on allocation
+    // Record packs to appropriate pools based on allocation and capture full pool IDs
+    let lorwynPackId: string, shadowmoorPackId: string;
+    let lorwynFullPoolId: string, shadowmoorFullPoolId: string;
+    
     if (allocation === "1L2S") {
       // Pack 1 -> Lorwyn, Pack 2 -> Shadowmoor
-      await Promise.all([
+      lorwynPackId = pack1Id;
+      shadowmoorPackId = pack2Id;
+      [lorwynFullPoolId, shadowmoorFullPoolId] = await Promise.all([
         recordPack(interaction.user.id, pack1Id, "Lorwyn"),
         recordPack(interaction.user.id, pack2Id, "Shadowmoor"),
       ]);
     } else {
       // Pack 1 -> Shadowmoor, Pack 2 -> Lorwyn
-      await Promise.all([
-        recordPack(interaction.user.id, pack1Id, "Shadowmoor"),
+      lorwynPackId = pack2Id;
+      shadowmoorPackId = pack1Id;
+      [lorwynFullPoolId, shadowmoorFullPoolId] = await Promise.all([
         recordPack(interaction.user.id, pack2Id, "Lorwyn"),
+        recordPack(interaction.user.id, pack1Id, "Shadowmoor"),
       ]);
     }
 
@@ -374,9 +384,10 @@ const onAllocationChoice = async (
     await announcePackAllocation(
       interaction.client,
       interaction.user.id,
-      pack1Id,
-      pack2Id,
-      allocation,
+      lorwynPackId,
+      shadowmoorPackId,
+      lorwynFullPoolId,
+      shadowmoorFullPoolId,
     );
 
     return {
