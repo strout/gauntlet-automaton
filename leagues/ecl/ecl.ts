@@ -24,7 +24,12 @@ import { CONFIG } from "../../config.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
 import { makeChoice } from "../../util/choice.ts";
 import { searchCards, tileCardImages } from "../../scryfall.ts";
-import { formatPool, fetchSealedDeck, makeSealedDeck, SealedDeckPool } from "../../sealeddeck.ts";
+import {
+  fetchSealedDeck,
+  formatPool,
+  makeSealedDeck,
+  SealedDeckPool,
+} from "../../sealeddeck.ts";
 import { Buffer } from "node:buffer";
 
 const pollingLock = mutex();
@@ -44,10 +49,12 @@ async function recordPack(
   const players = await getPlayers();
   const player = players.rows.find((p) => p["Discord ID"] === discordId);
   if (!player) {
-    console.warn(`Could not find player with Discord ID ${discordId} to record pack`);
+    console.warn(
+      `Could not find player with Discord ID ${discordId} to record pack`,
+    );
     return;
   }
-  
+
   // Get current pool state for the specified pool type
   const poolChanges = await getEclPoolChanges(poolType);
   const lastChange = poolChanges.rows.findLast((change) =>
@@ -66,7 +73,7 @@ async function recordPack(
     packContents,
     lastChange["Full Pool"] ?? undefined,
   );
-  
+
   await addPoolChange(
     player.Identification,
     "add pack",
@@ -107,23 +114,23 @@ const lorwynPoolHandler: Handler<Message> = async (message, handle) => {
     // Check if it's a numeric Discord ID
     if (/^\d+$/.test(input)) {
       discordId = input;
-    }
-    // Check if it's a Discord mention (<@user_id> or <@!user_id>)
+    } // Check if it's a Discord mention (<@user_id> or <@!user_id>)
     else if (/^<@!?\d+>$/.test(input)) {
       discordId = input.replace(/[<@!>]/g, "");
-    }
-    // Try to resolve as a username/tag by searching in the guild
+    } // Try to resolve as a username/tag by searching in the guild
     else {
       try {
         const guild = message.guild;
         if (!guild) {
-          await message.reply("❌ Could not resolve username - not in a guild.");
+          await message.reply(
+            "❌ Could not resolve username - not in a guild.",
+          );
           return;
         }
 
         // Remove @ symbol if present
         const username = input.replace(/^@/, "");
-        
+
         // Try to find member by username (case-insensitive partial match)
         const members = await guild.members.fetch();
         const member = members.find((m) =>
@@ -136,12 +143,16 @@ const lorwynPoolHandler: Handler<Message> = async (message, handle) => {
         if (member) {
           discordId = member.user.id;
         } else {
-          await message.reply(`❌ Could not find user "${username}" in this server.`);
+          await message.reply(
+            `❌ Could not find user "${username}" in this server.`,
+          );
           return;
         }
       } catch (error) {
         console.error("Error resolving Discord username:", error);
-        await message.reply(`❌ Error resolving username "${input}". Please use a numeric Discord ID or mention.`);
+        await message.reply(
+          `❌ Error resolving username "${input}". Please use a numeric Discord ID or mention.`,
+        );
         return;
       }
     }
@@ -213,18 +224,21 @@ const makeAllocationMessage = async (
     image: { url: "attachment://pack2.png" },
   };
 
-  const content = `You have two ECL packs to allocate! Please choose how to allocate them:`;
+  const content =
+    `You have two ECL packs to allocate! Please choose how to allocate them:`;
 
   const options: APISelectMenuOption[] = [
     {
       label: "Pack 1 -> Lorwyn, Pack 2 -> Shadowmoor",
       value: `1L2S:${pack1.poolId}:${pack2.poolId}`,
-      description: "Assign the first pack to Lorwyn and the second to Shadowmoor",
+      description:
+        "Assign the first pack to Lorwyn and the second to Shadowmoor",
     },
     {
       label: "Pack 1 -> Shadowmoor, Pack 2 -> Lorwyn",
       value: `1S2L:${pack1.poolId}:${pack2.poolId}`,
-      description: "Assign the first pack to Shadowmoor and the second to Lorwyn",
+      description:
+        "Assign the first pack to Shadowmoor and the second to Lorwyn",
     },
   ];
 
@@ -248,7 +262,9 @@ const onAllocationChoice = async (
   try {
     // Get player identification from Discord ID
     const players = await getPlayers();
-    const player = players.rows.find((p) => p["Discord ID"] === interaction.user.id);
+    const player = players.rows.find((p) =>
+      p["Discord ID"] === interaction.user.id
+    );
     if (!player) {
       return {
         result: "failure" as const,
@@ -287,14 +303,17 @@ const onAllocationChoice = async (
     console.error(`[ECL] Error recording allocation for ${chosen}:`, error);
     return {
       result: "failure" as const,
-      content: "Error recording allocation. Please try again or contact league administrator.",
+      content:
+        "Error recording allocation. Please try again or contact league administrator.",
       files: [],
     };
   }
 };
 
-const { sendChoice: sendAllocationChoice, responseHandler: allocationChoiceHandler } = 
-  makeChoice("ECL_ALLOC", makeAllocationMessage, onAllocationChoice);
+const {
+  sendChoice: sendAllocationChoice,
+  responseHandler: allocationChoiceHandler,
+} = makeChoice("ECL_ALLOC", makeAllocationMessage, onAllocationChoice);
 
 /**
  * Placeholder logic for when a player loses a match.
@@ -311,7 +330,9 @@ async function handleLoss(
 
   try {
     const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-    const botBunker = await guild.channels.fetch(CONFIG.BOT_BUNKER_CHANNEL_ID) as TextChannel;
+    const botBunker = await guild.channels.fetch(
+      CONFIG.BOT_BUNKER_CHANNEL_ID,
+    ) as TextChannel;
 
     if (!botBunker) {
       throw new Error("Could not find bot bunker channel");
@@ -319,13 +340,20 @@ async function handleLoss(
 
     // Request two packs
     const pack1Promise = waitForBoosterTutor(
-      botBunker.send(`!pool ECL <@${loser["Discord ID"]}> (Pack 1 for loss ${lossCount})`)
+      botBunker.send(
+        `!pool ECL <@${loser["Discord ID"]}> (Pack 1 for loss ${lossCount})`,
+      ),
     );
     const pack2Promise = waitForBoosterTutor(
-      botBunker.send(`!pool ECL <@${loser["Discord ID"]}> (Pack 2 for loss ${lossCount})`)
+      botBunker.send(
+        `!pool ECL <@${loser["Discord ID"]}> (Pack 2 for loss ${lossCount})`,
+      ),
     );
 
-    const [pack1Result, pack2Result] = await Promise.all([pack1Promise, pack2Promise]);
+    const [pack1Result, pack2Result] = await Promise.all([
+      pack1Promise,
+      pack2Promise,
+    ]);
 
     if ("error" in pack1Result) {
       throw new Error(`Error generating Pack 1: ${pack1Result.error}`);
@@ -335,10 +363,17 @@ async function handleLoss(
     }
 
     // Trigger the DM choice
-    await sendAllocationChoice(client, loser["Discord ID"], pack1Result.success, pack2Result.success);
-
+    await sendAllocationChoice(
+      client,
+      loser["Discord ID"],
+      pack1Result.success,
+      pack2Result.success,
+    );
   } catch (error) {
-    console.error(`[ECL] Error in handleLoss for ${loser.Identification}:`, error);
+    console.error(
+      `[ECL] Error in handleLoss for ${loser.Identification}:`,
+      error,
+    );
     // Notify owner or log more details if needed
   }
 }

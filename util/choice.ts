@@ -7,16 +7,16 @@ export function makeChoice<T extends unknown[]>(
   prefix: string,
   makeMessage: (
     ...args: T
-    ) => Promise<
-      {
-        content: string;
-        options: djs.APISelectMenuOption[];
-        embeds?: djs.APIEmbed[];
-        image?: string | Buffer;
-        files?: (string | Buffer | djs.AttachmentBuilder)[];
-      }
+  ) => Promise<
+    {
+      content: string;
+      options: djs.APISelectMenuOption[];
+      embeds?: djs.APIEmbed[];
+      image?: string | Buffer;
+      files?: (string | Buffer | djs.AttachmentBuilder)[];
+    }
   >,
-    onChoice: (
+  onChoice: (
     chosen: string,
     interaction: djs.Interaction,
   ) => Promise<
@@ -48,7 +48,9 @@ export function makeChoice<T extends unknown[]>(
     const member = await guild.members.fetch(userId);
     const dmChannel = await member.createDM();
 
-    const { content, options, embeds, image, files } = await makeMessage(...args);
+    const { content, options, embeds, image, files } = await makeMessage(
+      ...args,
+    );
 
     const selectCustomId = `${prefix}:select`;
     const submitCustomId = `${prefix}:submit:null`;
@@ -103,7 +105,8 @@ export function makeChoice<T extends unknown[]>(
       if (interaction.isStringSelectMenu() && interactionType === "select") {
         if (processingMessages.has(interaction.message.id)) {
           await interaction.reply({
-            content: "Please wait for your previous choice to finish processing.",
+            content:
+              "Please wait for your previous choice to finish processing.",
             ephemeral: true,
           });
           return;
@@ -180,12 +183,20 @@ export function makeChoice<T extends unknown[]>(
             selectedValue,
             interaction,
           );
-          const { result, content: responseContent, updatedOptions, image, files, embeds } = choiceResult;
+          const {
+            result,
+            content: responseContent,
+            updatedOptions,
+            image,
+            files,
+            embeds,
+          } = choiceResult;
           console.debug(`onChoice result: ${result}`);
           let finalContent = responseContent ||
             `Your choice "${selectedValue}" was processed.`;
 
-          const hasNewFiles = ("files" in choiceResult) || ("image" in choiceResult);
+          const hasNewFiles = ("files" in choiceResult) ||
+            ("image" in choiceResult);
           const allFiles = [...(files || [])];
           if (image) allFiles.push(image);
           const filesArg = hasNewFiles ? allFiles : undefined;
@@ -193,7 +204,7 @@ export function makeChoice<T extends unknown[]>(
           if (result === "failure") {
             finalContent = responseContent ||
               `There was an error processing your choice "${selectedValue}". Please try again.`;
-             // Re-enable select menu and submit button on failure
+            // Re-enable select menu and submit button on failure
             selectMenu.setDisabled(false);
             selectMenuRow.setComponents(selectMenu);
             submitButton.setDisabled(false).setLabel("Submit Choice");

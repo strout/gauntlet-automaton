@@ -1,4 +1,4 @@
-import { Message, TextChannel, AttachmentBuilder } from "discord.js";
+import { AttachmentBuilder, Message, TextChannel } from "discord.js";
 import { ScryfallCard, searchCards, tileCardImages } from "../../scryfall.ts";
 import { Buffer } from "node:buffer";
 import { choice, weightedChoice } from "../../random.ts";
@@ -155,14 +155,19 @@ export async function generateAndPostLorwynPool(
       files: rareImageAttachment ? [rareImageAttachment] : [],
     });
 
-    console.log(`Successfully generated and posted Lorwyn pool for Discord ID ${discordId}`);
+    console.log(
+      `Successfully generated and posted Lorwyn pool for Discord ID ${discordId}`,
+    );
 
     // Wait 1 second, then send Booster Tutor command
     await delay(1000);
     await channel.send(`!pool TDM|EOE|DSK|BLB|FDN|DFT <@${discordId}>`);
     console.log(`Sent Booster Tutor command for Discord ID ${discordId}`);
   } catch (error) {
-    console.error(`Error generating Lorwyn pool for Discord ID ${discordId}:`, error);
+    console.error(
+      `Error generating Lorwyn pool for Discord ID ${discordId}:`,
+      error,
+    );
     throw error;
   }
 }

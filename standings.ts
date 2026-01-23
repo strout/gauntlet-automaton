@@ -102,13 +102,17 @@ export const addPoolChange = (
   sheetId = CONFIG.LIVE_SHEET_ID,
   sheetName = POOL_CHANGES_SHEET_NAME,
 ) =>
-  addPoolChanges([[
-    name,
-    type,
-    value,
-    comment,
-    ...[newPoolId].filter(Boolean) as [newPoolId?: string],
-  ]], sheetId, sheetName);
+  addPoolChanges(
+    [[
+      name,
+      type,
+      value,
+      comment,
+      ...[newPoolId].filter(Boolean) as [newPoolId?: string],
+    ]],
+    sheetId,
+    sheetName,
+  );
 
 /**
  * Adds multiple pool changes to the spreadsheet with timestamps.
@@ -524,5 +528,3 @@ export async function getExpectedPool(
     : (await makeSealedDeck({ sideboard: expected }));
   return "https://sealeddeck.tech/" + poolId;
 }
-
-
