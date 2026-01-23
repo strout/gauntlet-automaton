@@ -2,6 +2,7 @@ import {
   APISelectMenuOption,
   AttachmentBuilder,
   Client,
+  EmbedBuilder,
   Interaction,
   Message,
   TextChannel,
@@ -33,6 +34,12 @@ import {
 import { Buffer } from "node:buffer";
 
 const pollingLock = mutex();
+
+// ECL embed colors - Lorwyn (green/nature) and Shadowmoor (blue/shadow)
+const ECL_COLORS = {
+  LORWYN: 0x00733E, // Forest Green
+  SHADOWMOOR: 0x0E68AB, // Mystic Blue
+} as const;
 
 // ECL-specific helper functions for dual pool sheets
 type EclPoolType = "Lorwyn" | "Shadowmoor";
@@ -251,7 +258,69 @@ const makeAllocationMessage = async (
 };
 
 /**
- * Handler for when the user makes an allocation choice.
+ * Announces pack allocation to #pack-generation channel with themed embeds.
+ */
+async function announcePackAllocation(
+  client: Client,
+  userId: string,
+  pack1Id: string,
+  pack2Id: string,
+  allocation: string,
+) {
+  // Determine which pool ID goes to which set
+  const lorwynPoolId = allocation === "1L2S" ? pack1Id : pack2Id;
+  const shadowmoorPoolId = allocation === "1L2S" ? pack2Id : pack1Id;
+
+  // Fetch pack details for embeds
+  const [lorwynPack, shadowmoorPack] = await Promise.all([
+    fetchSealedDeck(lorwynPoolId),
+    fetchSealedDeck(shadowmoorPoolId),
+  ]);
+
+  // Create themed embeds - Lorwyn first, then Shadowmoor
+  const lorwynEmbed = new EmbedBuilder()
+    .setTitle("🌳 Lorwyn Pool")
+    .setColor(ECL_COLORS.LORWYN)
+    .setDescription(formatPool(lorwynPack))
+    .addFields([
+      {
+        name: "🔗 SealedDeck Link",
+        value: `[View Pack](https://sealeddeck.tech/${lorwynPoolId})`,
+        inline: true,
+      },
+      { name: "🆔 SealedDeck ID", value: `\`${lorwynPoolId}\``, inline: true },
+    ]);
+
+  const shadowmoorEmbed = new EmbedBuilder()
+    .setTitle("🌙 Shadowmoor Pool")
+    .setColor(ECL_COLORS.SHADOWMOOR)
+    .setDescription(formatPool(shadowmoorPack))
+    .addFields([
+      {
+        name: "🔗 SealedDeck Link",
+        value: `[View Pack](https://sealeddeck.tech/${shadowmoorPoolId})`,
+        inline: true,
+      },
+      {
+        name: "🆔 SealedDeck ID",
+        value: `\`${shadowmoorPoolId}\``,
+        inline: true,
+      },
+    ]);
+
+  const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+  const packGenChannel = await guild.channels.fetch(
+    CONFIG.PACKGEN_CHANNEL_ID,
+  ) as TextChannel;
+
+  await packGenChannel.send({
+    content: `<@!${userId}> allocated their ECL packs!`,
+    embeds: [lorwynEmbed, shadowmoorEmbed],
+  });
+}
+
+/**
+ * Handler for when a user makes an allocation choice.
  */
 const onAllocationChoice = async (
   chosen: string,
@@ -290,6 +359,15 @@ const onAllocationChoice = async (
 
     console.log(
       `[ECL] Player ${player.Identification} allocated packs: ${allocation} (${pack1Id}, ${pack2Id})`,
+    );
+
+    // Announce pack allocation to #pack-generation channel
+    await announcePackAllocation(
+      interaction.client,
+      interaction.user.id,
+      pack1Id,
+      pack2Id,
+      allocation,
     );
 
     return {
