@@ -266,7 +266,6 @@ async function announcePackAllocation(
   pack1Id: string,
   pack2Id: string,
   allocation: string,
-  originalFiles?: string[],
 ) {
   // Determine which pool ID goes to which set
   const lorwynPoolId = allocation === "1L2S" ? pack1Id : pack2Id;
@@ -278,11 +277,18 @@ async function announcePackAllocation(
     fetchSealedDeck(shadowmoorPoolId),
   ]);
 
+  // Create new pack images for the announcement
+  const [lorwynImage, shadowmoorImage] = await Promise.all([
+    tilePack(lorwynPack, "lorwyn-pack.png"),
+    tilePack(shadowmoorPack, "shadowmoor-pack.png"),
+  ]);
+
   // Create themed embeds - Lorwyn first, then Shadowmoor
   const lorwynEmbed = new EmbedBuilder()
     .setTitle("☀️ Lorwyn Pool")
     .setColor(ECL_COLORS.LORWYN)
     .setDescription(formatPool(lorwynPack))
+    .setImage("attachment://lorwyn-pack.png")
     .addFields([
       {
         name: "🔗 SealedDeck Link",
@@ -296,6 +302,7 @@ async function announcePackAllocation(
     .setTitle("🌙 Shadowmoor Pool")
     .setColor(ECL_COLORS.SHADOWMOOR)
     .setDescription(formatPool(shadowmoorPack))
+    .setImage("attachment://shadowmoor-pack.png")
     .addFields([
       {
         name: "🔗 SealedDeck Link",
@@ -314,17 +321,11 @@ async function announcePackAllocation(
     CONFIG.PACKGEN_CHANNEL_ID,
   ) as TextChannel;
 
-  const announcementData: any = {
+  await packGenChannel.send({
     content: `<@!${userId}> allocated their ECL packs!`,
     embeds: [lorwynEmbed, shadowmoorEmbed],
-  };
-  
-  // Include original pack images if available
-  if (originalFiles && originalFiles.length > 0) {
-    announcementData.files = originalFiles;
-  }
-  
-  await packGenChannel.send(announcementData);
+    files: [lorwynImage, shadowmoorImage],
+  });
 }
 
 /**
@@ -335,11 +336,6 @@ const onAllocationChoice = async (
   interaction: Interaction,
 ) => {
   const [allocation, pack1Id, pack2Id] = chosen.split(":");
-  
-  // Capture the original message files before processing
-  const originalFiles = interaction.isMessageComponent() 
-    ? interaction.message.attachments.map((att: any) => att.url)
-    : [];
 
   try {
     // Get player identification from Discord ID
@@ -381,7 +377,6 @@ const onAllocationChoice = async (
       pack1Id,
       pack2Id,
       allocation,
-      originalFiles,
     );
 
     return {
