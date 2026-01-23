@@ -148,15 +148,21 @@ const makeAllocationMessage = async (
     tilePack(pack2, "pack2.png"),
   ]);
 
-  const content = `You have two ECL packs to allocate!
-  
-**Pack 1 (https://sealeddeck.tech/${pack1.poolId})**:
-${formatPool(pack1)}
+  const embed1 = {
+    title: "Pack 1",
+    url: `https://sealeddeck.tech/${pack1.poolId}`,
+    description: formatPool(pack1),
+    image: { url: "attachment://pack1.png" },
+  };
 
-**Pack 2 (https://sealeddeck.tech/${pack2.poolId})**:
-${formatPool(pack2)}
+  const embed2 = {
+    title: "Pack 2",
+    url: `https://sealeddeck.tech/${pack2.poolId}`,
+    description: formatPool(pack2),
+    image: { url: "attachment://pack2.png" },
+  };
 
-Please choose how to allocate them:`;
+  const content = `You have two ECL packs to allocate! Please choose how to allocate them:`;
 
   const options: APISelectMenuOption[] = [
     {
@@ -173,6 +179,7 @@ Please choose how to allocate them:`;
 
   return {
     content,
+    embeds: [embed1, embed2],
     options,
     files: [image1, image2],
   };

@@ -7,15 +7,17 @@ export function makeChoice<T extends unknown[]>(
   prefix: string,
   makeMessage: (
     ...args: T
-  ) => Promise<
-    {
-      content: string;
-      options: djs.APISelectMenuOption[];
-      image?: string | Buffer;
-      files?: (string | Buffer | djs.AttachmentBuilder)[];
-    }
-  >,
-  onChoice: (
+    ) => Promise<
+      {
+        content: string;
+        options: djs.APISelectMenuOption[];
+        embeds?: djs.APIEmbed[];
+        image?: string | Buffer;
+        files?: (string | Buffer | djs.AttachmentBuilder)[];
+      }
+    >,
+    onChoice: (
+
     chosen: string,
     interaction: djs.Interaction,
   ) => Promise<
@@ -46,7 +48,7 @@ export function makeChoice<T extends unknown[]>(
     const member = await guild.members.fetch(userId);
     const dmChannel = await member.createDM();
 
-    const { content, options, image, files } = await makeMessage(...args);
+    const { content, options, embeds, image, files } = await makeMessage(...args);
 
     const selectCustomId = `${prefix}:select`;
     const submitCustomId = `${prefix}:submit:null`;
@@ -72,6 +74,7 @@ export function makeChoice<T extends unknown[]>(
 
     await dmChannel.send({
       content: content,
+      embeds: embeds,
       components: [actionRow, buttonRow],
       files: allFiles,
     });
