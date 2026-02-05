@@ -194,9 +194,8 @@ async function tilePack(pack: SealedDeckPool, name: string) {
     ...pack.hidden.flatMap((c) => Array(c.count).fill(c.name)),
   ];
 
-  const uniqueCardNames = [...new Set(cardNames)];
   const scryfallCards = await searchCards(
-    `set:ecl (${uniqueCardNames.map((name) => `!"${name}"`).join(" OR ")})`,
+    `set:ecl OR (e:spg cn≥129 cn≤148)`,
   );
 
   const cardsToTile = cardNames
