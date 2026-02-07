@@ -287,10 +287,15 @@ export async function fetchEclCards() {
     { unique: "prints" },
   );
   return new Map(
-    cards.toSorted((a, z) => (+z.collector_number) - (+a.collector_number)).map(
-      (x) =>
-        [x.name, x] as const
-    ),
+    cards.toSorted((a, z) => (+z.collector_number) - (+a.collector_number))
+      .flatMap(
+        (
+          x,
+        ) => [
+          [x.name, x] as const,
+          ...x.card_faces?.[0] ? [[x.card_faces[0].name, x] as const] : [],
+        ],
+      ),
   );
 }
 
