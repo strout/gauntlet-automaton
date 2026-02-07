@@ -1,5 +1,5 @@
 import {
-APIEmbed,
+  APIEmbed,
   APISelectMenuOption,
   AttachmentBuilder,
   Client,
@@ -39,8 +39,8 @@ const pollingLock = mutex();
 
 // ECL embed colors - Lorwyn (day) and Shadowmoor (night)
 const ECL_COLORS = {
-  LORWYN: 0xF1E05D,     // Light Yellow (day/sunlight)
-  SHADOWMOOR: 0x7C3AED,  // Light Purple/Lavender (night/shadows)
+  LORWYN: 0xF1E05D, // Light Yellow (day/sunlight)
+  SHADOWMOOR: 0x7C3AED, // Light Purple/Lavender (night/shadows)
 } as const;
 
 // ECL-specific helper functions for dual pool sheets
@@ -92,7 +92,7 @@ async function recordPack(
     CONFIG.LIVE_SHEET_ID,
     `${poolType} Pool Changes`,
   );
-  
+
   return fullPool;
 }
 
@@ -194,17 +194,38 @@ async function tilePack(pack: SealedDeckPool, name: string) {
     ...pack.hidden.flatMap((c) => Array(c.count).fill(c.name)),
   ];
 
-  const scryfallCards = await searchCards(
-    `set:ecl OR (e:spg cn≥129 cn≤148)`,
-  );
+  const scryfallCards = await fetchEclCards();
 
   const cardsToTile = cardNames
-    .map((name) => scryfallCards.find((c) => c.name === name))
+    .map((name) => scryfallCards.get(name))
     .filter((c) => c !== undefined);
 
   const tiledImage = await tileCardImages(cardsToTile, "small");
   return new AttachmentBuilder(Buffer.from(await tiledImage.arrayBuffer()), {
     name,
+  });
+}
+
+export async function formatEclPool(pool: SealedDeckPool) {
+  const cards = await fetchEclCards();
+  const rarities = [
+    "common",
+    "uncommon",
+    "rare",
+    "mythic",
+    "special",
+    "bonus",
+    undefined,
+  ] as const;
+  return formatPool({
+    sideboard: [...pool.sideboard].sort((a, z) => {
+      const cardA = cards.get(a.name);
+      const cardZ = cards.get(z.name);
+      if (!cardZ) return 1;
+      if (!cardA) return -1;
+      return rarities.indexOf(cardZ.rarity) - rarities.indexOf(cardA.rarity) ||
+        ((+cardA.collector_number) - (+cardZ.collector_number));
+    }),
   });
 }
 
@@ -223,14 +244,14 @@ const makeAllocationMessage = async (
   const embed1 = {
     title: "Pack 1",
     url: `https://sealeddeck.tech/${pack1.poolId}`,
-    description: formatPool(pack1),
+    description: await formatEclPool(pack1),
     image: { url: "attachment://pack1.png" },
   };
 
   const embed2 = {
     title: "Pack 2",
     url: `https://sealeddeck.tech/${pack2.poolId}`,
-    description: formatPool(pack2),
+    description: await formatEclPool(pack2),
     image: { url: "attachment://pack2.png" },
   };
 
@@ -260,6 +281,19 @@ const makeAllocationMessage = async (
   };
 };
 
+export async function fetchEclCards() {
+  const cards = await searchCards(
+    `set:ecl OR (e:spg cn≥129 cn≤148)`,
+    { unique: "prints" },
+  );
+  return new Map(
+    cards.toSorted((a, z) => (+z.collector_number) - (+a.collector_number)).map(
+      (x) =>
+        [x.name, x] as const
+    ),
+  );
+}
+
 /**
  * Announces pack allocation to #pack-generation channel with themed embeds.
  */
@@ -287,7 +321,7 @@ async function announcePackAllocation(
   const lorwynEmbed = new EmbedBuilder()
     .setTitle("☀️ Lorwyn Pool")
     .setColor(ECL_COLORS.LORWYN)
-    .setDescription(formatPool(lorwynPack))
+    .setDescription(await formatEclPool(lorwynPack))
     .setImage("attachment://lorwyn-pack.png")
     .addFields([
       {
@@ -305,7 +339,7 @@ async function announcePackAllocation(
   const shadowmoorEmbed = new EmbedBuilder()
     .setTitle("🌙 Shadowmoor Pool")
     .setColor(ECL_COLORS.SHADOWMOOR)
-    .setDescription(formatPool(shadowmoorPack))
+    .setDescription(await formatEclPool(shadowmoorPack))
     .setImage("attachment://shadowmoor-pack.png")
     .addFields([
       {
@@ -358,7 +392,7 @@ const onAllocationChoice = async (
     // Record packs to appropriate pools based on allocation and capture full pool IDs
     let lorwynPackId: string, shadowmoorPackId: string;
     let lorwynFullPoolId: string, shadowmoorFullPoolId: string;
-    
+
     if (allocation === "1L2S") {
       // Pack 1 -> Lorwyn, Pack 2 -> Shadowmoor
       lorwynPackId = pack1Id;
@@ -416,27 +450,34 @@ const onSelectAllocation = (
   interaction: StringSelectMenuInteraction,
 ): Promise<{ embeds?: APIEmbed[] }> => {
   const [allocation] = selectedValue.split(":");
-  
+
   // Extract existing embeds from message
   const existingEmbeds = interaction.message.embeds;
-  
+
   if (!existingEmbeds || existingEmbeds.length < 2) {
     return Promise.resolve({});
   }
-  
+
   // Apply colors based on allocation: (index === 0) === (allocation === "1L2S") ? lorwyn : shadowmoor
   const newEmbeds = existingEmbeds.map((embed, index) => ({
     ...embed.toJSON(),
-    color: (index === 0) === (allocation === "1L2S") ? ECL_COLORS.LORWYN : ECL_COLORS.SHADOWMOOR,
+    color: (index === 0) === (allocation === "1L2S")
+      ? ECL_COLORS.LORWYN
+      : ECL_COLORS.SHADOWMOOR,
   }));
-  
+
   return Promise.resolve({ embeds: newEmbeds });
 };
 
 const {
   sendChoice: sendAllocationChoice,
   responseHandler: allocationChoiceHandler,
-} = makeChoice("ECL_ALLOC", makeAllocationMessage, onAllocationChoice, onSelectAllocation);
+} = makeChoice(
+  "ECL_ALLOC",
+  makeAllocationMessage,
+  onAllocationChoice,
+  onSelectAllocation,
+);
 
 /**
  * Placeholder logic for when a player loses a match.
