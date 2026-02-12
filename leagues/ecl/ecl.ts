@@ -497,6 +497,15 @@ async function handleLoss(
     `[ECL] Handling loss for ${loser.Identification} (Loss #${lossCount})`,
   );
 
+  const totalLosses = loser.Losses;
+  
+  if (totalLosses >= 11) {
+    console.log(
+    `[ECL] ${loser.Identification} was eliminated.`,
+    );
+    return;
+  }
+
   try {
     const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
     const botBunker = await guild.channels.fetch(
