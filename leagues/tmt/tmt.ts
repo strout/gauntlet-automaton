@@ -1,6 +1,13 @@
 import { Client, Interaction, Message } from "discord.js";
+import { CONFIG } from "../../config.ts";
 import { Handler } from "../../dispatch.ts";
 import { ScryfallCard, searchCards } from "../../scryfall.ts";
+import { genPoolHandler } from "./pool-gen.ts";
+import {
+  handleMutateButton,
+  handleMutateSelect,
+  handleMutationChannelMessage,
+} from "./pool-dm.ts";
 import {
   makeSealedDeck,
   SealedDeckEntry,
@@ -689,6 +696,25 @@ async function mutatePoolInternal(
   return { poolId, mutatedCards };
 }
 
+const mutationChannelHandler: Handler<Message> = async (message, handle) => {
+  const handled = await handleMutationChannelMessage(message);
+  if (handled) handle.claim();
+};
+
+const mutateSelectHandler: Handler<Interaction> = async (interaction, handle) => {
+  if (!interaction.isStringSelectMenu()) return;
+  const handled = await handleMutateSelect(interaction);
+  if (handled) handle.claim();
+};
+
+const mutateButtonHandler: Handler<Interaction> = async (interaction, handle) => {
+  if (!interaction.isButton()) return;
+  const mutationChannelId = CONFIG.TMT?.MUTATION_CHANNEL_ID;
+  if (!mutationChannelId) return;
+  const handled = await handleMutateButton(interaction, mutationChannelId);
+  if (handled) handle.claim();
+};
+
 export function setup(): Promise<{
   watch: (client: Client) => Promise<void>;
   messageHandlers: Handler<Message>[];
@@ -696,7 +722,7 @@ export function setup(): Promise<{
 }> {
   return Promise.resolve({
     watch: () => Promise.resolve(),
-    messageHandlers: [],
-    interactionHandlers: [],
+    messageHandlers: [genPoolHandler, mutationChannelHandler],
+    interactionHandlers: [mutateSelectHandler, mutateButtonHandler],
   });
 }

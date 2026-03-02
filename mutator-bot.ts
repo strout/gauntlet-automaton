@@ -130,7 +130,7 @@ async function main() {
   client.on(djs.Events.MessageCreate, handleMessage);
 
   // Login
-  await client.login(env["DISCORD_TOKEN"]);
+  await client.login(env["MUTATION_DISCORD_TOKEN"]);
 }
 
 if (import.meta.main) {

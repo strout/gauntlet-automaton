@@ -36,7 +36,7 @@ import {
 
 import { ScryfallCard } from "./scryfall.ts";
 import { handleGuildMemberAdd, manageRoles } from "./role_management.ts";
-import { setup } from "./leagues/ecl/ecl.ts";
+import { setup } from "./leagues/tmt/tmt.ts";
 
 export { CONFIG };
 
@@ -166,7 +166,15 @@ async function handleMessage(
           ? "#" + message.channel.name + "@" + message.guild.name
           : message.channel.isDMBased()
           ? "a DM with " +
-            (message.channel as djs.DMChannel).recipient?.displayName
+            ((): string => {
+              const ch = message.channel as djs.DMChannel;
+              return (
+                ch.recipient?.displayName ??
+                ch.recipient?.username ??
+                ch.recipientId ??
+                "unknown"
+              );
+            })()
           : "channel " + message.channel.name
       }: ${message.content}`,
     );
