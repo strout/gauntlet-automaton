@@ -1,9 +1,24 @@
+import { delay } from "@std/async";
 import { Client, Interaction, Message } from "discord.js";
 import { CONFIG } from "../../config.ts";
 import { Handler } from "../../dispatch.ts";
+import { mutex } from "../../mutex.ts";
 import { ScryfallCard, searchCards } from "../../scryfall.ts";
-import { genPoolHandler } from "./pool-gen.ts";
 import {
+  getAllMatches,
+  getPlayers,
+  MATCHTYPE,
+  ROWNUM,
+} from "../../standings.ts";
+import { sheets, sheetsWrite } from "../../sheets.ts";
+import {
+  genPoolHandler,
+  matchpackHandler,
+  processMatchPack,
+} from "./pool-gen.ts";
+import {
+  handleMatchPackNo,
+  handleMatchPackYes,
   handleMutateButton,
   handleMutateSelect,
   handleMutationChannelMessage,
@@ -287,14 +302,35 @@ export async function getMutationMap(): Promise<RarityMap> {
   }
 
   // Convert to readonly nested maps
-  const readonlyRarityMap = new Map<MutationKeyRarity, ReadonlyMap<MutationKeyColors, ReadonlyMap<MutationKeyTypes, ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>>>>();
+  const readonlyRarityMap = new Map<
+    MutationKeyRarity,
+    ReadonlyMap<
+      MutationKeyColors,
+      ReadonlyMap<
+        MutationKeyTypes,
+        ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>
+      >
+    >
+  >();
 
   for (const [rarity, colorsMap] of rarityMap) {
-    const readonlyColorsMap = new Map<MutationKeyColors, ReadonlyMap<MutationKeyTypes, ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>>>();
+    const readonlyColorsMap = new Map<
+      MutationKeyColors,
+      ReadonlyMap<
+        MutationKeyTypes,
+        ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>
+      >
+    >();
     for (const [colors, typesMap] of colorsMap) {
-      const readonlyTypesMap = new Map<MutationKeyTypes, ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>>();
+      const readonlyTypesMap = new Map<
+        MutationKeyTypes,
+        ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>
+      >();
       for (const [types, cmcMap] of typesMap) {
-        const readonlyCmcMap = new Map<MutationKeyCmc, readonly CardWithPrintings[]>();
+        const readonlyCmcMap = new Map<
+          MutationKeyCmc,
+          readonly CardWithPrintings[]
+        >();
         for (const [cmc, entries] of cmcMap) {
           readonlyCmcMap.set(cmc, entries);
         }
@@ -501,9 +537,12 @@ export async function findCandidatesWithRelaxedMatch(
 
             if (entryCard.rarity !== key.rarity) continue;
 
-            const entryColors = (entryCard.color_identity ?? []).slice().sort().join("");
+            const entryColors = (entryCard.color_identity ?? []).slice().sort()
+              .join("");
             if (!allowPartialColors && entryColors !== key.colors) continue;
-            if (allowPartialColors && !colorsOverlap(entryColors, key.colors)) continue;
+            if (allowPartialColors && !colorsOverlap(entryColors, key.colors)) {
+              continue;
+            }
 
             const cmcDiff = Math.abs(entryCard.cmc - key.cmc);
             if (cmcDiff > maxCmcDiff) continue;
@@ -696,22 +735,93 @@ async function mutatePoolInternal(
   return { poolId, mutatedCards };
 }
 
+const pollingLock = mutex();
+
+async function checkForMatches(client: Client<true>) {
+  using _ = await pollingLock();
+
+  const [allMatchesData, players] = await Promise.all([
+    getAllMatches(),
+    getPlayers(),
+  ]);
+
+  const allMatches = allMatchesData.rows;
+
+  for (let i = 0; i < allMatches.length; i++) {
+    const m = allMatches[i];
+    if (!m["Script Handled"] || m["Bot Messaged"]) continue;
+
+    const playerName = m["Loser Name"];
+    const player = players.rows.find((p) => p.Identification === playerName);
+    if (!player) {
+      console.error(`[TMT] Could not find loser "${playerName}"`);
+      continue;
+    }
+
+    const discordId = player["Discord ID"];
+    if (!discordId) {
+      console.error(`[TMT] No Discord ID for "${playerName}"`);
+      continue;
+    }
+
+    try {
+      const result = await processMatchPack(client, discordId, playerName);
+
+      if (!result.ok) {
+        console.error(
+          `[TMT] Match pack failed for ${playerName}:`,
+          result.error,
+        );
+        continue;
+      }
+
+      const type = m[MATCHTYPE] as "match" | "entropy";
+      const sheetName = allMatchesData.sheetName[type];
+      const colIndex = allMatchesData.headerColumns[type]["Bot Messaged"];
+
+      if (colIndex === undefined) {
+        throw new Error(`Could not find "Bot Messaged" column in ${sheetName}`);
+      }
+
+      await sheetsWrite(
+        sheets,
+        CONFIG.LIVE_SHEET_ID,
+        `${sheetName}!R${m[ROWNUM]}C${colIndex + 1}`,
+        [[true]],
+      );
+    } catch (error) {
+      console.error(
+        `[TMT] Error processing match pack for ${playerName}:`,
+        error,
+      );
+    }
+  }
+}
+
 const mutationChannelHandler: Handler<Message> = async (message, handle) => {
   const handled = await handleMutationChannelMessage(message);
   if (handled) handle.claim();
 };
 
-const mutateSelectHandler: Handler<Interaction> = async (interaction, handle) => {
+const mutateSelectHandler: Handler<Interaction> = async (
+  interaction,
+  handle,
+) => {
   if (!interaction.isStringSelectMenu()) return;
   const handled = await handleMutateSelect(interaction);
   if (handled) handle.claim();
 };
 
-const mutateButtonHandler: Handler<Interaction> = async (interaction, handle) => {
+const mutateButtonHandler: Handler<Interaction> = async (
+  interaction,
+  handle,
+) => {
   if (!interaction.isButton()) return;
   const mutationChannelId = CONFIG.TMT?.MUTATION_CHANNEL_ID;
   if (!mutationChannelId) return;
-  const handled = await handleMutateButton(interaction, mutationChannelId);
+  const handled = await handleMutateButton(interaction, mutationChannelId) ||
+    await handleMatchPackYes(interaction, mutationChannelId) ||
+    await handleMatchPackNo(interaction);
   if (handled) handle.claim();
 };
 
@@ -721,8 +831,23 @@ export function setup(): Promise<{
   interactionHandlers: Handler<Interaction>[];
 }> {
   return Promise.resolve({
-    watch: () => Promise.resolve(),
-    messageHandlers: [genPoolHandler, mutationChannelHandler],
+    watch: async (client: Client) => {
+      if (!client.readyAt) {
+        await new Promise((resolve) => client.once("ready", resolve));
+      }
+      const readyClient = client as Client<true>;
+
+      console.log("[TMT] Starting match pack polling loop...");
+      while (true) {
+        try {
+          await checkForMatches(readyClient);
+        } catch (error) {
+          console.error("[TMT] Error in match pack polling loop:", error);
+        }
+        await delay(30_000);
+      }
+    },
+    messageHandlers: [genPoolHandler, matchpackHandler, mutationChannelHandler],
     interactionHandlers: [mutateSelectHandler, mutateButtonHandler],
   });
 }

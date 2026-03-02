@@ -139,46 +139,6 @@ export async function addPoolChanges(
 }
 
 const POOL_CHANGES_SHEET_NAME = "Pool Changes";
-const POOL_PENDING_SHEET_NAME = "Pool Pending";
-
-/**
- * Retrieves Pool Pending rows for a player.
- * Columns: A=Timestamp, B=Name, C=Type ('starting pool'|'add pack'), D=Value (sealeddeck.tech pool ID)
- */
-export async function getPoolPendingRows(
-  playerName: string,
-  sheetId = CONFIG.LIVE_SHEET_ID,
-) {
-  const table = await readTable(`${POOL_PENDING_SHEET_NAME}!A:D`, 1, sheetId);
-  return table.rows
-    .filter((r) => String((r[ROW] as unknown[])?.[1] ?? "").trim() === playerName)
-    .map((r) => {
-      const raw = r[ROW] as unknown[];
-      return {
-        ...r,
-        Timestamp: raw[0],
-        Name: String(raw[1] ?? "").trim(),
-        Type: String(raw[2] ?? "").trim(),
-        Value: String(raw[3] ?? "").trim(),
-      };
-    })
-    .filter((r) => r.Value.length > 0);
-}
-
-/**
- * Deletes a single row from Pool Pending.
- */
-export async function deletePoolPendingRow(
-  rowNum: number,
-  sheetId = CONFIG.LIVE_SHEET_ID,
-) {
-  return await sheetsDeleteRow(
-    sheets,
-    sheetId,
-    POOL_PENDING_SHEET_NAME,
-    rowNum,
-  );
-}
 
 /**
  * Deletes a single pool change from the spreadsheet.

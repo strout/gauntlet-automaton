@@ -160,24 +160,29 @@ async function handleMessage(
       message.channelId,
     )
   ) {
-    console.log(
-      `${message.author.displayName} in ${
-        message.inGuild()
-          ? "#" + message.channel.name + "@" + message.guild.name
-          : message.channel.isDMBased()
-          ? "a DM with " +
-            ((): string => {
-              const ch = message.channel as djs.DMChannel;
-              return (
-                ch.recipient?.displayName ??
-                ch.recipient?.username ??
-                ch.recipientId ??
-                "unknown"
-              );
-            })()
-          : "channel " + message.channel.name
-      }: ${message.content}`,
-    );
+    // Skip logging bot messages with no text (e.g. Booster Tutor sends multiple empty messages + attachments)
+    const isBotWithNoText =
+      message.author.bot && !message.content?.trim();
+    if (!isBotWithNoText) {
+      console.log(
+        `${message.author.displayName} in ${
+          message.inGuild()
+            ? "#" + message.channel.name + "@" + message.guild.name
+            : message.channel.isDMBased()
+            ? "a DM with " +
+              ((): string => {
+                const ch = message.channel as djs.DMChannel;
+                return (
+                  ch.recipient?.displayName ??
+                  ch.recipient?.username ??
+                  ch.recipientId ??
+                  "unknown"
+                );
+              })()
+            : "channel " + message.channel.name
+        }: ${message.content}`,
+      );
+    }
   }
   const { claimed, finish } = await dispatch(message, [
     choiceHandler,

@@ -2,10 +2,15 @@ import * as djs from "discord.js";
 import { Handler } from "../../dispatch.ts";
 import { CONFIG } from "../../config.ts";
 import { readStringPool } from "../../fix-pool.ts";
+import { waitForBoosterTutor } from "../../pending.ts";
 import { makeSealedDeck, SealedDeckEntry } from "../../sealeddeck.ts";
-import { getPlayers } from "../../standings.ts";
-import { sheets, sheetsAppend } from "../../sheets.ts";
-import { sendPackDMs } from "./pool-dm.ts";
+import { addPoolChange, getPlayers, getPoolChanges } from "../../standings.ts";
+import { appendToPoolPending, getMutagenTokens } from "./standings-tmt.ts";
+import {
+  computeFullPool,
+  sendMatchPackMutateDM,
+  sendPackDMs,
+} from "./pool-dm.ts";
 
 const LINES_PER_PACK = 14;
 const PACKS_PER_POOL = 6;
@@ -36,7 +41,9 @@ function splitIntoPacks(text: string): string[][] {
   }
 
   // Fallback: if there are no blank-line separators, split by LINES_PER_PACK
-  if (packs.length <= 1 && lines.filter((l) => l.trim()).length > LINES_PER_PACK) {
+  if (
+    packs.length <= 1 && lines.filter((l) => l.trim()).length > LINES_PER_PACK
+  ) {
     const nonEmpty = lines.filter((l) => l.trim());
     const bySize: string[][] = [];
     for (let i = 0; i < nonEmpty.length; i += LINES_PER_PACK) {
@@ -47,8 +54,6 @@ function splitIntoPacks(text: string): string[][] {
 
   return packs.slice(0, PACKS_PER_POOL);
 }
-
-const POOL_PENDING_SHEET = "Pool Pending";
 
 /**
  * Generates a starting pool for a player by:
@@ -76,7 +81,9 @@ export async function generateStartingPool(
   client: djs.Client,
   pretend: boolean,
 ): Promise<void> {
-  console.log(`[pool-gen] Generating ${numPacks}-pack pool for ${playerName} (${setCode})`);
+  console.log(
+    `[pool-gen] Generating ${numPacks}-pack pool for ${playerName} (${setCode})`,
+  );
 
   if (pretend) {
     console.log(
@@ -86,7 +93,9 @@ export async function generateStartingPool(
   }
 
   // Send the command to the starting-pools channel
-  const sentMessage = await startingPoolChannel.send(`!set ${setCode} ${numPacks}`);
+  const sentMessage = await startingPoolChannel.send(
+    `!set ${setCode} ${numPacks}`,
+  );
 
   // Wait for Booster Tutor to reply with a txt attachment (up to 60 seconds)
   const btMessage = await waitForBoosterTutorFile(sentMessage, client, 60_000);
@@ -137,14 +146,19 @@ export async function generateStartingPool(
     try {
       packData = readStringPool(packText);
     } catch (e) {
-      console.error(`[pool-gen] Could not parse pack ${i + 1} for ${playerName}:`, e);
+      console.error(
+        `[pool-gen] Could not parse pack ${i + 1} for ${playerName}:`,
+        e,
+      );
       await poolChangesChannel.send(
         `⚠️ Could not parse pack ${i + 1} for **${playerName}** — skipping.`,
       );
       continue;
     }
 
-    const packEntries: SealedDeckEntry[] = (packData.sideboard ?? []).map((e) => ({
+    const packEntries: SealedDeckEntry[] = (packData.sideboard ?? []).map((
+      e,
+    ) => ({
       name: e.name,
       count: e.count,
       set: e.set,
@@ -157,17 +171,14 @@ export async function generateStartingPool(
     // Write to Pool Pending sheet: Timestamp, Name, Type, Value (Value = sealeddeck.tech pool ID)
     const timestamp = new Date().toISOString();
     const type = "starting pool";
-    await sheetsAppend(
-      sheets,
-      CONFIG.LIVE_SHEET_ID,
-      `${POOL_PENDING_SHEET}!A:D`,
-      [[timestamp, playerName, type, packPoolId]],
-    );
+    await appendToPoolPending([[timestamp, playerName, type, packPoolId]]);
 
     packs.push({ poolId: packPoolId, packEntries });
 
     console.log(
-      `[pool-gen] Pack ${i + 1}/${packLines.length} for ${playerName}: ${packLink}`,
+      `[pool-gen] Pack ${
+        i + 1
+      }/${packLines.length} for ${playerName}: ${packLink}`,
     );
   }
 
@@ -188,10 +199,10 @@ export async function generateStartingPool(
 }
 
 /**
- * Waits for Booster Tutor to reply to a specific message with a txt file attachment.
- * Returns the Booster Tutor message, or null if it times out.
+ * Waits for Packgen bot to reply to a specific message with a txt file attachment.
+ * Returns the reply message, or null if it times out.
  */
-function waitForBoosterTutorFile(
+export function waitForPackgenFile(
   sentMessage: djs.Message,
   client: djs.Client,
   timeoutMs: number,
@@ -205,7 +216,7 @@ function waitForBoosterTutorFile(
 
     const checkMessage = (msg: djs.Message) => {
       if (
-        msg.author.id !== CONFIG.BOOSTER_TUTOR_USER_ID ||
+        msg.author.id !== CONFIG.PACKGEN_USER_ID ||
         msg.reference?.messageId !== sentMessage.id
       ) {
         return;
@@ -222,7 +233,10 @@ function waitForBoosterTutorFile(
     };
 
     const handler = (msg: djs.Message) => checkMessage(msg);
-    const updateHandler = async (_old: djs.Message | djs.PartialMessage, newMsg: djs.Message | djs.PartialMessage) => {
+    const updateHandler = async (
+      _old: djs.Message | djs.PartialMessage,
+      newMsg: djs.Message | djs.PartialMessage,
+    ) => {
       try {
         checkMessage(await newMsg.fetch());
       } catch {
@@ -236,6 +250,143 @@ function waitForBoosterTutorFile(
 }
 
 /**
+ * Waits for Booster Tutor to reply with a txt file attachment.
+ * Accepts either a proper reply (msg.reference) or any BT message in the same channel
+ * after our message (some bots don't set reply references).
+ */
+function waitForBoosterTutorFile(
+  sentMessage: djs.Message,
+  client: djs.Client,
+  timeoutMs: number,
+): Promise<djs.Message | null> {
+  const sentTimestamp = sentMessage.createdTimestamp;
+  const channelId = sentMessage.channelId;
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      client.off(djs.Events.MessageCreate, handler);
+      client.off(djs.Events.MessageUpdate, updateHandler);
+      resolve(null);
+    }, timeoutMs);
+
+    const checkMessage = (msg: djs.Message) => {
+      if (msg.author.id !== CONFIG.BOOSTER_TUTOR_USER_ID) return;
+      if (msg.channelId !== channelId) return;
+      // Must be a reply to our message, or posted after our message (fallback if BT doesn't use reply)
+      const isReply = msg.reference?.messageId === sentMessage.id;
+      const isAfter = msg.createdTimestamp >= sentTimestamp;
+      if (!isReply && !isAfter) return;
+
+      const hasFile = msg.attachments.some(
+        (a) => a.name?.endsWith(".txt") || a.contentType?.includes("text"),
+      );
+      if (hasFile) {
+        clearTimeout(timer);
+        client.off(djs.Events.MessageCreate, handler);
+        client.off(djs.Events.MessageUpdate, updateHandler);
+        resolve(msg);
+      }
+    };
+
+    const handler = (msg: djs.Message) => checkMessage(msg);
+    const updateHandler = async (
+      _old: djs.Message | djs.PartialMessage,
+      newMsg: djs.Message | djs.PartialMessage,
+    ) => {
+      try {
+        checkMessage(await newMsg.fetch());
+      } catch {
+        // ignore fetch errors
+      }
+    };
+
+    client.on(djs.Events.MessageCreate, handler);
+    client.on(djs.Events.MessageUpdate, updateHandler);
+  });
+}
+
+/**
+ * Processes a match reward pack: posts !ECL @user to packgen channel, waits for
+ * Booster Tutor response (via pending handler, same as ECL), adds to Pool Pending,
+ * and DMs the player with YES/NO to mutate.
+ * Call this when a match is processed.
+ */
+export async function processMatchPack(
+  client: djs.Client<true>,
+  discordId: string,
+  playerName: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+  const packgenChannel = await guild.channels.fetch(
+    CONFIG.PACKGEN_CHANNEL_ID,
+  ) as djs.TextChannel | null;
+
+  if (!packgenChannel?.isSendable()) {
+    return { ok: false, error: "Pack generation channel not available." };
+  }
+
+  const result = await waitForBoosterTutor(
+    packgenChannel.send(`!ECL <@${discordId}>`),
+  );
+
+  if ("error" in result) {
+    return {
+      ok: false,
+      error: `Booster Tutor error for **${playerName}**: ${result.error}`,
+    };
+  }
+
+  const pack = result.success;
+  const packPoolId = pack.poolId;
+  const packEntries: SealedDeckEntry[] = [
+    ...pack.sideboard,
+    ...(pack.deck ?? []),
+    ...(pack.hidden ?? []),
+  ];
+
+  const mutagenTokens = await getMutagenTokens(playerName);
+  if (mutagenTokens <= 0) {
+    // No tokens: add pack directly to Pool Changes, no DM (by design)
+    console.log(
+      `[match-pack] ${playerName} has no mutagen tokens, adding pack directly (no DM)`,
+    );
+    const existingChanges = (await getPoolChanges()).rows.filter(
+      (r) => r.Name === playerName,
+    );
+    const lastFullPool = existingChanges.at(-1)?.["Full Pool"];
+    const fullPoolId = await computeFullPool(lastFullPool, packPoolId);
+    await addPoolChange(
+      playerName,
+      "add pack",
+      packPoolId,
+      "Match reward (no mutagen tokens)",
+      fullPoolId,
+    );
+    return { ok: true };
+  }
+
+  const timestamp = new Date().toISOString();
+  await appendToPoolPending([[timestamp, playerName, "add pack", packPoolId]]);
+
+  try {
+    await sendMatchPackMutateDM(client, discordId, playerName, {
+      poolId: packPoolId,
+      packEntries,
+    });
+    console.log(`[match-pack] Sent match pack DM to ${playerName}`);
+  } catch (e) {
+    console.error("[match-pack] Error sending match pack DM:", e);
+    return {
+      ok: false,
+      error:
+        `Pack written to Pool Pending, but could not DM <@${discordId}>. Check DMs are open.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
  * Resolves a Discord mention or raw ID string to a numeric Discord user ID.
  * Accepts: <@123456>, <@!123456>, or a bare numeric string.
  * Returns null if the input doesn't match any of those forms.
@@ -246,6 +397,74 @@ function resolveDiscordId(input: string): string | null {
   if (/^\d+$/.test(input)) return input;
   return null;
 }
+
+/**
+ * Handler for the !matchpack command.
+ * Usage: !matchpack @Player
+ * Posts !ECL @user to packgen, gets pack, adds to Pool Pending, DMs with YES/NO to mutate.
+ * Call when a match is processed.
+ */
+export const matchpackHandler: Handler<djs.Message> = async (
+  message,
+  handle,
+) => {
+  if (!message.content.startsWith("!matchpack")) return;
+
+  handle.claim();
+
+  if (!message.channel.isTextBased() || message.channel.isDMBased()) {
+    await message.reply("This command must be used in a server channel.");
+    return;
+  }
+
+  const parts = message.content.trim().split(/\s+/);
+  if (parts.length < 2) {
+    await message.reply("Usage: `!matchpack @Player`");
+    return;
+  }
+
+  const discordId = resolveDiscordId(parts[1]);
+  if (!discordId) {
+    await message.reply(
+      "❌ First argument must be a Discord mention (e.g. `@Player`).",
+    );
+    return;
+  }
+
+  const players = await getPlayers();
+  const player = players.rows.find((p) => p["Discord ID"] === discordId);
+  if (!player) {
+    await message.reply(
+      `❌ No player with Discord ID \`${discordId}\` found in the Player Database.`,
+    );
+    return;
+  }
+
+  const playerName = player.Identification;
+
+  if (!message.client.readyAt) {
+    await message.reply("Bot is not ready yet.");
+    return;
+  }
+
+  await message.reply(
+    `Processing match pack for **${playerName}**… Posting to packgen channel.`,
+  );
+
+  const result = await processMatchPack(
+    message.client as djs.Client<true>,
+    discordId,
+    playerName,
+  );
+
+  if (result.ok) {
+    await message.channel.send(
+      `✅ Match pack for **${playerName}** added to Pool Pending. Check DMs for pack and mutate choice.`,
+    );
+  } else {
+    await message.channel.send(`❌ ${result.error}`);
+  }
+};
 
 /**
  * Handler for the !genpool command.
@@ -343,7 +562,9 @@ export const genPoolHandler: Handler<djs.Message> = async (message, handle) => {
   } catch (e) {
     console.error("[pool-gen] Error generating pool:", e);
     await message.reply(
-      `❌ Error generating pool for **${playerName}**: ${e instanceof Error ? e.message : String(e)}`,
+      `❌ Error generating pool for **${playerName}**: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
     );
   }
 };
