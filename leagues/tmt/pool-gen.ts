@@ -5,7 +5,11 @@ import { readStringPool } from "../../fix-pool.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
 import { makeSealedDeck, SealedDeckEntry } from "../../sealeddeck.ts";
 import { addPoolChange, getPlayers, getPoolChanges } from "../../standings.ts";
-import { appendToPoolPending, getMutagenTokens } from "./standings-tmt.ts";
+import {
+  appendToPoolPending,
+  getMutagenTokens,
+  markPoolPendingDMedForPacks,
+} from "./standings-tmt.ts";
 import {
   computeFullPool,
   sendMatchPackMutateDM,
@@ -184,6 +188,11 @@ export async function generateStartingPool(
 
   if (packs.length > 0) {
     try {
+      // Mark DMed before sending so the minute listener doesn't double-send
+      await markPoolPendingDMedForPacks(
+        playerName,
+        packs.map((p) => p.poolId),
+      );
       await sendPackDMs(client, discordId, playerName, packs);
     } catch (e) {
       console.error("[pool-gen] Error sending pack DMs:", e);

@@ -22,8 +22,15 @@ import {
   handleMutateButton,
   handleMutateSelect,
   handleMutationChannelMessage,
+  sendMatchPackMutateDM,
+  sendPackDMs,
 } from "./pool-dm.ts";
 import {
+  getUnaddressedPoolPendingRows,
+  markPoolPendingDMedForPacks,
+} from "./standings-tmt.ts";
+import {
+  fetchSealedDeck,
   makeSealedDeck,
   SealedDeckEntry,
   SealedDeckPool,
@@ -875,6 +882,98 @@ async function mutatePoolInternal(
 }
 
 const pollingLock = mutex();
+const unaddressedLock = mutex();
+
+async function checkUnaddressedPoolPending(client: Client<true>) {
+  using _ = await unaddressedLock();
+  const [rows, players] = await Promise.all([
+    getUnaddressedPoolPendingRows(),
+    getPlayers(),
+  ]);
+  if (rows.length === 0) return;
+
+  const byPlayerAndType = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const key = `${r.Name}\0${r.Type}`;
+    const list = byPlayerAndType.get(key) ?? [];
+    list.push(r);
+    byPlayerAndType.set(key, list);
+  }
+
+  for (const [_key, group] of byPlayerAndType) {
+    const playerName = group[0].Name;
+    const type = group[0].Type;
+    const player = players.rows.find((p) => p.Identification === playerName);
+    const discordId = player?.["Discord ID"];
+    if (!discordId) {
+      console.error(
+        `[TMT] Unaddressed Pool Pending: no Discord ID for "${playerName}"`,
+      );
+      continue;
+    }
+
+    try {
+      if (type === "starting pool") {
+        const packs: { poolId: string; packEntries: SealedDeckEntry[] }[] = [];
+        for (const r of group) {
+          try {
+            const pool = await fetchSealedDeck(r.Value);
+            const entries = [
+              ...pool.sideboard,
+              ...(pool.deck ?? []),
+              ...(pool.hidden ?? []),
+            ];
+            packs.push({ poolId: r.Value, packEntries: entries });
+          } catch (e) {
+            console.error(
+              `[TMT] Unaddressed: failed to fetch pool ${r.Value} for ${playerName}:`,
+              e,
+            );
+            continue;
+          }
+        }
+        if (packs.length > 0) {
+          await markPoolPendingDMedForPacks(
+            playerName,
+            packs.map((p) => p.poolId),
+          );
+          await sendPackDMs(client, discordId, playerName, packs);
+          console.log(
+            `[TMT] Unaddressed: sent starting pool DMs to ${playerName}`,
+          );
+        }
+      } else if (type === "add pack") {
+        for (const r of group) {
+          try {
+            const pool = await fetchSealedDeck(r.Value);
+            const packEntries: SealedDeckEntry[] = [
+              ...pool.sideboard,
+              ...(pool.deck ?? []),
+              ...(pool.hidden ?? []),
+            ];
+            await sendMatchPackMutateDM(client, discordId, playerName, {
+              poolId: r.Value,
+              packEntries,
+            });
+            console.log(
+              `[TMT] Unaddressed: sent match pack DM to ${playerName} for ${r.Value}`,
+            );
+          } catch (e) {
+            console.error(
+              `[TMT] Unaddressed: failed to DM ${playerName} pack ${r.Value}:`,
+              e,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.error(
+        `[TMT] Error processing unaddressed Pool Pending for ${playerName}:`,
+        e,
+      );
+    }
+  }
+}
 
 async function checkForMatches(client: Client<true>) {
   using _ = await pollingLock();
@@ -977,6 +1076,16 @@ export function setup(): Promise<{
       const readyClient = client as Client<true>;
 
       console.log("[TMT] Starting match pack polling loop...");
+      console.log("[TMT] Starting unaddressed Pool Pending check (every 60s)...");
+      checkUnaddressedPoolPending(readyClient).catch((e) =>
+        console.error("[TMT] Error in unaddressed Pool Pending check:", e)
+      );
+      setInterval(() => {
+        checkUnaddressedPoolPending(readyClient).catch((e) =>
+          console.error("[TMT] Error in unaddressed Pool Pending check:", e)
+        );
+      }, 60_000);
+
       while (true) {
         try {
           await checkForMatches(readyClient);

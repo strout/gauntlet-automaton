@@ -10,8 +10,9 @@ import {
 import { addPoolChange, getPoolChanges, ROWNUM } from "../../standings.ts";
 import {
   decrementMutagenTokens,
-  deletePoolPendingRow,
   getPoolPendingRows,
+  markPoolPendingCompleted,
+  markPoolPendingDMedForPacks,
 } from "./standings-tmt.ts";
 
 /** Pack info for DM display */
@@ -184,6 +185,8 @@ export async function sendPackDMs(
     selectedPoolId: packs[0]?.poolId ?? "",
     poolIds: packs.map((p) => p.poolId),
   });
+
+  await markPoolPendingDMedForPacks(playerName, packs.map((p) => p.poolId));
 }
 
 /**
@@ -198,6 +201,9 @@ export async function sendMatchPackMutateDM(
 ): Promise<void> {
   const user = await client.users.fetch(discordId);
   if (!user) return;
+
+  // Mark DMed before sending so the minute listener doesn't double-send
+  await markPoolPendingDMedForPacks(playerName, [pack.poolId]);
 
   const dmChannel = await user.createDM();
   const packLink = `https://sealeddeck.tech/${pack.poolId}`;
@@ -352,7 +358,7 @@ export async function handleMutateButton(
   mutateSelection.delete(key);
 
   await interaction.followUp({
-    content: `Sent pack to mutation channel. Waiting for response…`,
+    content: `You threw the pack into the Ooze!`,
     ephemeral: true,
   });
 
@@ -427,7 +433,7 @@ export async function handleMatchPackYes(
     );
   await interaction.update({ components: [disabledRow] });
   await interaction.followUp({
-    content: `Sent pack to mutation channel. Waiting for response…`,
+    content: `You threw the pack into the Ooze!`,
     ephemeral: true,
   });
 
@@ -473,7 +479,7 @@ export async function handleMatchPackNo(
     "Match reward (no mutation)",
     fullPoolId,
   );
-  await deletePoolPendingRow(row[ROWNUM]);
+  await markPoolPendingCompleted(row[ROWNUM]);
 
   const disabledRow = new djs.ActionRowBuilder<djs.ButtonBuilder>()
     .addComponents(
@@ -596,8 +602,7 @@ export async function handleMutationChannelMessage(
     fullPoolId,
   );
 
-  // Remove from Pool Pending
-  await deletePoolPendingRow(rowNum);
+  await markPoolPendingCompleted(rowNum);
 
   const poolChanges = await getPoolChanges();
   const userChanges = poolChanges.rows.filter((r) => r.Name === playerName);
@@ -629,6 +634,10 @@ export async function handleMutationChannelMessage(
           }
         }
         await sendPackDMs(message.client, userId, playerName, packsWithEntries);
+        await markPoolPendingDMedForPacks(
+          playerName,
+          packsWithEntries.map((p) => p.poolId),
+        );
         await dmChannel.send(
           `✅ Pack recorded! Select another pack to mutate.`,
         );
@@ -649,10 +658,8 @@ export async function handleMutationChannelMessage(
           currentFullPoolId,
         );
       }
-      // Delete in reverse order (highest row first) to avoid row number shifting
-      const sorted = [...remaining].sort((a, b) => b[ROWNUM] - a[ROWNUM]);
-      for (const r of sorted) {
-        await deletePoolPendingRow(r[ROWNUM]);
+      for (const r of remaining) {
+        await markPoolPendingCompleted(r[ROWNUM]);
       }
       // Final entry: starting pool = the combined full pool (only for starting pool flow, not match packs)
       if (!isMatchPack) {

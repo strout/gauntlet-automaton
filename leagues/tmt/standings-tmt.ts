@@ -3,12 +3,7 @@
  */
 import { CONFIG } from "../../config.ts";
 import { readTable, ROW, ROWNUM } from "../../standings.ts";
-import {
-  sheets,
-  sheetsAppend,
-  sheetsDeleteRow,
-  sheetsWrite,
-} from "../../sheets.ts";
+import { sheets, sheetsAppend, sheetsWrite } from "../../sheets.ts";
 
 const POOL_PENDING_SHEET_NAME = "Pool Pending";
 const PLAYER_DATABASE_SHEET_NAME = "Player Database";
@@ -100,19 +95,64 @@ export async function decrementMutagenTokens(
   await sheetsWrite(sheets, sheetId, range, [[next]]);
 }
 
+/** Column indices for Pool Pending: A=0 Timestamp, B=1 Name, C=2 Type, D=3 Value, F=5 DMed, G=6 Completed */
+const POOL_PENDING_DMED_COL = 5;
+const POOL_PENDING_COMPLETED_COL = 6;
+
+function parseBool(val: unknown): boolean {
+  if (val === true || val === "TRUE" || val === "true" || val === 1) return true;
+  const s = String(val ?? "").trim().toUpperCase();
+  return s === "TRUE" || s === "YES" || s === "1";
+}
+
 /**
- * Retrieves Pool Pending rows for a player.
- * Columns: A=Timestamp, B=Name, C=Type ('starting pool'|'add pack'), D=Value (sealeddeck.tech pool ID)
+ * Retrieves Pool Pending rows for a player (excludes Completed=TRUE rows).
+ * Columns: A=Timestamp, B=Name, C=Type, D=Value, F=DMed, G=Completed
  */
 export async function getPoolPendingRows(
   playerName: string,
   sheetId = CONFIG.LIVE_SHEET_ID,
 ) {
-  const table = await readTable(`${POOL_PENDING_SHEET_NAME}!A:D`, 1, sheetId);
+  const table = await readTable(`${POOL_PENDING_SHEET_NAME}!A:G`, 1, sheetId);
+  const normalized = playerName.trim();
   return table.rows
-    .filter((r) =>
-      String((r[ROW] as unknown[])?.[1] ?? "").trim() === playerName
-    )
+    .filter((r) => {
+      const raw = r[ROW] as unknown[];
+      if (String(raw[1] ?? "").trim() !== normalized) return false;
+      if (!String(raw[3] ?? "").trim()) return false;
+      if (parseBool(raw[POOL_PENDING_COMPLETED_COL])) return false;
+      return true;
+    })
+    .map((r) => {
+      const raw = r[ROW] as unknown[];
+      return {
+        ...r,
+        Timestamp: raw[0],
+        Name: String(raw[1] ?? "").trim(),
+        Type: String(raw[2] ?? "").trim(),
+        Value: String(raw[3] ?? "").trim(),
+        DMed: parseBool(raw[POOL_PENDING_DMED_COL]),
+        Completed: parseBool(raw[POOL_PENDING_COMPLETED_COL]),
+      };
+    });
+}
+
+/**
+ * Returns Pool Pending rows where both DMed and Completed are empty/false.
+ * Used by the minute listener to find rows that need DMs sent.
+ */
+export async function getUnaddressedPoolPendingRows(
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  const table = await readTable(`${POOL_PENDING_SHEET_NAME}!A:G`, 1, sheetId);
+  return table.rows
+    .filter((r) => {
+      const raw = r[ROW] as unknown[];
+      if (!String(raw[3] ?? "").trim()) return false;
+      if (parseBool(raw[POOL_PENDING_COMPLETED_COL])) return false;
+      if (parseBool(raw[POOL_PENDING_DMED_COL])) return false;
+      return true;
+    })
     .map((r) => {
       const raw = r[ROW] as unknown[];
       return {
@@ -122,22 +162,63 @@ export async function getPoolPendingRows(
         Type: String(raw[2] ?? "").trim(),
         Value: String(raw[3] ?? "").trim(),
       };
-    })
-    .filter((r) => r.Value.length > 0);
+    });
 }
 
 /**
- * Deletes a single row from Pool Pending.
+ * Marks the DMed column (F) as TRUE for a Pool Pending row.
  */
-export async function deletePoolPendingRow(
+export async function markPoolPendingDMed(
   rowNum: number,
   sheetId = CONFIG.LIVE_SHEET_ID,
 ) {
-  return await sheetsDeleteRow(
+  const colLetter = columnIndexToLetter(POOL_PENDING_DMED_COL);
+  await sheetsWrite(
     sheets,
     sheetId,
-    POOL_PENDING_SHEET_NAME,
-    rowNum,
+    `${POOL_PENDING_SHEET_NAME}!${colLetter}${rowNum}`,
+    [[true]],
+  );
+}
+
+/**
+ * Marks the DMed column (F) as TRUE for rows matching the given pool IDs for a player.
+ */
+export async function markPoolPendingDMedForPacks(
+  playerName: string,
+  poolIds: string[],
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  const table = await readTable(`${POOL_PENDING_SHEET_NAME}!A:G`, 1, sheetId);
+  const normalized = playerName.trim();
+  const colLetter = columnIndexToLetter(POOL_PENDING_DMED_COL);
+  for (const row of table.rows) {
+    const raw = row[ROW] as unknown[];
+    if (String(raw[1] ?? "").trim() !== normalized) continue;
+    const val = String(raw[3] ?? "").trim();
+    if (!poolIds.includes(val)) continue;
+    await sheetsWrite(
+      sheets,
+      sheetId,
+      `${POOL_PENDING_SHEET_NAME}!${colLetter}${row[ROWNUM]}`,
+      [[true]],
+    );
+  }
+}
+
+/**
+ * Marks the Completed column (G) as TRUE for a Pool Pending row.
+ */
+export async function markPoolPendingCompleted(
+  rowNum: number,
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  const colLetter = columnIndexToLetter(POOL_PENDING_COMPLETED_COL);
+  await sheetsWrite(
+    sheets,
+    sheetId,
+    `${POOL_PENDING_SHEET_NAME}!${colLetter}${rowNum}`,
+    [[true]],
   );
 }
 
