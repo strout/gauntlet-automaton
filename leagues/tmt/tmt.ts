@@ -118,12 +118,13 @@ function isCardOnArena(card: ScryfallCard): boolean {
 }
 
 /**
- * Checks if a card is from the TMT set
+ * Checks if a card is from the TMT or PZA set
  * @param card - The Scryfall card to check
- * @returns true if the card is from TMT
+ * @returns true if the card is from TMT or PZA
  */
 function isCardFromTMT(card: ScryfallCard): boolean {
-  return card.set?.toLowerCase() === "tmt";
+  const set = card.set?.toLowerCase();
+  return set === "tmt" || set === "pza";
 }
 
 /**
@@ -154,7 +155,7 @@ function isCardLegalInVintageAndTimeless(card: ScryfallCard): boolean {
  * Loads cards from the local bulk data file if it exists.
  * Populates both allCardsCache (mutation targets) and allArenaCardsCache (lookup).
  * Falls back to null if the file doesn't exist or can't be read.
- * @returns Array of filtered Scryfall cards (non-TMT) or null if file not available
+ * @returns Array of filtered Scryfall cards (non-TMT/PZA) or null if file not available
  */
 async function loadCardsFromLocalFile(): Promise<
   ScryfallCard[] | null
@@ -169,7 +170,7 @@ async function loadCardsFromLocalFile(): Promise<
     const content = await Deno.readTextFile(DEFAULT_CARDS_PATH);
     const allCards = JSON.parse(content) as ScryfallCard[];
 
-    // Load ALL Arena cards (including TMT) for lookup purposes
+    // Load ALL Arena cards (including TMT and PZA) for lookup purposes
     // Include rebalanced and token cards so we can identify them
     const allArenaCards = allCards.filter((card) => isCardOnArena(card));
     allArenaCardsCache = allArenaCards;
@@ -178,17 +179,17 @@ async function loadCardsFromLocalFile(): Promise<
     );
 
     // Filter for Arena cards that are:
-    // - NOT TMT
+    // - NOT TMT or PZA
     // - NOT tokens
     // - Legal in both Vintage and Timeless (real cards on Arena)
-    // These are the cards that TMT cards can be mutated into
+    // These are the cards that TMT/PZA cards can be mutated into
     const filtered = allCards.filter((card) =>
       !isCardFromTMT(card) && !isCardToken(card) &&
       isCardLegalInVintageAndTimeless(card) && isCardOnArena(card)
     );
 
     console.log(
-      `Loaded ${filtered.length} non-TMT Arena cards from local file`,
+      `Loaded ${filtered.length} non-TMT/PZA Arena cards from local file`,
     );
     return filtered;
   } catch (error) {
@@ -223,8 +224,8 @@ export async function getMutationMap(): Promise<RarityMap> {
     cards = localCards;
   } else {
     console.log("Fetching cards from Scryfall API...");
-    // Fetch non-TMT cards for mutation targets
-    cards = await searchCards("-e:tmt f:vintage f:timeless game:arena", {
+    // Fetch non-TMT/PZA cards for mutation targets
+    cards = await searchCards("-e:tmt -e:pza f:vintage f:timeless game:arena", {
       unique: "prints", // Search by unique printings
     });
 
@@ -488,13 +489,6 @@ function colorsMatch(
   removeColors: number,
   addColors: number,
 ): boolean {
-  const targetLen = targetColors.length;
-  const candidateLen = candidateColors.length;
-
-  if (targetLen === 0) {
-    return candidateLen === 0;
-  }
-
   const targetSet = new Set(targetColors);
   const candidateSet = new Set(candidateColors);
 
@@ -659,9 +653,9 @@ export async function getMutationCandidates(
   cardName: string,
   minCandidates: number = DEFAULT_MIN_CANDIDATES,
 ): Promise<MutationCandidateResult> {
-  for (let addColors = 0; addColors <= 2; addColors++) {
-    for (let removeTypes = 0; removeTypes <= 2; removeTypes++) {
-      for (let removeColors = 0; removeColors <= 2; removeColors++) {
+  for (let removeTypes = 0; removeTypes <= 2; removeTypes++) {
+    for (let addColors = 0; addColors <= 1; addColors++) {
+      for (let removeColors = 0; removeColors <= 1; removeColors++) {
         for (let addTypes = 0; addTypes <= 2; addTypes++) {
           for (let maxCmcDiff = 0; maxCmcDiff <= 5; maxCmcDiff++) {
             const candidates = await findCandidatesWithRelaxedMatch(cardName, {

@@ -1,4 +1,5 @@
 import { getAllArenaCards, getMutationCandidates } from "./leagues/tmt/tmt.ts";
+import { makeSealedDeck, SealedDeckEntryRequest } from "./sealeddeck.ts";
 
 interface RelaxationLevel {
   removeTypes: number;
@@ -11,7 +12,9 @@ interface RelaxationLevel {
 async function main() {
   console.log("Loading all cards...");
   const allCards = await getAllArenaCards();
-  const tmtCardsRaw = allCards.filter((c) => c.set?.toLowerCase() === "tmt");
+  const tmtCardsRaw = allCards.filter(
+    (c) => c.set?.toLowerCase() === "tmt" || c.set?.toLowerCase() === "pza"
+  );
 
   // Only consider cards once by name
   const tmtCardsMap = new Map<string, typeof tmtCardsRaw[0]>();
@@ -22,41 +25,53 @@ async function main() {
   }
   const tmtCards = Array.from(tmtCardsMap.values());
 
-  console.log(`Found ${tmtCards.length} unique TMT cards.`);
+  console.log(`Found ${tmtCards.length} unique TMT/PZA cards.`);
 
   const results: {
     name: string;
     rarity: string;
     count: number;
     relaxed: RelaxationLevel;
+    sealedDeckUrl?: string;
   }[] = [];
 
   for (const card of tmtCards) {
     const result = await getMutationCandidates(card.name);
+    
+    let sealedDeckUrl: string | undefined;
+    if (result.candidates.length > 0) {
+      const poolId = await makeSealedDeck({
+        deck: result.candidates.map((c) => ({
+          name: c.card.name,
+          count: 1,
+          set: c.card.set,
+        })) as SealedDeckEntryRequest[],
+        sideboard: [{ name: card.name, count: 1, set: card.set }],
+      });
+      sealedDeckUrl = `https://sealeddeck.tech/${poolId}`;
+    }
+    
     results.push({
       name: card.name,
       rarity: card.rarity,
       count: result.candidates.length,
       relaxed: result.relaxationUsed,
+      sealedDeckUrl,
     });
   }
 
   // Sort by count descending, then by name
   results.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
-  console.log("\nMutation Counts for TMT Cards (Sorted by count):");
-  console.log("--------------------------------------------------");
+  console.log(
+    "name,rarity,count,removeTypes,addTypes,addColors,removeColors,maxCmcDiff,sealedDeckUrl",
+  );
   for (const res of results) {
     const r = res.relaxed;
-    const relaxStr =
-      `rt=${r.removeTypes}, at=${r.addTypes}, ac=${r.addColors}, rc=${r.removeColors}, cmc=${r.maxCmcDiff}`;
     console.log(
-      `${res.name.padEnd(30)} | ${res.rarity.padEnd(10)} | ${
-        res.count.toString().padStart(3)
-      } targets | ${relaxStr}`,
+      `"${res.name}","${res.rarity}",${res.count},${r.removeTypes},${r.addTypes},${r.addColors},${r.removeColors},${r.maxCmcDiff},${res.sealedDeckUrl || ""}`,
     );
   }
-  console.log("--------------------------------------------------");
 
   // Calculate statistics
   const counts = results.map((r) => r.count);
