@@ -1,5 +1,13 @@
 import { getAllArenaCards, getMutationCandidates } from "./leagues/tmt/tmt.ts";
 
+interface RelaxationLevel {
+  removeTypes: number;
+  addTypes: number;
+  addColors: number;
+  removeColors: number;
+  maxCmcDiff: number;
+}
+
 async function main() {
   console.log("Loading all cards...");
   const allCards = await getAllArenaCards();
@@ -16,14 +24,20 @@ async function main() {
 
   console.log(`Found ${tmtCards.length} unique TMT cards.`);
 
-  const results: { name: string; rarity: string; count: number }[] = [];
+  const results: {
+    name: string;
+    rarity: string;
+    count: number;
+    relaxed: RelaxationLevel;
+  }[] = [];
 
   for (const card of tmtCards) {
-    const candidates = await getMutationCandidates(card.name);
+    const result = await getMutationCandidates(card.name);
     results.push({
       name: card.name,
       rarity: card.rarity,
-      count: candidates.length,
+      count: result.candidates.length,
+      relaxed: result.relaxationUsed,
     });
   }
 
@@ -33,10 +47,13 @@ async function main() {
   console.log("\nMutation Counts for TMT Cards (Sorted by count):");
   console.log("--------------------------------------------------");
   for (const res of results) {
+    const r = res.relaxed;
+    const relaxStr =
+      `rt=${r.removeTypes}, at=${r.addTypes}, ac=${r.addColors}, rc=${r.removeColors}, cmc=${r.maxCmcDiff}`;
     console.log(
-      `${res.name.padEnd(30)} | ${
-        res.rarity.padEnd(10)
-      } | ${res.count} targets`,
+      `${res.name.padEnd(30)} | ${res.rarity.padEnd(10)} | ${
+        res.count.toString().padStart(3)
+      } targets | ${relaxStr}`,
     );
   }
   console.log("--------------------------------------------------");

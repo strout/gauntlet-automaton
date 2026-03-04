@@ -240,7 +240,13 @@ export async function getMutationMap(): Promise<RarityMap> {
   }
 
   // Build nested map: rarity -> colors -> types -> cmc -> CardWithPrintings[]
-  const rarityMap = new Map<MutationKeyRarity, Map<MutationKeyColors, Map<MutationKeyTypes, Map<MutationKeyCmc, CardWithPrintings[]>>>>();
+  const rarityMap = new Map<
+    MutationKeyRarity,
+    Map<
+      MutationKeyColors,
+      Map<MutationKeyTypes, Map<MutationKeyCmc, CardWithPrintings[]>>
+    >
+  >();
 
   for (const card of cards) {
     const key = buildMutationKey(card);
@@ -457,45 +463,113 @@ function getRandomPrinting(
 export interface RelaxedMatchOptions {
   /** Maximum difference in CMC to allow (default: 0 = exact) */
   readonly maxCmcDiff?: number;
-  /** Whether to allow partial type overlap (e.g., "creature" matches "creature artifact") */
-  readonly allowPartialTypes?: boolean;
-  /** Whether to allow partial color overlap (e.g., "W" matches "WU") */
-  readonly allowPartialColors?: boolean;
+  /** Number of colors to REMOVE from the target card's colors (candidate has fewer colors) */
+  readonly removeColors?: number;
+  /** Number of colors to ADD to the target card's colors (candidate has more colors) */
+  readonly addColors?: number;
+  /** Number of types to REMOVE from the target card's types (candidate has fewer type words) */
+  readonly removeTypes?: number;
+  /** Number of types to ADD to the target card's types (candidate has more type words) */
+  readonly addTypes?: number;
 }
 
 /**
- * Checks if two color strings have partial overlap.
- * @param cardColors - The card's colors (e.g., "WU")
- * @param keyColors - The target colors to match against
- * @returns true if there's any color overlap
+ * Checks if candidate colors match the target colors with the given add/remove constraints.
+ * Uses widening: the numbers represent maximum colors to add/remove.
+ * @param candidateColors - The candidate card's colors (e.g., "WU")
+ * @param targetColors - The target card's colors to match against
+ * @param removeColors - Maximum number of colors to remove from target
+ * @param addColors - Maximum number of colors to add to target
+ * @returns true if colors match the constraints
  */
-function colorsOverlap(cardColors: string, keyColors: string): boolean {
-  if (keyColors === "") return cardColors === "";
-  if (cardColors === "") return keyColors === "";
-  for (const c of keyColors) {
-    if (cardColors.includes(c)) return true;
+function colorsMatch(
+  candidateColors: string,
+  targetColors: string,
+  removeColors: number,
+  addColors: number,
+): boolean {
+  const targetLen = targetColors.length;
+  const candidateLen = candidateColors.length;
+
+  if (targetLen === 0) {
+    return candidateLen === 0;
   }
-  return false;
+
+  const targetSet = new Set(targetColors);
+  const candidateSet = new Set(candidateColors);
+
+  const colorsInTargetNotInCandidate: string[] = [];
+  for (const c of targetColors) {
+    if (!candidateSet.has(c)) {
+      colorsInTargetNotInCandidate.push(c);
+    }
+  }
+
+  const colorsInCandidateNotInTarget: string[] = [];
+  for (const c of candidateColors) {
+    if (!targetSet.has(c)) {
+      colorsInCandidateNotInTarget.push(c);
+    }
+  }
+
+  const removed = colorsInTargetNotInCandidate.length;
+  const added = colorsInCandidateNotInTarget.length;
+
+  if (removed > removeColors) return false;
+  if (added > addColors) return false;
+
+  return true;
 }
 
 /**
- * Checks if the card's types include all the key's types (or partial if allowed).
- * @param cardTypes - The card's main types
- * @param keyTypes - The target types to match against
- * @param allowPartial - Whether to allow partial overlap
- * @returns true if types match
+ * Checks if candidate types match the target types with the given add/remove constraints.
+ * Uses widening: the numbers represent maximum types to add/remove.
+ * @param candidateTypes - The candidate card's main types
+ * @param targetTypes - The target card's main types
+ * @param removeTypes - Maximum number of type words to remove from target
+ * @param addTypes - Maximum number of type words to add to target
+ * @returns true if types match the constraints
  */
 function typesMatch(
-  cardTypes: string,
-  keyTypes: string,
-  allowPartial: boolean,
+  candidateTypes: string,
+  targetTypes: string,
+  removeTypes: number,
+  addTypes: number,
 ): boolean {
-  if (allowPartial) {
-    const cardTypeSet = new Set(cardTypes.split(" "));
-    const keyTypeList = keyTypes.split(" ").filter((t) => t);
-    return keyTypeList.every((t) => cardTypeSet.has(t));
+  const targetTypeList = targetTypes.split(" ").filter((t) => t);
+  const candidateTypeList = candidateTypes.split(" ").filter((t) => t);
+
+  const targetLen = targetTypeList.length;
+  const candidateLen = candidateTypeList.length;
+
+  if (targetLen === 0) {
+    return candidateLen === 0;
   }
-  return cardTypes === keyTypes;
+
+  const targetSet = new Set(targetTypeList);
+  const candidateSet = new Set(candidateTypeList);
+
+  const typesInTargetNotInCandidate: string[] = [];
+  for (const t of targetTypeList) {
+    if (!candidateSet.has(t)) {
+      typesInTargetNotInCandidate.push(t);
+    }
+  }
+
+  const typesInCandidateNotInTarget: string[] = [];
+  for (const t of candidateTypeList) {
+    if (!targetSet.has(t)) {
+      typesInCandidateNotInTarget.push(t);
+    }
+  }
+
+  const removed = typesInTargetNotInCandidate.length;
+  const added = typesInCandidateNotInTarget.length;
+
+  if (removed > removeTypes) return false;
+  if (added > addTypes) return false;
+
+  return true;
 }
 
 /**
@@ -519,15 +593,17 @@ export async function findCandidatesWithRelaxedMatch(
 
   const key = buildMutationKey(card);
   const maxCmcDiff = options.maxCmcDiff ?? 0;
-  const allowPartialTypes = options.allowPartialTypes ?? false;
-  const allowPartialColors = options.allowPartialColors ?? false;
+  const removeColors = options.removeColors ?? 0;
+  const addColors = options.addColors ?? 0;
+  const removeTypes = options.removeTypes ?? 0;
+  const addTypes = options.addTypes ?? 0;
 
   const results: CardWithPrintings[] = [];
 
   for (const [, colorsMap] of map) {
     for (const [, typesMap] of colorsMap) {
       for (const [typesKey, cmcMap] of typesMap) {
-        if (!typesMatch(typesKey, key.types, allowPartialTypes)) {
+        if (!typesMatch(typesKey, key.types, removeTypes, addTypes)) {
           continue;
         }
 
@@ -539,8 +615,9 @@ export async function findCandidatesWithRelaxedMatch(
 
             const entryColors = (entryCard.color_identity ?? []).slice().sort()
               .join("");
-            if (!allowPartialColors && entryColors !== key.colors) continue;
-            if (allowPartialColors && !colorsOverlap(entryColors, key.colors)) {
+            if (
+              !colorsMatch(entryColors, key.colors, removeColors, addColors)
+            ) {
               continue;
             }
 
@@ -557,6 +634,17 @@ export async function findCandidatesWithRelaxedMatch(
   return results;
 }
 
+export interface MutationCandidateResult {
+  readonly candidates: readonly CardWithPrintings[];
+  readonly relaxationUsed: {
+    readonly removeTypes: number;
+    readonly addTypes: number;
+    readonly addColors: number;
+    readonly removeColors: number;
+    readonly maxCmcDiff: number;
+  };
+}
+
 const DEFAULT_MIN_CANDIDATES = 5;
 
 /**
@@ -565,29 +653,53 @@ const DEFAULT_MIN_CANDIDATES = 5;
  * until at least minCandidates are found (default 5).
  * @param cardName - The name of the card to mutate
  * @param minCandidates - Minimum number of candidates to find (default 5)
- * @returns Promise resolving to a list of mutation candidates
+ * @returns Promise resolving to a MutationCandidateResult with candidates and relaxation level
  */
 export async function getMutationCandidates(
   cardName: string,
   minCandidates: number = DEFAULT_MIN_CANDIDATES,
-): Promise<readonly CardWithPrintings[]> {
-  for (const allowPartialTypes of [false, true]) {
-    for (const allowPartialColors of [false, true]) {
-      for (let maxCmcDiff = 0; maxCmcDiff <= 5; maxCmcDiff++) {
-        const candidates = await findCandidatesWithRelaxedMatch(cardName, {
-          maxCmcDiff,
-          allowPartialTypes,
-          allowPartialColors,
-        });
+): Promise<MutationCandidateResult> {
+  for (let addColors = 0; addColors <= 2; addColors++) {
+    for (let removeTypes = 0; removeTypes <= 2; removeTypes++) {
+      for (let removeColors = 0; removeColors <= 2; removeColors++) {
+        for (let addTypes = 0; addTypes <= 2; addTypes++) {
+          for (let maxCmcDiff = 0; maxCmcDiff <= 5; maxCmcDiff++) {
+            const candidates = await findCandidatesWithRelaxedMatch(cardName, {
+              maxCmcDiff,
+              removeColors,
+              addColors,
+              removeTypes,
+              addTypes,
+            });
 
-        if (candidates.length >= minCandidates) {
-          return candidates;
+            if (candidates.length >= minCandidates) {
+              return {
+                candidates,
+                relaxationUsed: {
+                  removeTypes,
+                  addTypes,
+                  addColors,
+                  removeColors,
+                  maxCmcDiff,
+                },
+              };
+            }
+          }
         }
       }
     }
   }
 
-  return [];
+  return {
+    candidates: [],
+    relaxationUsed: {
+      removeTypes: 2,
+      addTypes: 2,
+      addColors: 2,
+      removeColors: 2,
+      maxCmcDiff: 5,
+    },
+  };
 }
 
 /**
@@ -674,15 +786,15 @@ async function mutatePoolInternal(
     }
 
     // Get all cards that share the same mutation pool
-    const candidates = await getMutationCandidates(cardName);
-    if (candidates.length === 0) {
+    const result = await getMutationCandidates(cardName);
+    if (result.candidates.length === 0) {
       // No candidates for mutation, return unchanged
       mutatedCards.push(card);
       return { name: cardName, count: 1, set: card.set };
     }
 
     // Pick a random card from the candidates
-    const chosenEntry = getRandomElement(candidates);
+    const chosenEntry = getRandomElement(result.candidates);
     if (!chosenEntry) {
       mutatedCards.push(card);
       return { name: cardName, count: 1, set: card.set };
