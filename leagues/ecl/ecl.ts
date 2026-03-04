@@ -498,10 +498,10 @@ async function handleLoss(
   );
 
   const totalLosses = loser.Losses;
-  
+
   if (totalLosses >= 11) {
     console.log(
-    `[ECL] ${loser.Identification} was eliminated.`,
+      `[ECL] ${loser.Identification} was eliminated.`,
     );
     return;
   }

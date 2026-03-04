@@ -218,7 +218,13 @@ export async function getMutationMap(): Promise<RarityMap> {
   }
 
   // Build nested map: rarity -> colors -> types -> cmc -> CardWithPrintings[]
-  const rarityMap = new Map<MutationKeyRarity, Map<MutationKeyColors, Map<MutationKeyTypes, Map<MutationKeyCmc, CardWithPrintings[]>>>>();
+  const rarityMap = new Map<
+    MutationKeyRarity,
+    Map<
+      MutationKeyColors,
+      Map<MutationKeyTypes, Map<MutationKeyCmc, CardWithPrintings[]>>
+    >
+  >();
 
   for (const card of cards) {
     const key = buildMutationKey(card);
@@ -280,14 +286,35 @@ export async function getMutationMap(): Promise<RarityMap> {
   }
 
   // Convert to readonly nested maps
-  const readonlyRarityMap = new Map<MutationKeyRarity, ReadonlyMap<MutationKeyColors, ReadonlyMap<MutationKeyTypes, ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>>>>();
+  const readonlyRarityMap = new Map<
+    MutationKeyRarity,
+    ReadonlyMap<
+      MutationKeyColors,
+      ReadonlyMap<
+        MutationKeyTypes,
+        ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>
+      >
+    >
+  >();
 
   for (const [rarity, colorsMap] of rarityMap) {
-    const readonlyColorsMap = new Map<MutationKeyColors, ReadonlyMap<MutationKeyTypes, ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>>>();
+    const readonlyColorsMap = new Map<
+      MutationKeyColors,
+      ReadonlyMap<
+        MutationKeyTypes,
+        ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>
+      >
+    >();
     for (const [colors, typesMap] of colorsMap) {
-      const readonlyTypesMap = new Map<MutationKeyTypes, ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>>();
+      const readonlyTypesMap = new Map<
+        MutationKeyTypes,
+        ReadonlyMap<MutationKeyCmc, readonly CardWithPrintings[]>
+      >();
       for (const [types, cmcMap] of typesMap) {
-        const readonlyCmcMap = new Map<MutationKeyCmc, readonly CardWithPrintings[]>();
+        const readonlyCmcMap = new Map<
+          MutationKeyCmc,
+          readonly CardWithPrintings[]
+        >();
         for (const [cmc, entries] of cmcMap) {
           readonlyCmcMap.set(cmc, entries);
         }
@@ -564,8 +591,11 @@ export async function findCandidatesWithRelaxedMatch(
 
             if (entryCard.rarity !== key.rarity) continue;
 
-            const entryColors = (entryCard.color_identity ?? []).slice().sort().join("");
-            if (!colorsMatch(entryColors, key.colors, removeColors, addColors)) {
+            const entryColors = (entryCard.color_identity ?? []).slice().sort()
+              .join("");
+            if (
+              !colorsMatch(entryColors, key.colors, removeColors, addColors)
+            ) {
               continue;
             }
 
@@ -623,7 +653,13 @@ export async function getMutationCandidates(
             if (candidates.length >= minCandidates) {
               return {
                 candidates,
-                relaxationUsed: { removeTypes, addTypes, addColors, removeColors, maxCmcDiff },
+                relaxationUsed: {
+                  removeTypes,
+                  addTypes,
+                  addColors,
+                  removeColors,
+                  maxCmcDiff,
+                },
               };
             }
           }
@@ -634,7 +670,13 @@ export async function getMutationCandidates(
 
   return {
     candidates: [],
-    relaxationUsed: { removeTypes: 2, addTypes: 2, addColors: 2, removeColors: 2, maxCmcDiff: 5 },
+    relaxationUsed: {
+      removeTypes: 2,
+      addTypes: 2,
+      addColors: 2,
+      removeColors: 2,
+      maxCmcDiff: 5,
+    },
   };
 }
 

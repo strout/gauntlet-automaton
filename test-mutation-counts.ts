@@ -48,9 +48,12 @@ async function main() {
   console.log("--------------------------------------------------");
   for (const res of results) {
     const r = res.relaxed;
-    const relaxStr = `rt=${r.removeTypes}, at=${r.addTypes}, ac=${r.addColors}, rc=${r.removeColors}, cmc=${r.maxCmcDiff}`;
+    const relaxStr =
+      `rt=${r.removeTypes}, at=${r.addTypes}, ac=${r.addColors}, rc=${r.removeColors}, cmc=${r.maxCmcDiff}`;
     console.log(
-      `${res.name.padEnd(30)} | ${res.rarity.padEnd(10)} | ${res.count.toString().padStart(3)} targets | ${relaxStr}`,
+      `${res.name.padEnd(30)} | ${res.rarity.padEnd(10)} | ${
+        res.count.toString().padStart(3)
+      } targets | ${relaxStr}`,
     );
   }
   console.log("--------------------------------------------------");
