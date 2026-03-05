@@ -141,14 +141,41 @@ function isCardToken(card: ScryfallCard): boolean {
  * Checks if a card is legal in both Vintage and Timeless.
  * Note: Scryfall 'legal' or 'restricted' both count as legal for our purposes.
  * This naturally excludes Alchemy-exclusive and rebalanced (A-) cards.
+ * A few exceptions are made for TMC cards on Arena but not in timeless and ANB cards not in vintage.
  * @param card - The Scryfall card to check
  * @returns true if the card is legal or restricted in both Vintage and Timeless
  */
 function isCardLegalInVintageAndTimeless(card: ScryfallCard): boolean {
   const v = card.legalities["vintage"];
   const t = card.legalities["timeless"];
-  return (v === "legal" || v === "restricted") &&
-    (t === "legal" || t === "restricted");
+  return (v === "legal" || v === "restricted" ||
+    card.set.toLowerCase() === "anb") &&
+    (t === "legal" || t === "restricted" ||
+      (card.set.toLowerCase() === "tmc" &&
+        [ // regrettably, there's no real pattern for which TMC cards were put on Arena or not, and Scryfall has them all tagged as game:arena regardless
+          1,
+          9,
+          2,
+          12,
+          14,
+          10,
+          13,
+          15,
+          3,
+          19,
+          20,
+          27,
+          28,
+          22,
+          4,
+          5,
+          133,
+          33,
+          30,
+          6,
+          135,
+          136,
+        ].map((x) => x.toString()).includes(card.collector_number)));
 }
 
 /**
@@ -225,9 +252,12 @@ export async function getMutationMap(): Promise<RarityMap> {
   } else {
     console.log("Fetching cards from Scryfall API...");
     // Fetch non-TMT/PZA cards for mutation targets
-    cards = await searchCards("-e:tmt -e:pza f:vintage f:timeless game:arena", {
-      unique: "prints", // Search by unique printings
-    });
+    cards = await searchCards(
+      "-e:tmt -e:pza (f:vintage or set:anb) game:arena (f:timeless or (set:tmc (cn:1 or or cn:9 or cn:2 or cn:12 or cn:14 or cn:10 or cn:13 or cn:15 or cn:3 or cn:19 or cn:20 or cn:27 or cn:28 or cn:22 or cn:4 or cn:5 or cn:133 or cn:33 or cn:30 or cn:6 or cn:135 or cn:136)))",
+      {
+        unique: "prints", // Search by unique printings
+      },
+    );
 
     // Also fetch ALL Arena cards including TMT for lookup
     // Use a simpler query that gets all Arena cards
