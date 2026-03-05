@@ -636,6 +636,8 @@ export async function findCandidatesWithRelaxedMatch(
           for (const entry of entries) {
             const entryCard = entry.card;
 
+            if (entry.card.oracle_id === card.oracle_id) continue;
+
             if (entryCard.rarity !== key.rarity) continue;
 
             const entryColors = (entryCard.color_identity ?? []).slice().sort()
