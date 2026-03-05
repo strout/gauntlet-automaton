@@ -454,7 +454,8 @@ function buildNameToCardMap(): Map<string, ScryfallCard> {
   for (const card of allArenaCardsCache) {
     const fullName = card.name.toLowerCase();
     // Only store the first occurrence (preferred printing)
-    if (!map.has(fullName)) {
+    // Prefer tmt or pza so they get correct rarity
+    if (!map.has(fullName) || ["tmt","pza"].includes(card.set.toLowerCase())) {
       map.set(fullName, card);
     }
 
