@@ -7,11 +7,11 @@ import { makeSealedDeck, SealedDeckEntry } from "../../sealeddeck.ts";
 import { addPoolChange, getPlayers, getPoolChanges } from "../../standings.ts";
 import {
   appendToPoolPending,
-  getMutagenTokens,
   markPoolPendingDMedForPacks,
 } from "./standings-tmt.ts";
 import {
   computeFullPool,
+  postFinalMatchPackToPackGeneration,
   sendMatchPackMutateDM,
   sendPackDMs,
 } from "./pool-dm.ts";
@@ -68,7 +68,7 @@ function splitIntoPacks(text: string): string[][] {
  *
  * @param playerName - Player's Identification (from the spreadsheet)
  * @param discordId - Player's Discord user ID (for DMs)
- * @param setCode - The set code to pass to Booster Tutor (e.g. "ECL")
+ * @param setCode - The set code to pass to Booster Tutor (e.g. "TMT")
  * @param numPacks - Number of packs (default 6)
  * @param poolChangesChannel - The channel to post Pool Changes links to
  * @param startingPoolChannel - The channel to send the !set command to
@@ -201,10 +201,6 @@ export async function generateStartingPool(
       );
     }
   }
-
-  await poolChangesChannel.send(
-    `✅ Generated ${packLines.length} pack(s) for **${playerName}** Check your DMs to see the packs and decide which ones to mutate.`,
-  );
 }
 
 /**
@@ -315,9 +311,10 @@ function waitForBoosterTutorFile(
 }
 
 /**
- * Processes a match reward pack: posts !ECL @user to packgen channel, waits for
- * Booster Tutor response (via pending handler, same as ECL), adds to Pool Pending,
- * and DMs the player with YES/NO to mutate.
+ * Processes a match reward pack: posts !TMT @user to bot-bunker, waits for
+ * Booster Tutor response, adds to Pool Pending, and DMs the player with YES/NO
+ * to mutate. Once the player has chosen, the final pack is posted to
+ * pack-generation.
  * Call this when a match is processed.
  */
 export async function processMatchPack(
@@ -326,16 +323,16 @@ export async function processMatchPack(
   playerName: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-  const packgenChannel = await guild.channels.fetch(
-    CONFIG.PACKGEN_CHANNEL_ID,
+  const botBunkerChannel = await guild.channels.fetch(
+    CONFIG.BOT_BUNKER_CHANNEL_ID,
   ) as djs.TextChannel | null;
 
-  if (!packgenChannel?.isSendable()) {
-    return { ok: false, error: "Pack generation channel not available." };
+  if (!botBunkerChannel?.isSendable()) {
+    return { ok: false, error: "Bot bunker channel not available." };
   }
 
   const result = await waitForBoosterTutor(
-    packgenChannel.send(`!ECL <@${discordId}>`),
+    botBunkerChannel.send(`!TMT <@${discordId}>`),
   );
 
   if ("error" in result) {
@@ -352,27 +349,6 @@ export async function processMatchPack(
     ...(pack.deck ?? []),
     ...(pack.hidden ?? []),
   ];
-
-  const mutagenTokens = await getMutagenTokens(playerName);
-  if (mutagenTokens <= 0) {
-    // No tokens: add pack directly to Pool Changes, no DM (by design)
-    console.log(
-      `[match-pack] ${playerName} has no mutagen tokens, adding pack directly (no DM)`,
-    );
-    const existingChanges = (await getPoolChanges()).rows.filter(
-      (r) => r.Name === playerName,
-    );
-    const lastFullPool = existingChanges.at(-1)?.["Full Pool"];
-    const fullPoolId = await computeFullPool(lastFullPool, packPoolId);
-    await addPoolChange(
-      playerName,
-      "add pack",
-      packPoolId,
-      "Match reward (no mutagen tokens)",
-      fullPoolId,
-    );
-    return { ok: true };
-  }
 
   const timestamp = new Date().toISOString();
   await appendToPoolPending([[timestamp, playerName, "add pack", packPoolId]]);
@@ -410,7 +386,7 @@ function resolveDiscordId(input: string): string | null {
 /**
  * Handler for the !matchpack command.
  * Usage: !matchpack @Player
- * Posts !ECL @user to packgen, gets pack, adds to Pool Pending, DMs with YES/NO to mutate.
+ * Posts !TMT @user to packgen, gets pack, adds to Pool Pending, DMs with YES/NO to mutate.
  * Call when a match is processed.
  */
 export const matchpackHandler: Handler<djs.Message> = async (
@@ -457,7 +433,7 @@ export const matchpackHandler: Handler<djs.Message> = async (
   }
 
   await message.reply(
-    `Processing match pack for **${playerName}**… Posting to packgen channel.`,
+    `Processing match pack for **${playerName}**… Rolling in bot-bunker.`,
   );
 
   const result = await processMatchPack(
@@ -478,7 +454,7 @@ export const matchpackHandler: Handler<djs.Message> = async (
 /**
  * Handler for the !genpool command.
  * Usage: !genpool @DiscordTag <setCode> [numPacks]
- * Must be sent by a League Committee member or owner.
+ * Must be sent by a League Committee member.
  * Looks up the player in the Player Database by Discord ID, then sends !set to the
  * starting-pools channel, processes Booster Tutor's response, and writes each pack
  * to the Pool Pending sheet under the player's Identification name.
@@ -487,25 +463,24 @@ export const genPoolHandler: Handler<djs.Message> = async (message, handle) => {
   if (!message.content.startsWith("!genpool")) return;
   handle.claim();
 
-  // Owner or league committee only
-  const isOwner = message.author.id === CONFIG.OWNER_ID;
-  let isCommittee = false;
-  if (message.inGuild()) {
-    try {
-      const guild = await message.client.guilds.fetch(CONFIG.GUILD_ID);
-      const member = await guild.members.fetch(message.author.id);
-      isCommittee = member.roles.cache.has(CONFIG.LEAGUE_COMMITTEE_ROLE_ID);
-    } catch {
-      // ignore
+  // League Committee only
+  if (!message.inGuild()) return;
+  try {
+    const guild = await message.client.guilds.fetch(CONFIG.GUILD_ID);
+    const member = await guild.members.fetch(message.author.id);
+    if (!member.roles.cache.has(CONFIG.LEAGUE_COMMITTEE_ROLE_ID)) {
+      await message.reply("Only League Committee can use this command.");
+      return;
     }
+  } catch {
+    return;
   }
-  if (!isOwner && !isCommittee) return;
 
   const parts = message.content.trim().split(/\s+/);
   // !genpool <@mention|discordId> <setCode> [numPacks]
   if (parts.length < 3) {
     await message.reply(
-      "Usage: `!genpool @Player <setCode> [numPacks]`\nExample: `!genpool @Alice ECL 6`",
+      "Usage: `!genpool @Player <setCode> [numPacks]`\nExample: `!genpool @Alice TMT 6`",
     );
     return;
   }

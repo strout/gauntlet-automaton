@@ -15,6 +15,64 @@ import {
   markPoolPendingDMedForPacks,
 } from "./standings-tmt.ts";
 
+/**
+ * Posts the final match pack link and card image to the pack-generation channel.
+ * Call this after the player has chosen to mutate or not.
+ */
+export async function postFinalMatchPackToPackGeneration(
+  client: djs.Client,
+  discordId: string,
+  poolId: string,
+  mutated: boolean,
+): Promise<void> {
+  try {
+    const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
+    const channel = await guild.channels.fetch(
+      CONFIG.PACKGEN_CHANNEL_ID,
+    ) as djs.TextChannel | null;
+    if (!channel?.isSendable()) return;
+
+    const packLink = `https://sealeddeck.tech/${poolId}`;
+    const mutationNote = mutated ? "mutated" : "did not mutate";
+    const content = `<@${discordId}> ${mutationNote} their pack: ${packLink}`;
+    const files: djs.AttachmentBuilder[] = [];
+
+    const pool = await fetchSealedDeck(poolId);
+    const entries = [
+      ...pool.sideboard,
+      ...(pool.deck ?? []),
+      ...(pool.hidden ?? []),
+    ];
+    const expanded = expandEntries(entries);
+    const scryfallCards: ScryfallCard[] = [];
+    for (const entry of expanded) {
+      const card = await getScryfallCard(entry.name, entry.set);
+      if (card) scryfallCards.push(card);
+    }
+    if (scryfallCards.length > 0) {
+      try {
+        const tiledBlob = await tileCardImages(scryfallCards, "small");
+        const buffer = Buffer.from(await tiledBlob.arrayBuffer());
+        files.push(
+          new djs.AttachmentBuilder(buffer, {
+            name: "pack.png",
+            description: "Pack cards",
+          }),
+        );
+      } catch (e) {
+        console.error("[pool-dm] Error tiling match pack for pack-gen:", e);
+      }
+    }
+
+    await channel.send({
+      content,
+      files: files.length > 0 ? files : undefined,
+    });
+  } catch (e) {
+    console.error("[pool-dm] Failed to post final match pack to pack-generation:", e);
+  }
+}
+
 /** Pack info for DM display */
 export interface PackInfo {
   poolId: string;
@@ -175,7 +233,7 @@ export async function sendPackDMs(
 
   const dropdownMsg = await dmChannel.send({
     content:
-      "**Select a pack and click Mutate** to send it for mutation. Once you have 2 mutated packs in Pool Changes, the remaining packs will be added automatically.",
+      "**Select a pack and click Mutate** to send it for mutation.",
     components: [selectRow, buttonRow],
   });
 
@@ -187,6 +245,59 @@ export async function sendPackDMs(
   });
 
   await markPoolPendingDMedForPacks(playerName, packs.map((p) => p.poolId));
+}
+
+/**
+ * Sends only the dropdown + Mutate button (no pack images).
+ * Used when resending for remaining packs after the user has already seen them.
+ * Pack numbers are preserved from the original 6 (e.g. if Pack 4 was mutated, choices show Pack 1, 2, 3, 5, 6).
+ */
+export async function sendPackDropdownOnly(
+  client: djs.Client,
+  discordId: string,
+  playerName: string,
+  poolIdToPackNumber: { poolId: string; packNumber: number }[],
+): Promise<void> {
+  const user = await client.users.fetch(discordId);
+  if (!user) return;
+
+  const dmChannel = await user.createDM();
+
+  const options = poolIdToPackNumber.map(({ poolId, packNumber }) => ({
+    label: `Pack ${packNumber}`,
+    value: poolId,
+  }));
+
+  const selectRow = new djs.ActionRowBuilder<djs.StringSelectMenuBuilder>()
+    .addComponents(
+      new djs.StringSelectMenuBuilder()
+        .setCustomId(MUTATE_SELECT_CUSTOM_ID)
+        .setPlaceholder("Choose a pack to mutate…")
+        .addOptions(options),
+    );
+
+  const buttonRow = new djs.ActionRowBuilder<djs.ButtonBuilder>().addComponents(
+    new djs.ButtonBuilder()
+      .setCustomId(MUTATE_BTN_CUSTOM_ID)
+      .setLabel("Mutate")
+      .setStyle(djs.ButtonStyle.Primary),
+  );
+
+  const dropdownMsg = await dmChannel.send({
+    content:
+      "**Select a pack and click Mutate** to send it for mutation.",
+    components: [selectRow, buttonRow],
+  });
+
+  const poolIds = poolIdToPackNumber.map((p) => p.poolId);
+  const key = `${discordId}:${dropdownMsg.id}`;
+  mutateSelection.set(key, {
+    playerName,
+    selectedPoolId: poolIds[0] ?? "",
+    poolIds,
+  });
+
+  await markPoolPendingDMedForPacks(playerName, poolIds);
 }
 
 /**
@@ -480,6 +591,12 @@ export async function handleMatchPackNo(
     fullPoolId,
   );
   await markPoolPendingCompleted(row[ROWNUM]);
+  await postFinalMatchPackToPackGeneration(
+    interaction.client,
+    interaction.user.id,
+    poolId,
+    false,
+  );
 
   const disabledRow = new djs.ActionRowBuilder<djs.ButtonBuilder>()
     .addComponents(
@@ -604,6 +721,15 @@ export async function handleMutationChannelMessage(
 
   await markPoolPendingCompleted(rowNum);
 
+  if (isMatchPack) {
+    await postFinalMatchPackToPackGeneration(
+      message.client,
+      userId,
+      newPoolId,
+      true,
+    );
+  }
+
   const poolChanges = await getPoolChanges();
   const userChanges = poolChanges.rows.filter((r) => r.Name === playerName);
   const count = userChanges.length;
@@ -612,37 +738,33 @@ export async function handleMutationChannelMessage(
     | djs.DMChannel
     | null;
   if (dmChannel?.isSendable()) {
+    const mutatedPackLink = `https://sealeddeck.tech/${newPoolId}`;
     if (count < 2) {
-      // Send new dropdown with remaining packs
+      // Send dropdown only for remaining packs (user has already seen the pack images)
       const remaining = await getPoolPendingRows(playerName);
       if (remaining.length > 0) {
-        // We need packEntries to show images - but for the dropdown we only need poolId
-        // We can fetch each pack from sealeddeck to get entries
-        const { fetchSealedDeck } = await import("../../sealeddeck.ts");
-        const packsWithEntries: PackInfo[] = [];
-        for (const r of remaining) {
-          try {
-            const pool = await fetchSealedDeck(r.Value);
-            const entries = [
-              ...pool.sideboard,
-              ...(pool.deck ?? []),
-              ...(pool.hidden ?? []),
-            ];
-            packsWithEntries.push({ poolId: r.Value, packEntries: entries });
-          } catch {
-            packsWithEntries.push({ poolId: r.Value, packEntries: [] });
-          }
-        }
-        await sendPackDMs(message.client, userId, playerName, packsWithEntries);
-        await markPoolPendingDMedForPacks(
-          playerName,
-          packsWithEntries.map((p) => p.poolId),
-        );
+        // Preserve original pack numbers (e.g. if Pack 4 was mutated, show Pack 1, 2, 3, 5, 6)
+        const allRownums = [
+          ...remaining.map((r) => r[ROWNUM]),
+          rowNum,
+        ].sort((a, b) => a - b);
+        const poolIdToPackNumber = remaining.map((r) => ({
+          poolId: r.Value,
+          packNumber: allRownums.indexOf(r[ROWNUM]) + 1,
+        }));
         await dmChannel.send(
-          `✅ Pack recorded! Select another pack to mutate.`,
+          `Mutated pack: ${mutatedPackLink} Please select another pack to mutate.`,
+        );
+        await sendPackDropdownOnly(
+          message.client,
+          userId,
+          playerName,
+          poolIdToPackNumber,
         );
       } else {
-        await dmChannel.send(`✅ Pack recorded!`);
+        await dmChannel.send(
+          `Mutated pack: ${mutatedPackLink}`,
+        );
       }
     } else {
       // >= 2 entries: move remaining Pool Pending to Pool Changes
@@ -673,7 +795,7 @@ export async function handleMutationChannelMessage(
       }
       const fullPoolLink = `https://sealeddeck.tech/${currentFullPoolId}`;
       await dmChannel.send(
-        `✅ Pack recorded! \n\nFull pool: ${fullPoolLink}`,
+        `Mutated pack: ${mutatedPackLink}\n\nFull pool: ${fullPoolLink}`,
       );
     }
   }
