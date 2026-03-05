@@ -7,6 +7,7 @@ import { Image } from "@matmen/imagescript";
 export interface ScryfallCard {
   readonly object: "card";
   readonly id: string;
+  readonly oracle_id?: string;
   readonly name: string;
   readonly set: string;
   readonly set_name: string;
@@ -36,7 +37,7 @@ export interface ScryfallCard {
     readonly name: string;
     readonly mana_cost: string;
     readonly colors?: readonly string[];
-    readonly type_line: string;
+    readonly type_line?: string;
     readonly oracle_text?: string;
     readonly power?: string;
     readonly toughness?: string;
@@ -50,6 +51,10 @@ export interface ScryfallCard {
   readonly games: readonly string[];
   readonly booster?: boolean;
   readonly digital?: boolean;
+  readonly frame_effects?: readonly string[];
+  readonly variation: boolean;
+  readonly set_type: string;
+  readonly legalities: Record<string, string>;
 }
 
 /**
@@ -99,6 +104,22 @@ function cleanCache(ttl: number = DEFAULT_CACHE_TTL): void {
 }
 
 /**
+ * Error that includes retry delay information from Retry-After header
+ */
+class ScryfallRateLimitError extends Error {
+  readonly retryAfterMs: number;
+
+  constructor(
+    message: string,
+    retryAfterMs: number,
+  ) {
+    super(message);
+    this.name = "ScryfallRateLimitError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/**
  * Makes a cached request to the Scryfall API
  */
 async function cachedScryfallRequest<T>(
@@ -110,23 +131,53 @@ async function cachedScryfallRequest<T>(
     return cached.data as T;
   }
 
-  return await withRetry(async () => {
-    const response = await fetch(url);
+  return await withRetry(
+    async (disableRetry) => {
+      const response = await fetch(url);
 
-    if (!response.ok) {
-      throw new Error(
-        `Scryfall API error: ${response.status} ${response.statusText} for ${url}`,
-      );
-    }
+      if (!response.ok) {
+        // Check for Retry-After header on rate limit
+        if (response.status === 429) {
+          const retryAfter = response.headers.get("Retry-After");
+          const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : 0;
 
-    const data = await response.json() as T;
-    scryfallCache.set(url, {
-      data,
-      timestamp: Date.now(),
-    });
+          // Only use custom retry if we have a meaningful delay (> 0)
+          if (retryAfterSeconds > 0) {
+            throw new ScryfallRateLimitError(
+              `Scryfall API rate limit: ${response.status} ${response.statusText} for ${url}`,
+              retryAfterSeconds * 1000,
+            );
+          }
 
-    return data;
-  });
+          // No valid Retry-After header - don't retry to avoid hammering
+          console.error(
+            `Scryfall API rate limit without Retry-After header for ${url}`,
+          );
+          disableRetry();
+        }
+        throw new Error(
+          `Scryfall API error: ${response.status} ${response.statusText} for ${url}`,
+        );
+      }
+
+      const data = await response.json() as T;
+      scryfallCache.set(url, {
+        data,
+        timestamp: Date.now(),
+      });
+
+      return data;
+    },
+    undefined,
+    undefined,
+    (error) => {
+      // Use Retry-After delay if available and > 0, otherwise use exponential backoff
+      if (error instanceof ScryfallRateLimitError && error.retryAfterMs > 0) {
+        return error.retryAfterMs;
+      }
+      return undefined; // Use default exponential backoff
+    },
+  );
 }
 
 /**
@@ -380,7 +431,7 @@ export async function tileCardImages(
 
   // Encode as PNG and return as Blob
   const pngData = await composite.encode();
-  return new Blob([pngData], { type: "image/png" });
+  return new Blob([pngData as BlobPart], { type: "image/png" });
 }
 
 /**

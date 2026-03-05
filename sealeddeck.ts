@@ -110,13 +110,15 @@ export function makeSealedDeck(
 
     // Cache the complete pool if this was a new pool creation
     if (!poolId) {
-      const ensureCompleteEntries = (entries: readonly SealedDeckEntryRequest[]): readonly SealedDeckEntry[] =>
-        entries.map(entry => ({
+      const ensureCompleteEntries = (
+        entries: readonly SealedDeckEntryRequest[],
+      ): readonly SealedDeckEntry[] =>
+        entries.map((entry) => ({
           name: entry.name,
           count: entry.count ?? 1,
           set: entry.set,
         }));
-      
+
       const completePool: SealedDeckPool = {
         poolId: json.poolId,
         sideboard: ensureCompleteEntries(body.sideboard || []),

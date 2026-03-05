@@ -24,6 +24,7 @@ export interface Config {
   readonly BOT_ROLES: BotRole[];
   readonly REGISTRATION_LEAGUE_ROLE: LeagueRole | null;
   readonly NEW_PLAYER_LEAGUE_ROLES: readonly LeagueRole[];
+  readonly TMT?: { readonly MUTATION_CHANNEL_ID: string; };
 }
 
 export interface LeagueRole {

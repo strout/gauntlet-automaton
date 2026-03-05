@@ -9,7 +9,7 @@ import {
   StringSelectMenuInteraction,
   TextChannel,
 } from "discord.js";
-import { Handler } from "../../dispatch.ts";
+import { Handler } from "../../../dispatch.ts";
 import { generateAndPostLorwynPool } from "./pools.ts";
 import {
   addPoolChange,
@@ -19,28 +19,28 @@ import {
   MATCHTYPE,
   Player,
   ROWNUM,
-} from "../../standings.ts";
-import { sheets, sheetsWrite } from "../../sheets.ts";
-import { mutex } from "../../mutex.ts";
+} from "../../../standings.ts";
+import { sheets, sheetsWrite } from "../../../sheets.ts";
+import { mutex } from "../../../mutex.ts";
 import { delay } from "@std/async";
-import { CONFIG } from "../../config.ts";
-import { waitForBoosterTutor } from "../../pending.ts";
-import { makeChoice } from "../../util/choice.ts";
-import { searchCards, tileCardImages } from "../../scryfall.ts";
+import { CONFIG } from "../../../config.ts";
+import { waitForBoosterTutor } from "../../../pending.ts";
+import { makeChoice } from "../../../util/choice.ts";
+import { searchCards, tileCardImages } from "../../../scryfall.ts";
 import {
   fetchSealedDeck,
   formatPool,
   makeSealedDeck,
   SealedDeckPool,
-} from "../../sealeddeck.ts";
+} from "../../../sealeddeck.ts";
 import { Buffer } from "node:buffer";
 
 const pollingLock = mutex();
 
 // ECL embed colors - Lorwyn (day) and Shadowmoor (night)
 const ECL_COLORS = {
-  LORWYN: 0xF1E05D, // Light Yellow (day/sunlight)
-  SHADOWMOOR: 0x7C3AED, // Light Purple/Lavender (night/shadows)
+  LORWYN: 0xF1E05D,     // Light Yellow (day/sunlight)
+  SHADOWMOOR: 0x7C3AED,  // Light Purple/Lavender (night/shadows)
 } as const;
 
 // ECL-specific helper functions for dual pool sheets
@@ -194,38 +194,18 @@ async function tilePack(pack: SealedDeckPool, name: string) {
     ...pack.hidden.flatMap((c) => Array(c.count).fill(c.name)),
   ];
 
-  const scryfallCards = await fetchEclCards();
+  const uniqueCardNames = [...new Set(cardNames)];
+  const scryfallCards = await searchCards(
+    `set:ecl (${uniqueCardNames.map((name) => `!"${name}"`).join(" OR ")})`,
+  );
 
   const cardsToTile = cardNames
-    .map((name) => scryfallCards.get(name))
+    .map((name) => scryfallCards.find((c) => c.name === name))
     .filter((c) => c !== undefined);
 
   const tiledImage = await tileCardImages(cardsToTile, "small");
   return new AttachmentBuilder(Buffer.from(await tiledImage.arrayBuffer()), {
     name,
-  });
-}
-
-export async function formatEclPool(pool: SealedDeckPool) {
-  const cards = await fetchEclCards();
-  const rarities = [
-    "common",
-    "uncommon",
-    "rare",
-    "mythic",
-    "special",
-    "bonus",
-    undefined,
-  ] as const;
-  return formatPool({
-    sideboard: [...pool.sideboard].sort((a, z) => {
-      const cardA = cards.get(a.name);
-      const cardZ = cards.get(z.name);
-      if (!cardZ) return 1;
-      if (!cardA) return -1;
-      return rarities.indexOf(cardZ.rarity) - rarities.indexOf(cardA.rarity) ||
-        ((+cardA.collector_number) - (+cardZ.collector_number));
-    }),
   });
 }
 
@@ -244,14 +224,14 @@ const makeAllocationMessage = async (
   const embed1 = {
     title: "Pack 1",
     url: `https://sealeddeck.tech/${pack1.poolId}`,
-    description: await formatEclPool(pack1),
+    description: formatPool(pack1),
     image: { url: "attachment://pack1.png" },
   };
 
   const embed2 = {
     title: "Pack 2",
     url: `https://sealeddeck.tech/${pack2.poolId}`,
-    description: await formatEclPool(pack2),
+    description: formatPool(pack2),
     image: { url: "attachment://pack2.png" },
   };
 
@@ -281,24 +261,6 @@ const makeAllocationMessage = async (
   };
 };
 
-export async function fetchEclCards() {
-  const cards = await searchCards(
-    `set:ecl OR (e:spg cn≥129 cn≤148)`,
-    { unique: "prints" },
-  );
-  return new Map(
-    cards.toSorted((a, z) => (+z.collector_number) - (+a.collector_number))
-      .flatMap(
-        (
-          x,
-        ) => [
-          [x.name, x] as const,
-          ...x.card_faces?.[0] ? [[x.card_faces[0].name, x] as const] : [],
-        ],
-      ),
-  );
-}
-
 /**
  * Announces pack allocation to #pack-generation channel with themed embeds.
  */
@@ -326,7 +288,7 @@ async function announcePackAllocation(
   const lorwynEmbed = new EmbedBuilder()
     .setTitle("☀️ Lorwyn Pool")
     .setColor(ECL_COLORS.LORWYN)
-    .setDescription(await formatEclPool(lorwynPack))
+    .setDescription(formatPool(lorwynPack))
     .setImage("attachment://lorwyn-pack.png")
     .addFields([
       {
@@ -344,7 +306,7 @@ async function announcePackAllocation(
   const shadowmoorEmbed = new EmbedBuilder()
     .setTitle("🌙 Shadowmoor Pool")
     .setColor(ECL_COLORS.SHADOWMOOR)
-    .setDescription(await formatEclPool(shadowmoorPack))
+    .setDescription(formatPool(shadowmoorPack))
     .setImage("attachment://shadowmoor-pack.png")
     .addFields([
       {
@@ -466,9 +428,7 @@ const onSelectAllocation = (
   // Apply colors based on allocation: (index === 0) === (allocation === "1L2S") ? lorwyn : shadowmoor
   const newEmbeds = existingEmbeds.map((embed, index) => ({
     ...embed.toJSON(),
-    color: (index === 0) === (allocation === "1L2S")
-      ? ECL_COLORS.LORWYN
-      : ECL_COLORS.SHADOWMOOR,
+    color: (index === 0) === (allocation === "1L2S") ? ECL_COLORS.LORWYN : ECL_COLORS.SHADOWMOOR,
   }));
 
   return Promise.resolve({ embeds: newEmbeds });
@@ -477,12 +437,7 @@ const onSelectAllocation = (
 const {
   sendChoice: sendAllocationChoice,
   responseHandler: allocationChoiceHandler,
-} = makeChoice(
-  "ECL_ALLOC",
-  makeAllocationMessage,
-  onAllocationChoice,
-  onSelectAllocation,
-);
+} = makeChoice("ECL_ALLOC", makeAllocationMessage, onAllocationChoice, onSelectAllocation);
 
 /**
  * Placeholder logic for when a player loses a match.
@@ -496,15 +451,6 @@ async function handleLoss(
   console.log(
     `[ECL] Handling loss for ${loser.Identification} (Loss #${lossCount})`,
   );
-
-  const totalLosses = loser.Losses;
-
-  if (totalLosses >= 11) {
-    console.log(
-      `[ECL] ${loser.Identification} was eliminated.`,
-    );
-    return;
-  }
 
   try {
     const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
@@ -552,7 +498,6 @@ async function handleLoss(
       `[ECL] Error in handleLoss for ${loser.Identification}:`,
       error,
     );
-    // Notify owner or log more details if needed
   }
 }
 
