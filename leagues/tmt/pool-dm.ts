@@ -7,7 +7,7 @@ import {
   makeSealedDeck,
   SealedDeckEntry,
 } from "../../sealeddeck.ts";
-import { addPoolChange, getPoolChanges, ROWNUM } from "../../standings.ts";
+import { addPoolChange, getPoolChanges, getPlayers, ROWNUM } from "../../standings.ts";
 import {
   decrementMutagenTokens,
   getPoolPendingRows,
@@ -369,7 +369,43 @@ export async function sendMatchPackMutateDM(
 }
 
 /**
+ * Rebuilds mutateSelection state from a select interaction by looking up
+ * the player's pending pools from the Pool Pending sheet.
+ * @param interaction - The string select menu interaction
+ * @returns The rebuilt state object, or undefined if player not found or no pending pools
+ */
+async function rebuildMutateSelectionFromInteraction(
+  interaction: djs.StringSelectMenuInteraction,
+): Promise<{ playerName: string; selectedPoolId: string; poolIds: string[] } | undefined> {
+  const selectedPoolId = interaction.values[0];
+  if (!selectedPoolId) return undefined;
+
+  const discordId = interaction.user.id;
+
+  // Look up the player by Discord ID
+  const players = await getPlayers();
+  const player = players.rows.find((p) => p["Discord ID"] === discordId);
+  if (!player) return undefined;
+
+  const playerName = player.Identification;
+
+  // Get all pending pools for this player
+  const pendingRows = await getPoolPendingRows(playerName);
+  // Include "starting pool" rows in ids
+  const poolIds = pendingRows.filter((r) => r.Type === "starting pool").map((r) => r.Value);
+
+  if (poolIds.length === 0) return undefined;
+
+  return {
+    playerName,
+    selectedPoolId,
+    poolIds,
+  };
+}
+
+/**
  * Handles the mutate select menu interaction (stores selection).
+ * If state is missing from the map, attempts to rebuild it from Pool Pending.
  */
 export async function handleMutateSelect(
   interaction: djs.StringSelectMenuInteraction,
@@ -380,8 +416,14 @@ export async function handleMutateSelect(
   if (!selectedPoolId) return true;
 
   const key = `${interaction.user.id}:${interaction.message.id}`;
-  const state = mutateSelection.get(key);
-  if (!state) return true;
+  let state = mutateSelection.get(key);
+
+  // Fallback: rebuild state from Pool Pending if not in memory
+  if (!state) {
+    state = await rebuildMutateSelectionFromInteraction(interaction);
+    if (!state) return true;
+    mutateSelection.set(key, state);
+  }
 
   state.selectedPoolId = selectedPoolId;
   mutateSelection.set(key, state);
