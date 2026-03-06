@@ -481,11 +481,18 @@ export async function handleMatchPackYes(
   if (!interaction.customId.startsWith(MATCH_PACK_YES_BTN)) return false;
 
   const [, poolId] = interaction.customId.split(":");
+  // deferUpdate is called by parent handler for match pack buttons
+
+  // Remove buttons immediately to prevent double-clicks
+  await interaction.editReply({
+    content: interaction.message.content,
+    components: [],
+  });
 
   const players = await getPlayers();
   const player = players.rows.find(p => p["Discord ID"] === interaction.user.id);
   if (!player) {
-    await interaction.reply({
+    await interaction.followUp({
       content: `Could not find ${interaction.user.tag} in the league spreadsheet.`,
       ephemeral: true
     });
@@ -497,7 +504,7 @@ export async function handleMatchPackYes(
   const pendingRows = await getPoolPendingRows(playerName);
   const row = pendingRows.find((r) => r.Value === poolId);
   if (!row) {
-    await interaction.reply({
+    await interaction.followUp({
       content:
         `Could not find that pack in Pool Pending for **${playerName}**.`,
       ephemeral: true,
@@ -509,7 +516,7 @@ export async function handleMatchPackYes(
     mutationChannelId,
   ) as djs.TextChannel;
   if (!channel?.isSendable()) {
-    await interaction.reply({
+    await interaction.followUp({
       content: "Mutation channel not available.",
       ephemeral: true,
     });
@@ -530,23 +537,8 @@ export async function handleMatchPackYes(
 
   await decrementMutagenTokens(playerName);
 
-  const disabledRow = new djs.ActionRowBuilder<djs.ButtonBuilder>()
-    .addComponents(
-      new djs.ButtonBuilder()
-        .setCustomId(MATCH_PACK_YES_BTN)
-        .setLabel("YES")
-        .setStyle(djs.ButtonStyle.Success)
-        .setDisabled(true),
-      new djs.ButtonBuilder()
-        .setCustomId(MATCH_PACK_NO_BTN)
-        .setLabel("NO")
-        .setStyle(djs.ButtonStyle.Secondary)
-        .setDisabled(true),
-    );
-  await interaction.update({ components: [disabledRow] });
   await interaction.followUp({
-    content: `You threw the pack into the Ooze!`,
-    ephemeral: true,
+    content: "You threw the pack into the Ooze!",
   });
 
   return true;
@@ -560,7 +552,13 @@ export async function handleMatchPackNo(
 ): Promise<boolean> {
   if (!interaction.customId.startsWith(MATCH_PACK_NO_BTN)) return false;
   const [, poolId] = interaction.customId.split(":");
-  await interaction.deferUpdate();
+  // deferUpdate is called by parent handler for match pack buttons
+
+  // Remove buttons immediately to prevent double-clicks
+  await interaction.editReply({
+    content: interaction.message.content,
+    components: [],
+  });
 
   const players = await getPlayers();
   const player = players.rows.find(p => p["Discord ID"] === interaction.user.id);
@@ -606,23 +604,8 @@ export async function handleMatchPackNo(
     false,
   );
 
-  const disabledRow = new djs.ActionRowBuilder<djs.ButtonBuilder>()
-    .addComponents(
-      new djs.ButtonBuilder()
-        .setCustomId(MATCH_PACK_YES_BTN)
-        .setLabel("YES")
-        .setStyle(djs.ButtonStyle.Success)
-        .setDisabled(true),
-      new djs.ButtonBuilder()
-        .setCustomId(MATCH_PACK_NO_BTN)
-        .setLabel("NO")
-        .setStyle(djs.ButtonStyle.Secondary)
-        .setDisabled(true),
-    );
-  await interaction.editReply({
-    content:
-      `${interaction.message.content}\n\n✅ Pack recorded without mutation.`,
-    components: [disabledRow],
+  await interaction.followUp({
+    content: "✅ Pack recorded without mutation.",
   });
 
   return true;
