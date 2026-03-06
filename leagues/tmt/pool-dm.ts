@@ -560,13 +560,14 @@ export async function handleMatchPackNo(
 ): Promise<boolean> {
   if (!interaction.customId.startsWith(MATCH_PACK_NO_BTN)) return false;
   const [, poolId] = interaction.customId.split(":");
+  await interaction.deferUpdate();
 
   const players = await getPlayers();
   const player = players.rows.find(p => p["Discord ID"] === interaction.user.id);
   if (!player) {
-    await interaction.reply({
+    await interaction.followUp({
       content: `Could not find ${interaction.user.tag} in the league spreadsheet.`,
-      ephemeral: true
+      ephemeral: true,
     });
     return true;
   }
@@ -576,7 +577,7 @@ export async function handleMatchPackNo(
   const pendingRows = await getPoolPendingRows(playerName);
   const row = pendingRows.find((r) => r.Value === poolId);
   if (!row) {
-    await interaction.reply({
+    await interaction.followUp({
       content:
         `Could not find that pack in Pool Pending for **${playerName}**.`,
       ephemeral: true,
@@ -618,7 +619,7 @@ export async function handleMatchPackNo(
         .setStyle(djs.ButtonStyle.Secondary)
         .setDisabled(true),
     );
-  await interaction.update({
+  await interaction.editReply({
     content:
       `${interaction.message.content}\n\n✅ Pack recorded without mutation.`,
     components: [disabledRow],
