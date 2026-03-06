@@ -98,12 +98,6 @@ const pendingMutations = new Map<
   }
 >();
 
-/** Pending match pack choices: userId:messageId -> { playerName, poolId } */
-const pendingMatchPackChoices = new Map<
-  string,
-  { playerName: string; poolId: string }
->();
-
 const MUTATE_SELECT_CUSTOM_ID = "tmt-mutate-select";
 const MUTATE_BTN_CUSTOM_ID = "tmt-mutate-btn";
 const MATCH_PACK_YES_BTN = "tmt-matchpack-yes";
@@ -341,11 +335,11 @@ export async function sendMatchPackMutateDM(
   }
 
   const yesBtn = new djs.ButtonBuilder()
-    .setCustomId(MATCH_PACK_YES_BTN)
+    .setCustomId(MATCH_PACK_YES_BTN + ":" + pack.poolId)
     .setLabel("YES")
     .setStyle(djs.ButtonStyle.Success);
   const noBtn = new djs.ButtonBuilder()
-    .setCustomId(MATCH_PACK_NO_BTN)
+    .setCustomId(MATCH_PACK_NO_BTN + ":" + pack.poolId)
     .setLabel("NO")
     .setStyle(djs.ButtonStyle.Secondary);
   const row = new djs.ActionRowBuilder<djs.ButtonBuilder>().addComponents(
@@ -359,8 +353,7 @@ export async function sendMatchPackMutateDM(
     components: [row],
   });
 
-  const key = `${discordId}:${msg.id}`;
-  pendingMatchPackChoices.set(key, { playerName, poolId: pack.poolId });
+  console.log(`[pool-dm] Sent ${user.username} ${user.tag} ${msg.url}`)
 }
 
 /**
@@ -485,13 +478,22 @@ export async function handleMatchPackYes(
   interaction: djs.ButtonInteraction,
   mutationChannelId: string,
 ): Promise<boolean> {
-  if (interaction.customId !== MATCH_PACK_YES_BTN) return false;
+  if (!interaction.customId.startsWith(MATCH_PACK_YES_BTN)) return false;
 
-  const key = `${interaction.user.id}:${interaction.message.id}`;
-  const state = pendingMatchPackChoices.get(key);
-  if (!state) return false;
+  const [, poolId] = interaction.customId.split(":");
 
-  const { playerName, poolId } = state;
+  const players = await getPlayers();
+  const player = players.rows.find(p => p["Discord ID"] === interaction.user.id);
+  if (!player) {
+    await interaction.reply({
+      content: `Could not find ${interaction.user.tag} in the league spreadsheet.`,
+      ephemeral: true
+    });
+    return true;
+  }
+
+  const playerName = player.Identification;
+
   const pendingRows = await getPoolPendingRows(playerName);
   const row = pendingRows.find((r) => r.Value === poolId);
   if (!row) {
@@ -500,7 +502,6 @@ export async function handleMatchPackYes(
         `Could not find that pack in Pool Pending for **${playerName}**.`,
       ephemeral: true,
     });
-    pendingMatchPackChoices.delete(key);
     return true;
   }
 
@@ -526,7 +527,6 @@ export async function handleMatchPackYes(
     rowNum: row[ROWNUM],
     isMatchPack: true,
   });
-  pendingMatchPackChoices.delete(key);
 
   await decrementMutagenTokens(playerName);
 
@@ -558,14 +558,20 @@ export async function handleMatchPackYes(
 export async function handleMatchPackNo(
   interaction: djs.ButtonInteraction,
 ): Promise<boolean> {
-  if (interaction.customId !== MATCH_PACK_NO_BTN) return false;
+  if (!interaction.customId.startsWith(MATCH_PACK_NO_BTN)) return false;
+  const [, poolId] = interaction.customId.split(":");
 
-  const key = `${interaction.user.id}:${interaction.message.id}`;
-  const state = pendingMatchPackChoices.get(key);
-  if (!state) return false;
+  const players = await getPlayers();
+  const player = players.rows.find(p => p["Discord ID"] === interaction.user.id);
+  if (!player) {
+    await interaction.reply({
+      content: `Could not find ${interaction.user.tag} in the league spreadsheet.`,
+      ephemeral: true
+    });
+    return true;
+  }
 
-  const { playerName, poolId } = state;
-  pendingMatchPackChoices.delete(key);
+  const playerName = player.Identification;
 
   const pendingRows = await getPoolPendingRows(playerName);
   const row = pendingRows.find((r) => r.Value === poolId);
