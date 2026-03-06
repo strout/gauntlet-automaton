@@ -26,6 +26,7 @@ import {
   sendPackDMs,
 } from "./pool-dm.ts";
 import {
+  getPoolPendingRows,
   getUnaddressedPoolPendingRows,
   markPoolPendingDMedForPacks,
 } from "./standings-tmt.ts";
@@ -943,27 +944,33 @@ async function checkUnaddressedPoolPending(client: Client<true>) {
           );
         }
       } else if (type === "add pack") {
-        for (const r of group) {
-          try {
-            const pool = await fetchSealedDeck(r.Value);
-            const packEntries: SealedDeckEntry[] = [
-              ...pool.sideboard,
-              ...(pool.deck ?? []),
-              ...(pool.hidden ?? []),
-            ];
-            await sendMatchPackMutateDM(client, discordId, playerName, {
-              poolId: r.Value,
-              packEntries,
-            });
-            console.log(
-              `[TMT] Unaddressed: sent match pack DM to ${playerName} for ${r.Value}`,
-            );
-          } catch (e) {
-            console.error(
-              `[TMT] Unaddressed: failed to DM ${playerName} pack ${r.Value}:`,
-              e,
-            );
-          }
+        // Only one match pack choice at a time - skip if they already have one pending
+        const allPending = await getPoolPendingRows(playerName);
+        const hasPendingChoice = allPending.some(
+          (p) => p.Type === "add pack" && p.DMed,
+        );
+        if (hasPendingChoice) continue;
+
+        const r = group[0];
+        try {
+          const pool = await fetchSealedDeck(r.Value);
+          const packEntries: SealedDeckEntry[] = [
+            ...pool.sideboard,
+            ...(pool.deck ?? []),
+            ...(pool.hidden ?? []),
+          ];
+          await sendMatchPackMutateDM(client, discordId, playerName, {
+            poolId: r.Value,
+            packEntries,
+          });
+          console.log(
+            `[TMT] Unaddressed: sent match pack DM to ${playerName} for ${r.Value}`,
+          );
+        } catch (e) {
+          console.error(
+            `[TMT] Unaddressed: failed to DM ${playerName} pack ${r.Value}:`,
+            e,
+          );
         }
       }
     } catch (e) {
@@ -1000,6 +1007,13 @@ async function checkForMatches(client: Client<true>) {
     if (!discordId) {
       console.error(`[TMT] No Discord ID for "${playerName}"`);
       continue;
+    }
+
+    // Only one match pack choice at a time per player
+    const pendingRows = await getPoolPendingRows(playerName);
+    const hasPendingMatchPack = pendingRows.some((r) => r.Type === "add pack");
+    if (hasPendingMatchPack) {
+      continue; // Wait until they've responded to current pack
     }
 
     try {
@@ -1057,6 +1071,10 @@ const mutateButtonHandler: Handler<Interaction> = async (
   if (!interaction.isButton()) return;
   const mutationChannelId = CONFIG.TMT?.MUTATION_CHANNEL_ID;
   if (!mutationChannelId) return;
+  // Defer immediately for match pack buttons so Discord gets a response within 3s
+  if (interaction.customId.startsWith("tmt-matchpack-")) {
+    await interaction.deferUpdate();
+  }
   const handled = await handleMutateButton(interaction, mutationChannelId) ||
     await handleMatchPackYes(interaction, mutationChannelId) ||
     await handleMatchPackNo(interaction);
