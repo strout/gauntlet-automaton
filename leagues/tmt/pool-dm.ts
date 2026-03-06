@@ -82,7 +82,7 @@ export interface PackInfo {
 /** Selection state for mutate dropdown: userId:messageId -> { playerName, selectedPoolId, poolIds } */
 const mutateSelection = new Map<
   string,
-  { playerName: string; selectedPoolId: string; poolIds: string[] }
+  { selectedPoolId: string }
 >();
 
 /** Pending mutations: mutationChannelMessageId (our message) -> { userId, playerName, originalPoolId, dmChannelId, poolIds, isMatchPack } */
@@ -93,7 +93,6 @@ const pendingMutations = new Map<
     playerName: string;
     originalPoolId: string;
     dmChannelId: string;
-    poolIds: string[];
     rowNum: number;
     isMatchPack?: boolean;
   }
@@ -239,9 +238,7 @@ export async function sendPackDMs(
 
   const key = `${discordId}:${dropdownMsg.id}`;
   mutateSelection.set(key, {
-    playerName,
-    selectedPoolId: packs[0]?.poolId ?? "",
-    poolIds: packs.map((p) => p.poolId),
+    selectedPoolId: packs[0]?.poolId ?? ""
   });
 
   await markPoolPendingDMedForPacks(playerName, packs.map((p) => p.poolId));
@@ -292,9 +289,7 @@ export async function sendPackDropdownOnly(
   const poolIds = poolIdToPackNumber.map((p) => p.poolId);
   const key = `${discordId}:${dropdownMsg.id}`;
   mutateSelection.set(key, {
-    playerName,
     selectedPoolId: poolIds[0] ?? "",
-    poolIds,
   });
 
   await markPoolPendingDMedForPacks(playerName, poolIds);
@@ -369,43 +364,7 @@ export async function sendMatchPackMutateDM(
 }
 
 /**
- * Rebuilds mutateSelection state from a select interaction by looking up
- * the player's pending pools from the Pool Pending sheet.
- * @param interaction - The string select menu interaction
- * @returns The rebuilt state object, or undefined if player not found or no pending pools
- */
-async function rebuildMutateSelectionFromInteraction(
-  interaction: djs.StringSelectMenuInteraction,
-): Promise<{ playerName: string; selectedPoolId: string; poolIds: string[] } | undefined> {
-  const selectedPoolId = interaction.values[0];
-  if (!selectedPoolId) return undefined;
-
-  const discordId = interaction.user.id;
-
-  // Look up the player by Discord ID
-  const players = await getPlayers();
-  const player = players.rows.find((p) => p["Discord ID"] === discordId);
-  if (!player) return undefined;
-
-  const playerName = player.Identification;
-
-  // Get all pending pools for this player
-  const pendingRows = await getPoolPendingRows(playerName);
-  // Include "starting pool" rows in ids
-  const poolIds = pendingRows.filter((r) => r.Type === "starting pool").map((r) => r.Value);
-
-  if (poolIds.length === 0) return undefined;
-
-  return {
-    playerName,
-    selectedPoolId,
-    poolIds,
-  };
-}
-
-/**
  * Handles the mutate select menu interaction (stores selection).
- * If state is missing from the map, attempts to rebuild it from Pool Pending.
  */
 export async function handleMutateSelect(
   interaction: djs.StringSelectMenuInteraction,
@@ -416,17 +375,7 @@ export async function handleMutateSelect(
   if (!selectedPoolId) return true;
 
   const key = `${interaction.user.id}:${interaction.message.id}`;
-  let state = mutateSelection.get(key);
-
-  // Fallback: rebuild state from Pool Pending if not in memory
-  if (!state) {
-    state = await rebuildMutateSelectionFromInteraction(interaction);
-    if (!state) return true;
-    mutateSelection.set(key, state);
-  }
-
-  state.selectedPoolId = selectedPoolId;
-  mutateSelection.set(key, state);
+  mutateSelection.set(key, { selectedPoolId });
 
   await interaction.deferUpdate();
   return true;
@@ -451,7 +400,7 @@ export async function handleMutateButton(
     return true;
   }
 
-  const { playerName, selectedPoolId, poolIds } = state;
+  const { selectedPoolId } = state;
   if (!selectedPoolId) {
     await interaction.reply({
       content: "Please select a pack from the dropdown first.",
@@ -459,6 +408,18 @@ export async function handleMutateButton(
     });
     return true;
   }
+
+  const players = await getPlayers();
+  const player = players.rows.find(p => p["Discord ID"] === interaction.user.id);
+  if (!player) {
+    await interaction.reply({
+      content: `Could not find ${interaction.user.tag} in the league spreadsheet.`,
+      ephemeral: true
+    });
+    return true;
+  }
+
+  const playerName = player.Identification;
 
   // Find the Pool Pending row for this pack (to get rowNum for deletion later)
   const pendingRows = await getPoolPendingRows(playerName);
@@ -504,7 +465,6 @@ export async function handleMutateButton(
     playerName,
     originalPoolId: selectedPoolId,
     dmChannelId: interaction.channelId,
-    poolIds: poolIds.filter((id) => id !== selectedPoolId),
     rowNum: row[ROWNUM],
   });
 
@@ -563,7 +523,6 @@ export async function handleMatchPackYes(
     playerName,
     originalPoolId: poolId,
     dmChannelId: interaction.channelId,
-    poolIds: [],
     rowNum: row[ROWNUM],
     isMatchPack: true,
   });
