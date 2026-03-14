@@ -463,7 +463,7 @@ function buildNameToCardMap(): Map<string, ScryfallCard> {
     const fullName = card.name.toLowerCase();
     // Only store the first occurrence (preferred printing)
     // Prefer tmt or pza so they get correct rarity
-    if (!map.has(fullName) || ["tmt","pza"].includes(card.set.toLowerCase())) {
+    if (!map.has(fullName) || ["tmt", "pza"].includes(card.set.toLowerCase())) {
       map.set(fullName, card);
     }
 
@@ -887,9 +887,10 @@ const unaddressedLock = mutex();
 
 async function checkUnaddressedPoolPending(client: Client<true>) {
   using _ = await unaddressedLock();
-  const [rows, players] = await Promise.all([
+  const [rows, players, allMatchesData] = await Promise.all([
     getUnaddressedPoolPendingRows(),
     getPlayers(),
+    getAllMatches(),
   ]);
   if (rows.length === 0) return;
 
@@ -944,6 +945,17 @@ async function checkUnaddressedPoolPending(client: Client<true>) {
           );
         }
       } else if (type === "add pack") {
+        // Don't send match packs to eliminated players (6+ losses)
+        const lossCount = allMatchesData.rows.filter(
+          (x) => x["Loser Name"] === playerName,
+        ).length;
+        if (lossCount >= 6) {
+          console.log(
+            `[TMT] Unaddressed: skipping add pack for ${playerName} (6th loss, eliminated)`,
+          );
+          continue;
+        }
+
         // Only one match pack choice at a time - skip if they already have one pending
         const allPending = await getPoolPendingRows(playerName);
         const hasPendingChoice = allPending.some(
@@ -1014,6 +1026,29 @@ async function checkForMatches(client: Client<true>) {
     const hasPendingMatchPack = pendingRows.some((r) => r.Type === "add pack");
     if (hasPendingMatchPack) {
       continue; // Wait until they've responded to current pack
+    }
+
+    // Count losses up to and including this match (matches are sorted by timestamp)
+    const lossCount = allMatches
+      .slice(0, i + 1)
+      .filter((x) => x["Loser Name"] === playerName).length;
+    if (lossCount >= 6) {
+      // 6th loss = eliminated; don't send pack, but mark Bot Messaged so we don't retry
+      console.log(
+        `[TMT] Skipping match pack for ${playerName}: 6th loss (eliminated)`,
+      );
+      const type = m[MATCHTYPE] as "match" | "entropy";
+      const sheetName = allMatchesData.sheetName[type];
+      const colIndex = allMatchesData.headerColumns[type]["Bot Messaged"];
+      if (colIndex !== undefined) {
+        await sheetsWrite(
+          sheets,
+          CONFIG.LIVE_SHEET_ID,
+          `${sheetName}!R${m[ROWNUM]}C${colIndex + 1}`,
+          [[true]],
+        );
+      }
+      continue;
     }
 
     try {
@@ -1094,7 +1129,9 @@ export function setup(): Promise<{
       const readyClient = client as Client<true>;
 
       console.log("[TMT] Starting match pack polling loop...");
-      console.log("[TMT] Starting unaddressed Pool Pending check (every 60s)...");
+      console.log(
+        "[TMT] Starting unaddressed Pool Pending check (every 60s)...",
+      );
       checkUnaddressedPoolPending(readyClient).catch((e) =>
         console.error("[TMT] Error in unaddressed Pool Pending check:", e)
       );
