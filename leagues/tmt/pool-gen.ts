@@ -4,14 +4,16 @@ import { CONFIG } from "../../config.ts";
 import { readStringPool } from "../../fix-pool.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
 import { makeSealedDeck, SealedDeckEntry } from "../../sealeddeck.ts";
-import { addPoolChange, getPlayers, getPoolChanges } from "../../standings.ts";
+import { getPlayers } from "../../standings.ts";
+import { ROWNUM } from "../../standings.ts";
 import {
   appendToPoolPending,
+  getMutagenTokens,
+  getPoolPendingRows,
   markPoolPendingDMedForPacks,
 } from "./standings-tmt.ts";
 import {
-  computeFullPool,
-  postFinalMatchPackToPackGeneration,
+  recordMatchPackNoMutation,
   sendMatchPackMutateDM,
   sendPackDMs,
 } from "./pool-dm.ts";
@@ -352,6 +354,25 @@ export async function processMatchPack(
 
   const timestamp = new Date().toISOString();
   await appendToPoolPending([[timestamp, playerName, "add pack", packPoolId]]);
+
+  const tokens = await getMutagenTokens(playerName);
+  if (tokens <= 0) {
+    const pendingRows = await getPoolPendingRows(playerName);
+    const row = pendingRows.find((r) => r.Value === packPoolId);
+    if (row) {
+      await recordMatchPackNoMutation(
+        client,
+        playerName,
+        discordId,
+        packPoolId,
+        row[ROWNUM],
+      );
+      console.log(
+        `[match-pack] No mutagen tokens for ${playerName}, recorded pack as-is`,
+      );
+    }
+    return { ok: true };
+  }
 
   try {
     await sendMatchPackMutateDM(client, discordId, playerName, {

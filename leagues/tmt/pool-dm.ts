@@ -10,6 +10,7 @@ import {
 import { addPoolChange, getPoolChanges, getPlayers, ROWNUM } from "../../standings.ts";
 import {
   decrementMutagenTokens,
+  getMutagenTokens,
   getPoolPendingRows,
   markPoolPendingCompleted,
   markPoolPendingDMedForPacks,
@@ -512,6 +513,16 @@ export async function handleMatchPackYes(
     return true;
   }
 
+  const tokens = await getMutagenTokens(playerName);
+  if (tokens <= 0) {
+    await interaction.reply({
+      content:
+        `You don't have any mutagen tokens! Click NO to accept the pack as-is.`,
+      ephemeral: true,
+    });
+    return true;
+  }
+
   const channel = await interaction.client.channels.fetch(
     mutationChannelId,
   ) as djs.TextChannel;
@@ -542,6 +553,39 @@ export async function handleMatchPackYes(
   });
 
   return true;
+}
+
+/**
+ * Records a match reward pack (with or without mutation) to Pool Changes
+ * and announces it to pack-generation.
+ */
+export async function recordMatchPackNoMutation(
+  client: djs.Client,
+  playerName: string,
+  discordId: string,
+  poolId: string,
+  rowNum: number,
+): Promise<void> {
+  const existingChanges = (await getPoolChanges()).rows.filter(
+    (r) => r.Name === playerName,
+  );
+  const lastFullPool = existingChanges.at(-1)?.["Full Pool"];
+  const fullPoolId = await computeFullPool(lastFullPool, poolId);
+
+  await addPoolChange(
+    playerName,
+    "add pack",
+    poolId,
+    "Match reward (no mutation)",
+    fullPoolId,
+  );
+  await markPoolPendingCompleted(rowNum);
+  await postFinalMatchPackToPackGeneration(
+    client,
+    discordId,
+    poolId,
+    false,
+  );
 }
 
 /**
@@ -583,25 +627,12 @@ export async function handleMatchPackNo(
     return true;
   }
 
-  const existingChanges = (await getPoolChanges()).rows.filter(
-    (r) => r.Name === playerName,
-  );
-  const lastFullPool = existingChanges.at(-1)?.["Full Pool"];
-  const fullPoolId = await computeFullPool(lastFullPool, poolId);
-
-  await addPoolChange(
-    playerName,
-    "add pack",
-    poolId,
-    "Match reward (no mutation)",
-    fullPoolId,
-  );
-  await markPoolPendingCompleted(row[ROWNUM]);
-  await postFinalMatchPackToPackGeneration(
+  await recordMatchPackNoMutation(
     interaction.client,
+    playerName,
     interaction.user.id,
     poolId,
-    false,
+    row[ROWNUM],
   );
 
   await interaction.followUp({
