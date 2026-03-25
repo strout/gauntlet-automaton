@@ -642,10 +642,13 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
     const allMutatedCards: ScryfallCard[] = [];
 
     for (const change of playerChanges) {
+      console.log("[mutatepool] Fetching pool:", change.Value);
       const pool = await fetchSealedDeck(change.Value);
+      console.log("[mutatepool] Pool sideboard count:", pool.sideboard.length);
       const { poolId: mutatedPoolId, mutatedCards } = await mutateWholePool(
         pool,
       );
+      console.log("[mutatepool] Mutated poolId:", mutatedPoolId, "cards:", mutatedCards.length);
       mutatedPoolIds.push(mutatedPoolId);
       allMutatedCards.push(...mutatedCards);
     }
@@ -690,7 +693,9 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
       return;
     }
     const text = await resp.text();
+    console.log("[mutatepool] Raw pack text:", text.substring(0, 500));
     const packLines = splitIntoPacks(text);
+    console.log("[mutatepool] Split into packs:", packLines.length);
 
     if (packLines.length < 2) {
       await message.reply(
@@ -705,7 +710,9 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
 
     for (const packLine of packLines) {
       const packText = packLine.join("\n");
+      console.log("[mutatepool] Pack text:", packText);
       const packData = readStringPool(packText);
+      console.log("[mutatepool] Pack sideboard:", packData.sideboard);
       const packEntries: SealedDeckEntry[] = (packData.sideboard ?? []).map((
         e,
       ) => ({
@@ -731,6 +738,13 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
       ...allMutatedCards.map((c) => ({ name: c.name, count: 1 })),
       ...newPackCards.map((c) => ({ name: c.name, count: 1 })),
     ];
+
+    console.log("[mutatepool] Debug - playerChanges:", playerChanges.length);
+    console.log("[mutatepool] Debug - mutatedPoolIds:", mutatedPoolIds);
+    console.log("[mutatepool] Debug - allMutatedCards:", allMutatedCards.length);
+    console.log("[mutatepool] Debug - newPackPoolIds:", newPackPoolIds);
+    console.log("[mutatepool] Debug - newPackCards:", newPackCards.length);
+    console.log("[mutatepool] Debug - combinedCards:", combinedCards.length);
 
     const fullPoolId = await makeSealedDeck({ sideboard: combinedCards });
 
