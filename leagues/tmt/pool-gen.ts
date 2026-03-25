@@ -793,20 +793,20 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
     const allCardsMap = await fetchCardsByIdentifier(allIdentifiers);
 
     for (const { name } of mutatedCardIdentifiers) {
-      const key = name.toLowerCase();
+      const key = name.split(" //")[0].toLowerCase();
       const card = allCardsMap.get(key);
       if (card) allMutatedCards.push(card);
     }
 
     for (const { name } of newPackCardIdentifiers) {
-      const key = name.toLowerCase();
+      const key = name.split(" //")[0].toLowerCase();
       const card = allCardsMap.get(key);
       if (card) newPackCards.push(card);
     }
 
     const combinedCards = [
-      ...allMutatedCards.map((c) => ({ name: c.name, count: 1 })),
-      ...newPackCards.map((c) => ({ name: c.name, count: 1 })),
+      ...mutatedCardIdentifiers.map((c) => ({ name: c.name, set: c.set, count: 1 })),
+      ...newPackCardIdentifiers.map((c) => ({ name: c.name, set: c.set, count: 1 })),
     ];
 
     const fullPoolId = await makeSealedDeck({ sideboard: combinedCards });
