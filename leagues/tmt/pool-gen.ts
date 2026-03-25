@@ -22,7 +22,7 @@ import {
   sendMatchPackMutateDM,
   sendPackDMs,
 } from "./pool-dm.ts";
-import { buildNameToCardMap } from "./tmt.ts";
+import { buildNameToCardMap, getAllArenaCards } from "./tmt.ts";
 import { ScryfallCard, tileRareImages } from "../../scryfall.ts";
 
 const LINES_PER_PACK = 14;
@@ -658,6 +658,7 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
     const mutatedPoolIds: string[] = [];
     const originalPoolIds: string[] = [];
     const allMutatedCards: ScryfallCard[] = [];
+    await getAllArenaCards();
     const nameToCard = buildNameToCardMap();
 
     for (const change of playerChanges) {
