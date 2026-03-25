@@ -651,35 +651,38 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
     }
 
     const guild = await message.client.guilds.fetch(CONFIG.GUILD_ID);
-    const botBunkerChannel = await guild.channels.fetch(
-      CONFIG.BOT_BUNKER_CHANNEL_ID,
+    const startingPoolChannel = await guild.channels.fetch(
+      CONFIG.STARTING_POOL_CHANNEL_ID,
     ) as djs.TextChannel;
 
-    if (!botBunkerChannel?.isSendable()) {
-      await message.reply("❌ Bot bunker channel not available.");
+    if (!startingPoolChannel?.isSendable()) {
+      await message.reply("❌ Starting pool channel not available.");
       return;
     }
 
-    const sentMessage = await botBunkerChannel.send(`!TMT 2`);
+    const sentMessage = await startingPoolChannel.send(`!set TMT 2`);
     const btResult = await waitForBoosterTutor(Promise.resolve(sentMessage));
 
-    if ("error" in btResult) {
+    if (!btResult || "error" in btResult) {
       await message.reply(
-        `❌ Booster Tutor error: ${btResult.error}`,
+        btResult && "error" in btResult
+          ? `❌ Booster Tutor error: ${btResult.error}`
+          : "❌ Timed out waiting for Booster Tutor response.",
       );
       return;
     }
 
-    const newPacks = btResult.success;
-    const packText = newPacks.message.attachments.first()?.url;
-    if (!packText) {
+    const txtAttachment = btResult.success.message.attachments.find((
+      a: djs.Attachment,
+    ) => a.name?.endsWith(".txt") || a.contentType?.includes("text"));
+    if (!txtAttachment) {
       await message.reply(
-        "❌ Could not get pack text from Booster Tutor response.",
+        "❌ Booster Tutor responded but no txt file found.",
       );
       return;
     }
 
-    const resp = await fetch(packText);
+    const resp = await fetch(txtAttachment.url);
     if (!resp.ok) {
       await message.reply(
         `❌ Could not download pack file: HTTP ${resp.status}`,
