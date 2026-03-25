@@ -662,9 +662,11 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
     const originalPoolIds: string[] = [];
     const mutatedCardIdentifiers: { name: string; set?: string }[] = [];
     const allMutatedCards: ScryfallCard[] = [];
+    const newPackCards: ScryfallCard[] = [];
 
-    for (const change of playerChanges) {
-      const originalPoolId = change.Value;
+    const mutateOnePack = async (
+      originalPoolId: string,
+    ): Promise<{ mutatedPoolId: string; cardIdentifiers: { name: string; set?: string }[] }> => {
       const link = `https://sealeddeck.tech/${originalPoolId}`;
       const sentMessage = await mutationChannel.send(link);
 
@@ -683,26 +685,23 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
       });
 
       if (!result) {
-        await message.reply(
-          `❌ Timed out waiting for ooze to mutate pack ${originalPoolId}.`,
-        );
-        return;
+        throw new Error(`Timed out waiting for ooze to mutate pack ${originalPoolId}`);
       }
 
-      const mutatedPoolId = result;
-      mutatedPoolIds.push(mutatedPoolId);
-      originalPoolIds.push(originalPoolId);
-
-      const mutatedPool = await fetchSealedDeck(mutatedPoolId);
+      const mutatedPool = await fetchSealedDeck(result);
+      const cardIdentifiers: { name: string; set?: string }[] = [];
       for (const entry of mutatedPool.sideboard) {
         for (let i = 0; i < entry.count; i++) {
-          mutatedCardIdentifiers.push({
-            name: entry.name,
-            set: entry.set,
-          });
+          cardIdentifiers.push({ name: entry.name, set: entry.set });
         }
       }
-    }
+
+      return { mutatedPoolId: result, cardIdentifiers };
+    };
+
+    const mutationPromises = playerChanges.map((change) =>
+      mutateOnePack(change.Value)
+    );
 
     const botBunkerChannel = await guild.channels.fetch(
       CONFIG.BOT_BUNKER_CHANNEL_ID,
@@ -713,72 +712,79 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
       return;
     }
 
-    const sentMessage = await botBunkerChannel.send(`!TMT 2`);
-    const btMessage = await waitForBoosterTutorFile(
-      sentMessage,
-      message.client,
-      60_000,
-    );
-
-    if (!btMessage) {
-      await message.reply("❌ Timed out waiting for Booster Tutor response.");
-      return;
-    }
-
-    const txtAttachment = btMessage.attachments.find((a) =>
-      a.name?.endsWith(".txt") || a.contentType?.includes("text")
-    );
-    if (!txtAttachment) {
-      await message.reply(
-        "❌ Booster Tutor responded but no txt file found.",
+    const fetchNewPacks = async (): Promise<{
+      packPoolIds: string[];
+      cardIdentifiers: { name: string; set?: string }[];
+    }> => {
+      const sentMessage = await botBunkerChannel.send(`!TMT 2`);
+      const btMessage = await waitForBoosterTutorFile(
+        sentMessage,
+        message.client,
+        60_000,
       );
-      return;
-    }
 
-    const resp = await fetch(txtAttachment.url);
-    if (!resp.ok) {
-      await message.reply(
-        `❌ Could not download pack file: HTTP ${resp.status}`,
+      if (!btMessage) {
+        throw new Error("Timed out waiting for Booster Tutor response.");
+      }
+
+      const txtAttachment = btMessage.attachments.find((a) =>
+        a.name?.endsWith(".txt") || a.contentType?.includes("text")
       );
-      return;
-    }
-    const text = await resp.text();
-    const packLines = splitIntoPacks(text);
+      if (!txtAttachment) {
+        throw new Error("Booster Tutor responded but no txt file found.");
+      }
 
-    if (packLines.length < 2) {
-      await message.reply(
-        `❌ Expected 2 packs from Booster Tutor but got ${packLines.length}.`,
-      );
-      return;
-    }
+      const resp = await fetch(txtAttachment.url);
+      if (!resp.ok) {
+        throw new Error(`Could not download pack file: HTTP ${resp.status}`);
+      }
+      const text = await resp.text();
+      const packLines = splitIntoPacks(text);
 
-    const newPackPoolIds: string[] = [];
-    const newPackCardIdentifiers: { name: string; set?: string }[] = [];
-    const newPackCards: ScryfallCard[] = [];
+      if (packLines.length < 2) {
+        throw new Error(`Expected 2 packs from Booster Tutor but got ${packLines.length}.`);
+      }
 
-    for (const packLine of packLines) {
-      const packText = packLine.join("\n");
-      const packData = readStringPool(packText);
-      const packEntries: SealedDeckEntry[] = (packData.sideboard ?? []).map((
-        e,
-      ) => ({
-        name: e.name,
-        count: e.count,
-        set: e.set,
-      }));
+      const packPoolIds: string[] = [];
+      const cardIdentifiers: { name: string; set?: string }[] = [];
 
-      const packPoolId = await makeSealedDeck({ sideboard: packEntries });
-      newPackPoolIds.push(packPoolId);
+      for (const packLine of packLines) {
+        const packText = packLine.join("\n");
+        const packData = readStringPool(packText);
+        const packEntries: SealedDeckEntry[] = (packData.sideboard ?? []).map((
+          e,
+        ) => ({
+          name: e.name,
+          count: e.count,
+          set: e.set,
+        }));
 
-      for (const entry of packEntries) {
-        for (let i = 0; i < entry.count; i++) {
-          newPackCardIdentifiers.push({
-            name: entry.name,
-            set: entry.set,
-          });
+        const packPoolId = await makeSealedDeck({ sideboard: packEntries });
+        packPoolIds.push(packPoolId);
+
+        for (const entry of packEntries) {
+          for (let i = 0; i < entry.count; i++) {
+            cardIdentifiers.push({ name: entry.name, set: entry.set });
+          }
         }
       }
+
+      return { packPoolIds, cardIdentifiers };
+    };
+
+    const [mutationResults, newPacksResult] = await Promise.all([
+      Promise.all(mutationPromises),
+      fetchNewPacks(),
+    ]);
+
+    for (const r of mutationResults) {
+      mutatedPoolIds.push(r.mutatedPoolId);
+      originalPoolIds.push(r.mutatedPoolId);
+      mutatedCardIdentifiers.push(...r.cardIdentifiers);
     }
+
+    const newPackPoolIds = newPacksResult.packPoolIds;
+    const newPackCardIdentifiers = newPacksResult.cardIdentifiers;
 
     const allIdentifiers = [
       ...mutatedCardIdentifiers,
@@ -870,7 +876,7 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
     }
 
     const replyOptions: djs.BaseMessageOptions = {
-      content: `✅ Season 2 pool for **${playerName}**: ${fullPoolUrl}`,
+      content: `✅ Season 2 pool for <@${discordId}>: ${fullPoolUrl}`,
       embeds: [embed],
     };
     if (attachment) {
