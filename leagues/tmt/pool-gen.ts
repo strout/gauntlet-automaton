@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import { Handler } from "../../dispatch.ts";
 import { CONFIG } from "../../config.ts";
 import { readStringPool } from "../../fix-pool.ts";
-import { waitForBoosterTutor } from "../../pending.ts";
+import { waitForBoosterTutor, withPending } from "../../pending.ts";
 import {
   fetchSealedDeck,
   makeSealedDeck,
@@ -22,7 +22,7 @@ import {
   sendMatchPackMutateDM,
   sendPackDMs,
 } from "./pool-dm.ts";
-import { buildNameToCardMap, mutateWholePool } from "./tmt.ts";
+import { buildNameToCardMap } from "./tmt.ts";
 import { ScryfallCard, tileRareImages } from "../../scryfall.ts";
 
 const LINES_PER_PACK = 14;
@@ -638,22 +638,67 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
       return;
     }
 
-    const mutatedPoolIds: string[] = [];
-    const allMutatedCards: ScryfallCard[] = [];
-
-    for (const change of playerChanges) {
-      console.log("[mutatepool] Fetching pool:", change.Value);
-      const pool = await fetchSealedDeck(change.Value);
-      console.log("[mutatepool] Pool sideboard count:", pool.sideboard.length);
-      const { poolId: mutatedPoolId, mutatedCards } = await mutateWholePool(
-        pool,
-      );
-      console.log("[mutatepool] Mutated poolId:", mutatedPoolId, "cards:", mutatedCards.length);
-      mutatedPoolIds.push(mutatedPoolId);
-      allMutatedCards.push(...mutatedCards);
+    const config = CONFIG as { TMT?: { MUTATION_CHANNEL_ID: string } };
+    const mutationChannelId = config.TMT?.MUTATION_CHANNEL_ID;
+    if (!mutationChannelId) {
+      await message.reply("❌ Mutation channel not configured.");
+      return;
     }
 
     const guild = await message.client.guilds.fetch(CONFIG.GUILD_ID);
+    const mutationChannel = await guild.channels.fetch(
+      mutationChannelId,
+    ) as djs.TextChannel;
+
+    if (!mutationChannel?.isSendable()) {
+      await message.reply("❌ Mutation channel not available.");
+      return;
+    }
+
+    const mutatedPoolIds: string[] = [];
+    const originalPoolIds: string[] = [];
+    const allMutatedCards: ScryfallCard[] = [];
+    const nameToCard = buildNameToCardMap();
+
+    for (const change of playerChanges) {
+      const originalPoolId = change.Value;
+      const link = `https://sealeddeck.tech/${originalPoolId}`;
+      const sentMessage = await mutationChannel.send(link);
+
+      const result = await withPending<string>((responseMessage, handle) => {
+        if (responseMessage.reference?.messageId !== sentMessage.id) {
+          return Promise.resolve(undefined);
+        }
+        const linkMatch = responseMessage.content?.match(
+          /https:\/\/sealeddeck\.tech\/([a-zA-Z0-9_-]+)/,
+        );
+        if (linkMatch) {
+          handle.claim();
+          return Promise.resolve({ done: linkMatch[1] });
+        }
+        return Promise.resolve(undefined);
+      });
+
+      if (!result) {
+        await message.reply(
+          `❌ Timed out waiting for ooze to mutate pack ${originalPoolId}.`,
+        );
+        return;
+      }
+
+      const mutatedPoolId = result;
+      mutatedPoolIds.push(mutatedPoolId);
+      originalPoolIds.push(originalPoolId);
+
+      const mutatedPool = await fetchSealedDeck(mutatedPoolId);
+      for (const entry of mutatedPool.sideboard) {
+        for (let i = 0; i < entry.count; i++) {
+          const card = nameToCard.get(entry.name.toLowerCase());
+          if (card) allMutatedCards.push(card);
+        }
+      }
+    }
+
     const botBunkerChannel = await guild.channels.fetch(
       CONFIG.BOT_BUNKER_CHANNEL_ID,
     ) as djs.TextChannel;
@@ -693,9 +738,7 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
       return;
     }
     const text = await resp.text();
-    console.log("[mutatepool] Raw pack text:", text.substring(0, 500));
     const packLines = splitIntoPacks(text);
-    console.log("[mutatepool] Split into packs:", packLines.length);
 
     if (packLines.length < 2) {
       await message.reply(
@@ -706,13 +749,10 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
 
     const newPackPoolIds: string[] = [];
     const newPackCards: ScryfallCard[] = [];
-    const nameToCard = buildNameToCardMap();
 
     for (const packLine of packLines) {
       const packText = packLine.join("\n");
-      console.log("[mutatepool] Pack text:", packText);
       const packData = readStringPool(packText);
-      console.log("[mutatepool] Pack sideboard:", packData.sideboard);
       const packEntries: SealedDeckEntry[] = (packData.sideboard ?? []).map((
         e,
       ) => ({
@@ -738,13 +778,6 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
       ...allMutatedCards.map((c) => ({ name: c.name, count: 1 })),
       ...newPackCards.map((c) => ({ name: c.name, count: 1 })),
     ];
-
-    console.log("[mutatepool] Debug - playerChanges:", playerChanges.length);
-    console.log("[mutatepool] Debug - mutatedPoolIds:", mutatedPoolIds);
-    console.log("[mutatepool] Debug - allMutatedCards:", allMutatedCards.length);
-    console.log("[mutatepool] Debug - newPackPoolIds:", newPackPoolIds);
-    console.log("[mutatepool] Debug - newPackCards:", newPackCards.length);
-    console.log("[mutatepool] Debug - combinedCards:", combinedCards.length);
 
     const fullPoolId = await makeSealedDeck({ sideboard: combinedCards });
 
