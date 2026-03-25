@@ -22,8 +22,11 @@ import {
   sendMatchPackMutateDM,
   sendPackDMs,
 } from "./pool-dm.ts";
-import { buildNameToCardMap, getAllArenaCards } from "./tmt.ts";
-import { ScryfallCard, tileRareImages } from "../../scryfall.ts";
+import {
+  fetchCardsByIdentifier,
+  ScryfallCard,
+  tileRareImages,
+} from "../../scryfall.ts";
 
 const LINES_PER_PACK = 14;
 const PACKS_PER_POOL = 6;
@@ -657,9 +660,8 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
 
     const mutatedPoolIds: string[] = [];
     const originalPoolIds: string[] = [];
+    const mutatedCardIdentifiers: { name: string; set?: string }[] = [];
     const allMutatedCards: ScryfallCard[] = [];
-    await getAllArenaCards();
-    const nameToCard = buildNameToCardMap();
 
     for (const change of playerChanges) {
       const originalPoolId = change.Value;
@@ -694,8 +696,10 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
       const mutatedPool = await fetchSealedDeck(mutatedPoolId);
       for (const entry of mutatedPool.sideboard) {
         for (let i = 0; i < entry.count; i++) {
-          const card = nameToCard.get(entry.name.toLowerCase());
-          if (card) allMutatedCards.push(card);
+          mutatedCardIdentifiers.push({
+            name: entry.name,
+            set: entry.set,
+          });
         }
       }
     }
@@ -749,6 +753,7 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
     }
 
     const newPackPoolIds: string[] = [];
+    const newPackCardIdentifiers: { name: string; set?: string }[] = [];
     const newPackCards: ScryfallCard[] = [];
 
     for (const packLine of packLines) {
@@ -767,12 +772,30 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
 
       for (const entry of packEntries) {
         for (let i = 0; i < entry.count; i++) {
-          const card = nameToCard.get(entry.name.toLowerCase());
-          if (card) {
-            newPackCards.push(card);
-          }
+          newPackCardIdentifiers.push({
+            name: entry.name,
+            set: entry.set,
+          });
         }
       }
+    }
+
+    const allIdentifiers = [
+      ...mutatedCardIdentifiers,
+      ...newPackCardIdentifiers,
+    ];
+    const allCardsMap = await fetchCardsByIdentifier(allIdentifiers);
+
+    for (const { name } of mutatedCardIdentifiers) {
+      const key = name.toLowerCase();
+      const card = allCardsMap.get(key);
+      if (card) allMutatedCards.push(card);
+    }
+
+    for (const { name } of newPackCardIdentifiers) {
+      const key = name.toLowerCase();
+      const card = allCardsMap.get(key);
+      if (card) newPackCards.push(card);
     }
 
     const combinedCards = [

@@ -262,6 +262,106 @@ export async function searchCards(
 }
 
 /**
+ * Card identifier for /cards/collection endpoint
+ */
+export interface CardIdentifier {
+  readonly name: string;
+  readonly set?: string;
+}
+
+/**
+ * Response from /cards/collection endpoint
+ */
+interface ScryfallCollectionResponse {
+  readonly object: "list";
+  readonly not_found?: readonly CardIdentifier[];
+  readonly data: readonly ScryfallCard[];
+}
+
+/**
+ * Fetches cards from Scryfall by name/set identifiers using the /cards/collection endpoint.
+ * Batches requests in groups of 75 (Scryfall's limit) and adds delays between batches.
+ *
+ * @param identifiers - Array of card identifiers (name required, set optional)
+ * @returns Map of card name (lower normalized) to ScryfallCard
+ */
+export async function fetchCardsByIdentifier(
+  identifiers: readonly CardIdentifier[],
+): Promise<ReadonlyMap<string, ScryfallCard>> {
+  const result = new Map<string, ScryfallCard>();
+  const normalizedIdentifiers = identifiers.map((id) => ({
+    name: id.name.split(" //")[0].toLowerCase(),
+    set: id.set?.toLowerCase(),
+  }));
+
+  const BATCH_SIZE = 75;
+  const DELAY_MS = 1000;
+
+  for (let i = 0; i < normalizedIdentifiers.length; i += BATCH_SIZE) {
+    const batch = normalizedIdentifiers.slice(i, i + BATCH_SIZE);
+
+    await withRetry(
+      async () => {
+        const response = await fetch(
+          "https://api.scryfall.com/cards/collection",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identifiers: batch }),
+          },
+        );
+
+        if (!response.ok) {
+          if (response.status === 429) {
+            const retryAfter = response.headers.get("Retry-After");
+            const retryAfterSeconds = retryAfter
+              ? parseInt(retryAfter, 10)
+              : 0;
+            if (retryAfterSeconds > 0) {
+              throw new Error(
+                `Scryfall rate limited, retry after ${retryAfterSeconds}s`,
+              );
+            }
+          }
+          throw new Error(
+            `Scryfall collection error: ${response.status} ${response.statusText}`,
+          );
+        }
+
+        const body = (await response.json()) as ScryfallCollectionResponse;
+
+        for (const card of body.data) {
+          const key = card.name.toLowerCase();
+          if (!result.has(key)) {
+            result.set(key, card);
+          }
+        }
+
+        return body;
+      },
+      undefined,
+      undefined,
+      (error) => {
+        if (
+          error instanceof Error &&
+          error.message.includes("rate limited")
+        ) {
+          const match = error.message.match(/retry after (\d+)s/);
+          return match ? parseInt(match[1], 10) * 1000 : undefined;
+        }
+        return undefined;
+      },
+    );
+
+    if (i + BATCH_SIZE < normalizedIdentifiers.length) {
+      await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+    }
+  }
+
+  return result;
+}
+
+/**
  * Clears the entire Scryfall cache
  */
 export function clearScryfallCache(): void {
