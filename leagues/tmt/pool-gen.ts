@@ -651,30 +651,30 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
     }
 
     const guild = await message.client.guilds.fetch(CONFIG.GUILD_ID);
-    const startingPoolChannel = await guild.channels.fetch(
-      CONFIG.STARTING_POOL_CHANNEL_ID,
+    const botBunkerChannel = await guild.channels.fetch(
+      CONFIG.BOT_BUNKER_CHANNEL_ID,
     ) as djs.TextChannel;
 
-    if (!startingPoolChannel?.isSendable()) {
-      await message.reply("❌ Starting pool channel not available.");
+    if (!botBunkerChannel?.isSendable()) {
+      await message.reply("❌ Bot bunker channel not available.");
       return;
     }
 
-    const sentMessage = await startingPoolChannel.send(`!set TMT 2`);
-    const btResult = await waitForBoosterTutor(Promise.resolve(sentMessage));
+    const sentMessage = await botBunkerChannel.send(`!TMT 2`);
+    const btMessage = await waitForBoosterTutorFile(
+      sentMessage,
+      message.client,
+      60_000,
+    );
 
-    if (!btResult || "error" in btResult) {
-      await message.reply(
-        btResult && "error" in btResult
-          ? `❌ Booster Tutor error: ${btResult.error}`
-          : "❌ Timed out waiting for Booster Tutor response.",
-      );
+    if (!btMessage) {
+      await message.reply("❌ Timed out waiting for Booster Tutor response.");
       return;
     }
 
-    const txtAttachment = btResult.success.message.attachments.find((
-      a: djs.Attachment,
-    ) => a.name?.endsWith(".txt") || a.contentType?.includes("text"));
+    const txtAttachment = btMessage.attachments.find((a) =>
+      a.name?.endsWith(".txt") || a.contentType?.includes("text")
+    );
     if (!txtAttachment) {
       await message.reply(
         "❌ Booster Tutor responded but no txt file found.",
