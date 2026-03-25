@@ -106,19 +106,17 @@ function parseBool(val: unknown): boolean {
 }
 
 /**
- * Retrieves Pool Pending rows for a player (excludes Completed=TRUE rows).
+ * Retrieves all Pool Pending rows (excludes Completed=TRUE rows).
+ * Use this to fetch once and filter by player in memory to reduce API calls.
  * Columns: A=Timestamp, B=Name, C=Type, D=Value, F=DMed, G=Completed
  */
-export async function getPoolPendingRows(
-  playerName: string,
+export async function getAllPoolPendingRows(
   sheetId = CONFIG.LIVE_SHEET_ID,
 ) {
   const table = await readTable(`${POOL_PENDING_SHEET_NAME}!A:G`, 1, sheetId);
-  const normalized = playerName.trim();
   return table.rows
     .filter((r) => {
       const raw = r[ROW] as unknown[];
-      if (String(raw[1] ?? "").trim() !== normalized) return false;
       if (!String(raw[3] ?? "").trim()) return false;
       if (parseBool(raw[POOL_PENDING_COMPLETED_COL])) return false;
       return true;
@@ -135,6 +133,19 @@ export async function getPoolPendingRows(
         Completed: parseBool(raw[POOL_PENDING_COMPLETED_COL]),
       };
     });
+}
+
+/**
+ * Retrieves Pool Pending rows for a player (excludes Completed=TRUE rows).
+ * Columns: A=Timestamp, B=Name, C=Type, D=Value, F=DMed, G=Completed
+ */
+export async function getPoolPendingRows(
+  playerName: string,
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  const allRows = await getAllPoolPendingRows(sheetId);
+  const normalized = playerName.trim();
+  return allRows.filter((r) => r.Name === normalized);
 }
 
 /**

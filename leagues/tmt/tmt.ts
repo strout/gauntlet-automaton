@@ -27,7 +27,7 @@ import {
   sendPackDMs,
 } from "./pool-dm.ts";
 import {
-  getPoolPendingRows,
+  getAllPoolPendingRows,
   getUnaddressedPoolPendingRows,
   markPoolPendingDMedForPacks,
 } from "./standings-tmt.ts";
@@ -888,15 +888,17 @@ const unaddressedLock = mutex();
 
 async function checkUnaddressedPoolPending(client: Client<true>) {
   using _ = await unaddressedLock();
-  const [rows, players, allMatchesData] = await Promise.all([
-    getUnaddressedPoolPendingRows(),
-    getPlayers(),
-    getAllMatches(),
-  ]);
-  if (rows.length === 0) return;
+  const [unaddressedRows, allPendingRows, players, allMatchesData] =
+    await Promise.all([
+      getUnaddressedPoolPendingRows(),
+      getAllPoolPendingRows(),
+      getPlayers(),
+      getAllMatches(),
+    ]);
+  if (unaddressedRows.length === 0) return;
 
-  const byPlayerAndType = new Map<string, typeof rows>();
-  for (const r of rows) {
+  const byPlayerAndType = new Map<string, typeof unaddressedRows>();
+  for (const r of unaddressedRows) {
     const key = `${r.Name}\0${r.Type}`;
     const list = byPlayerAndType.get(key) ?? [];
     list.push(r);
@@ -958,8 +960,9 @@ async function checkUnaddressedPoolPending(client: Client<true>) {
         }
 
         // Only one match pack choice at a time - skip if they already have one pending
-        const allPending = await getPoolPendingRows(playerName);
-        const hasPendingChoice = allPending.some(
+        // Filter from cached allPendingRows instead of making API call per player
+        const playerPending = allPendingRows.filter((p) => p.Name === playerName);
+        const hasPendingChoice = playerPending.some(
           (p) => p.Type === "add pack" && p.DMed,
         );
         if (hasPendingChoice) continue;
@@ -998,9 +1001,10 @@ async function checkUnaddressedPoolPending(client: Client<true>) {
 async function checkForMatches(client: Client<true>) {
   using _ = await pollingLock();
 
-  const [allMatchesData, players] = await Promise.all([
+  const [allMatchesData, players, allPendingRows] = await Promise.all([
     getAllMatches(),
     getPlayers(),
+    getAllPoolPendingRows(),
   ]);
 
   const allMatches = allMatchesData.rows;
@@ -1022,8 +1026,8 @@ async function checkForMatches(client: Client<true>) {
       continue;
     }
 
-    // Only one match pack choice at a time per player
-    const pendingRows = await getPoolPendingRows(playerName);
+    // Only one match pack choice at a time per player - filter from cached rows
+    const pendingRows = allPendingRows.filter((r) => r.Name === playerName);
     const hasPendingMatchPack = pendingRows.some((r) => r.Type === "add pack");
     if (hasPendingMatchPack) {
       continue; // Wait until they've responded to current pack
