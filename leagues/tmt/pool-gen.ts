@@ -669,9 +669,9 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
         if (responseMessage.reference?.messageId !== sentMessage.id) {
           return Promise.resolve(undefined);
         }
-        const linkMatch = responseMessage.content?.match(
-          /https:\/\/sealeddeck\.tech\/([a-zA-Z0-9_-]+)/,
-        );
+        const linkRegex = /https:\/\/sealeddeck\.tech\/([a-zA-Z0-9_-]+)/;
+        const linkMatch = responseMessage.content?.match(linkRegex) ??
+          responseMessage.embeds.find((e) => e.url)?.url?.match(linkRegex);
         if (linkMatch) {
           handle.claim();
           return Promise.resolve({ done: linkMatch[1] });
