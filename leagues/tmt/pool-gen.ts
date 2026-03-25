@@ -836,6 +836,7 @@ export const mutatepoolHandler: Handler<djs.Message> = async (
       "starting pool",
       fullPoolId,
       "Season 2 starting pool",
+      fullPoolId,
     ]);
 
     await addPoolChanges(changes, CONFIG.LIVE_SHEET_ID, S2_POOL_CHANGES_SHEET);
