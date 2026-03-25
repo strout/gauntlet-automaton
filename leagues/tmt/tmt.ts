@@ -14,6 +14,7 @@ import { sheets, sheetsWrite } from "../../sheets.ts";
 import {
   genPoolHandler,
   matchpackHandler,
+  mutatepoolHandler,
   processMatchPack,
 } from "./pool-gen.ts";
 import {
@@ -454,7 +455,7 @@ function getFrontFaceName(cardName: string): string {
  * For double-faced cards, indexes by both full name and front face name.
  * @returns Map from lowercase card name to ScryfallCard
  */
-function buildNameToCardMap(): Map<string, ScryfallCard> {
+export function buildNameToCardMap(): Map<string, ScryfallCard> {
   const map = new Map<string, ScryfallCard>();
   if (!allArenaCardsCache) {
     return map;
@@ -1150,7 +1151,12 @@ export function setup(): Promise<{
         await delay(30_000);
       }
     },
-    messageHandlers: [genPoolHandler, matchpackHandler, mutationChannelHandler],
+    messageHandlers: [
+      genPoolHandler,
+      matchpackHandler,
+      mutatepoolHandler,
+      mutationChannelHandler,
+    ],
     interactionHandlers: [mutateSelectHandler, mutateButtonHandler],
   });
 }

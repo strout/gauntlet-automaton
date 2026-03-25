@@ -1,10 +1,15 @@
 import * as djs from "discord.js";
+import { Buffer } from "node:buffer";
 import { Handler } from "../../dispatch.ts";
 import { CONFIG } from "../../config.ts";
 import { readStringPool } from "../../fix-pool.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
-import { makeSealedDeck, SealedDeckEntry } from "../../sealeddeck.ts";
-import { getPlayers } from "../../standings.ts";
+import {
+  fetchSealedDeck,
+  makeSealedDeck,
+  SealedDeckEntry,
+} from "../../sealeddeck.ts";
+import { addPoolChanges, getPlayers, getPoolChanges } from "../../standings.ts";
 import { ROWNUM } from "../../standings.ts";
 import {
   appendToPoolPending,
@@ -17,6 +22,8 @@ import {
   sendMatchPackMutateDM,
   sendPackDMs,
 } from "./pool-dm.ts";
+import { buildNameToCardMap, mutateWholePool } from "./tmt.ts";
+import { ScryfallCard, tileRareImages } from "../../scryfall.ts";
 
 const LINES_PER_PACK = 14;
 const PACKS_PER_POOL = 6;
@@ -568,6 +575,238 @@ export const genPoolHandler: Handler<djs.Message> = async (message, handle) => {
     console.error("[pool-gen] Error generating pool:", e);
     await message.reply(
       `❌ Error generating pool for **${playerName}**: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+  }
+};
+
+const S2_POOL_CHANGES_SHEET = "S2 Pool Changes";
+
+export const mutatepoolHandler: Handler<djs.Message> = async (
+  message,
+  handle,
+) => {
+  if (!message.content.startsWith("!mutatepool")) return;
+  handle.claim();
+
+  if (!message.channel.isTextBased() || message.channel.isDMBased()) {
+    await message.reply("This command must be used in a server channel.");
+    return;
+  }
+
+  const parts = message.content.trim().split(/\s+/);
+  if (parts.length < 2) {
+    await message.reply("Usage: `!mutatepool @Player`");
+    return;
+  }
+
+  const discordId = resolveDiscordId(parts[1]);
+  if (!discordId) {
+    await message.reply(
+      "❌ First argument must be a Discord mention (e.g. `@Player`).",
+    );
+    return;
+  }
+
+  const players = await getPlayers();
+  const player = players.rows.find((p) => p["Discord ID"] === discordId);
+  if (!player) {
+    await message.reply(
+      `❌ No player with Discord ID \`${discordId}\` found in the Player Database.`,
+    );
+    return;
+  }
+
+  const playerName = player.Identification;
+
+  await message.reply(
+    `⏳ Mutating pool for **${playerName}** and generating Season 2 pool...`,
+  );
+
+  try {
+    const allChanges = await getPoolChanges();
+    const playerChanges = allChanges.rows.filter(
+      (c) =>
+        c.Name === playerName && c.Comment === "Remaining from Pool Pending",
+    );
+
+    if (playerChanges.length === 0) {
+      await message.reply(
+        `❌ No "Remaining from Pool Pending" entries found for **${playerName}**.`,
+      );
+      return;
+    }
+
+    const mutatedPoolIds: string[] = [];
+    const allMutatedCards: ScryfallCard[] = [];
+
+    for (const change of playerChanges) {
+      const pool = await fetchSealedDeck(change.Value);
+      const { poolId: mutatedPoolId, mutatedCards } = await mutateWholePool(
+        pool,
+      );
+      mutatedPoolIds.push(mutatedPoolId);
+      allMutatedCards.push(...mutatedCards);
+    }
+
+    const guild = await message.client.guilds.fetch(CONFIG.GUILD_ID);
+    const botBunkerChannel = await guild.channels.fetch(
+      CONFIG.BOT_BUNKER_CHANNEL_ID,
+    ) as djs.TextChannel;
+
+    if (!botBunkerChannel?.isSendable()) {
+      await message.reply("❌ Bot bunker channel not available.");
+      return;
+    }
+
+    const sentMessage = await botBunkerChannel.send(`!TMT 2`);
+    const btResult = await waitForBoosterTutor(Promise.resolve(sentMessage));
+
+    if ("error" in btResult) {
+      await message.reply(
+        `❌ Booster Tutor error: ${btResult.error}`,
+      );
+      return;
+    }
+
+    const newPacks = btResult.success;
+    const packText = newPacks.message.attachments.first()?.url;
+    if (!packText) {
+      await message.reply(
+        "❌ Could not get pack text from Booster Tutor response.",
+      );
+      return;
+    }
+
+    const resp = await fetch(packText);
+    if (!resp.ok) {
+      await message.reply(
+        `❌ Could not download pack file: HTTP ${resp.status}`,
+      );
+      return;
+    }
+    const text = await resp.text();
+    const packLines = splitIntoPacks(text);
+
+    if (packLines.length < 2) {
+      await message.reply(
+        `❌ Expected 2 packs from Booster Tutor but got ${packLines.length}.`,
+      );
+      return;
+    }
+
+    const newPackPoolIds: string[] = [];
+    const newPackCards: ScryfallCard[] = [];
+    const nameToCard = buildNameToCardMap();
+
+    for (const packLine of packLines) {
+      const packText = packLine.join("\n");
+      const packData = readStringPool(packText);
+      const packEntries: SealedDeckEntry[] = (packData.sideboard ?? []).map((
+        e,
+      ) => ({
+        name: e.name,
+        count: e.count,
+        set: e.set,
+      }));
+
+      const packPoolId = await makeSealedDeck({ sideboard: packEntries });
+      newPackPoolIds.push(packPoolId);
+
+      for (const entry of packEntries) {
+        for (let i = 0; i < entry.count; i++) {
+          const card = nameToCard.get(entry.name.toLowerCase());
+          if (card) {
+            newPackCards.push(card);
+          }
+        }
+      }
+    }
+
+    const combinedCards = [
+      ...allMutatedCards.map((c) => ({ name: c.name, count: 1 })),
+      ...newPackCards.map((c) => ({ name: c.name, count: 1 })),
+    ];
+
+    const fullPoolId = await makeSealedDeck({ sideboard: combinedCards });
+
+    const changes: [
+      name: string,
+      type: string,
+      value: string,
+      comment: string,
+      newPoolId?: string,
+    ][] = [];
+
+    for (let i = 0; i < mutatedPoolIds.length; i++) {
+      changes.push([
+        playerName,
+        "add pack",
+        mutatedPoolIds[i],
+        `Mutated from pool ${playerChanges[i].Value}`,
+      ]);
+    }
+
+    for (const packId of newPackPoolIds) {
+      changes.push([
+        playerName,
+        "add pack",
+        packId,
+        "New TMT pack",
+      ]);
+    }
+
+    changes.push([
+      playerName,
+      "starting pool",
+      fullPoolId,
+      "Season 2 starting pool",
+    ]);
+
+    await addPoolChanges(changes, CONFIG.LIVE_SHEET_ID, S2_POOL_CHANGES_SHEET);
+
+    const fullPoolUrl = `https://sealeddeck.tech/${fullPoolId}`;
+
+    const allCardsForImage = [...allMutatedCards, ...newPackCards];
+    const rareCards = allCardsForImage.filter((card) =>
+      ["rare", "mythic", "special", "bonus"].includes(card.rarity.toLowerCase())
+    );
+
+    let attachment: djs.AttachmentBuilder | undefined;
+    try {
+      if (rareCards.length > 0) {
+        const imageBlob = await tileRareImages(rareCards, "small");
+        const arrayBuffer = await imageBlob.arrayBuffer();
+        attachment = new djs.AttachmentBuilder(Buffer.from(arrayBuffer), {
+          name: "pool-rares.png",
+        });
+      }
+    } catch (err) {
+      console.error("[mutatepool] Error generating tiled image:", err);
+    }
+
+    const embed = new djs.EmbedBuilder()
+      .setTitle("Season 2 Starting Pool")
+      .setURL(fullPoolUrl);
+
+    if (attachment) {
+      embed.setImage("attachment://pool-rares.png");
+    }
+
+    const replyOptions: djs.BaseMessageOptions = {
+      content: `✅ Season 2 pool for **${playerName}**: ${fullPoolUrl}`,
+      embeds: [embed],
+    };
+    if (attachment) {
+      replyOptions.files = [attachment];
+    }
+
+    await message.reply(replyOptions);
+  } catch (e) {
+    console.error("[mutatepool] Error:", e);
+    await message.reply(
+      `❌ Error creating Season 2 pool for **${playerName}**: ${
         e instanceof Error ? e.message : String(e)
       }`,
     );
