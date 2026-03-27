@@ -175,7 +175,7 @@ export async function getPoolChanges<S extends z.ZodRawShape>(
       Type: z.string(), // TODO maybe enforce known types?
       Value: z.string(),
       Comment: z.string().nullable(),
-      "Full Pool": z.string().nullable(),
+      "Full Pool": z.string().nullable().optional(),
       ...extras?.shape,
     },
     table,
