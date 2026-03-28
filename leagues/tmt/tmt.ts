@@ -147,6 +147,16 @@ function isCardToken(card: ScryfallCard): boolean {
 }
 
 /**
+ * Checks if a card is a meld result (the final melded card that can't be played directly)
+ * @param card - The Scryfall card to check
+ * @returns true if the card is a meld_result in its all_parts
+ */
+function isCardMeldResult(card: ScryfallCard): boolean {
+  if (!card.all_parts) return false;
+  return card.all_parts.some((part) => part.component === "meld_result");
+}
+
+/**
  * Checks if a card is legal in both Vintage and Timeless.
  * Note: Scryfall 'legal' or 'restricted' both count as legal for our purposes.
  * This naturally excludes Alchemy-exclusive and rebalanced (A-) cards.
@@ -220,7 +230,7 @@ async function loadCardsFromLocalFile(): Promise<
     // - Legal in both Vintage and Timeless (real cards on Arena)
     // These are the cards that TMT/PZA cards can be mutated into
     const filtered = allCards.filter((card) =>
-      !isCardFromTMT(card) && !isCardToken(card) &&
+      !isCardFromTMT(card) && !isCardToken(card) && !isCardMeldResult(card) &&
       isCardLegalInVintageAndTimeless(card) && isCardOnArena(card)
     );
 
@@ -262,7 +272,7 @@ export async function getMutationMap(): Promise<RarityMap> {
     console.log("Fetching cards from Scryfall API...");
     // Fetch non-TMT/PZA cards for mutation targets
     cards = await searchCards(
-      "-e:tmt -e:pza (f:vintage or set:anb) game:arena (f:timeless or (set:tmc (cn:1 or or cn:9 or cn:2 or cn:12 or cn:14 or cn:10 or cn:13 or cn:15 or cn:3 or cn:19 or cn:20 or cn:27 or cn:28 or cn:22 or cn:4 or cn:5 or cn:133 or cn:33 or cn:30 or cn:6 or cn:135 or cn:136)))",
+      "-e:tmt -e:pza -is:meld_result (f:vintage or set:anb) game:arena (f:timeless or (set:tmc (cn:1 or or cn:9 or cn:2 or cn:12 or cn:14 or cn:10 or cn:13 or cn:15 or cn:3 or cn:19 or cn:20 or cn:27 or cn:28 or cn:22 or cn:4 or cn:5 or cn:133 or cn:33 or cn:30 or cn:6 or cn:135 or cn:136)))",
       {
         unique: "prints", // Search by unique printings
       },

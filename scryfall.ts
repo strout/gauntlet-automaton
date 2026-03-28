@@ -53,6 +53,14 @@ export interface ScryfallCard {
   readonly digital?: boolean;
   readonly frame_effects?: readonly string[];
   readonly variation: boolean;
+  readonly layout?: string;
+  readonly all_parts?: readonly {
+    readonly object: string;
+    readonly component: string;
+    readonly name: string;
+    readonly type_line: string;
+    readonly uri: string;
+  }[];
   readonly set_type: string;
   readonly legalities: Record<string, string>;
 }
