@@ -149,11 +149,13 @@ function isCardToken(card: ScryfallCard): boolean {
 /**
  * Checks if a card is a meld result (the final melded card that can't be played directly)
  * @param card - The Scryfall card to check
- * @returns true if the card is a meld_result in its all_parts
+ * @returns true if the card appears as meld_result in its own all_parts
  */
 function isCardMeldResult(card: ScryfallCard): boolean {
   if (!card.all_parts) return false;
-  return card.all_parts.some((part) => part.component === "meld_result");
+  return card.all_parts.some(
+    (part) => part.component === "meld_result" && part.name === card.name,
+  );
 }
 
 /**
