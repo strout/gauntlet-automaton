@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { delay } from "@std/async";
 import { Client, Interaction, Message } from "discord.js";
 import { CONFIG } from "../../config.ts";
@@ -1015,7 +1016,7 @@ async function checkForMatches(client: Client<true>) {
 
   const [allMatchesData, players, allPendingRows] = await Promise.all([
     getAllMatches(),
-    getPlayers(),
+    getPlayers(undefined, { "Shredder's Army": z.coerce.boolean() }),
     getAllPoolPendingRows(),
   ]);
 
@@ -1035,6 +1036,22 @@ async function checkForMatches(client: Client<true>) {
     const discordId = player["Discord ID"];
     if (!discordId) {
       console.error(`[TMT] No Discord ID for "${playerName}"`);
+      continue;
+    }
+
+    if (player["Shredder's Army"]) {
+      console.log(`[TMT] Skipping pack for ${playerName}: Shredder's Army`);
+      const type = m[MATCHTYPE] as "match" | "entropy";
+      const sheetName = allMatchesData.sheetName[type];
+      const colIndex = allMatchesData.headerColumns[type]["Bot Messaged"];
+      if (colIndex !== undefined) {
+        await sheetsWrite(
+          sheets,
+          CONFIG.LIVE_SHEET_ID,
+          `${sheetName}!R${m[ROWNUM]}C${colIndex + 1}`,
+          [[true]],
+        );
+      }
       continue;
     }
 
