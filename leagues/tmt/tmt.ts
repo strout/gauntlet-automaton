@@ -39,6 +39,13 @@ import {
   SealedDeckPool,
   SealedDeckPoolRequest,
 } from "../../sealeddeck.ts";
+import { Player } from "../../standings.ts";
+
+const tmtPlayerExtras = {
+  "Shredder's Army": z.coerce.boolean(),
+  "Foot DM Sent": z.coerce.boolean(),
+};
+type TMTPlayer = Player<typeof tmtPlayerExtras>;
 
 // Path to the local Scryfall bulk data file (optional)
 const DEFAULT_CARDS_PATH = "./default-cards.json";
@@ -974,7 +981,9 @@ async function checkUnaddressedPoolPending(client: Client<true>) {
 
         // Only one match pack choice at a time - skip if they already have one pending
         // Filter from cached allPendingRows instead of making API call per player
-        const playerPending = allPendingRows.filter((p) => p.Name === playerName);
+        const playerPending = allPendingRows.filter((p) =>
+          p.Name === playerName
+        );
         const hasPendingChoice = playerPending.some(
           (p) => p.Type === "add pack" && p.DMed,
         );
@@ -1016,7 +1025,7 @@ async function checkForMatches(client: Client<true>) {
 
   const [allMatchesData, players, allPendingRows] = await Promise.all([
     getAllMatches(),
-    getPlayers(undefined, { "Shredder's Army": z.coerce.boolean() }),
+    getPlayers(undefined, tmtPlayerExtras),
     getAllPoolPendingRows(),
   ]);
 
@@ -1114,6 +1123,67 @@ async function checkForMatches(client: Client<true>) {
       console.error(
         `[TMT] Error processing match pack for ${playerName}:`,
         error,
+      );
+    }
+  }
+
+  await checkForFootClanMatches(client, players);
+}
+
+const footClanDmLock = mutex();
+
+async function checkForFootClanMatches(
+  client: Client<true>,
+  players: Awaited<ReturnType<typeof getPlayers>>,
+): Promise<void> {
+  using _ = await footClanDmLock();
+
+  const playersToDm = players.rows.filter(
+    (p) =>
+      (p.Wins as number) >= 9 &&
+      !p["Foot DM Sent"] &&
+      p["Discord ID"],
+  );
+
+  const colIndex = players.headerColumns["Foot DM Sent"];
+  if (colIndex === undefined) {
+    console.error("[TMT] Foot DM Sent column not found, bailing");
+    return;
+  }
+
+  for (const player of playersToDm) {
+    const discordId = player["Discord ID"];
+    if (!discordId) continue;
+
+    console.log(`[TMT] Sending Foot Clan DM to ${player.Identification}`);
+
+    try {
+      const user = await client.users.fetch(discordId);
+      if (!user) {
+        console.error(
+          `[TMT] Could not fetch user for ${player.Identification}`,
+        );
+        continue;
+      }
+
+      const dmChannel = await user.createDM();
+      await dmChannel.send(
+        `Reminder: your next match must be a Foot Clan match. DM \`!foot\` to <@936323140496289853> when you're ready.`,
+      );
+
+      {
+        await sheetsWrite(
+          sheets,
+          CONFIG.LIVE_SHEET_ID,
+          `Player Database!R${player[ROWNUM]}C${colIndex + 1}`,
+          [[true]],
+        );
+        console.log(`[TMT] Marked Foot DM Sent for ${player.Identification}`);
+      }
+    } catch (e) {
+      console.error(
+        `[TMT] Failed to send Foot DM to ${player.Identification}:`,
+        e,
       );
     }
   }
