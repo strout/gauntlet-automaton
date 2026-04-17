@@ -1,6 +1,6 @@
 import * as djs from "discord.js";
 import { makeClient } from "./main.ts";
-import { getMutationMap, mutateWholePool } from "./leagues/tmt/tmt.ts";
+import { getMutationMap, mutateWholePool } from "./archive/leagues/tmt/tmt.ts";
 import { tileCardImages, tileRareImages } from "./scryfall.ts";
 import { fetchSealedDeck } from "./sealeddeck.ts";
 import { env } from "./sheets.ts";

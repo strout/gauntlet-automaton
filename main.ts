@@ -36,7 +36,7 @@ import {
 
 import { ScryfallCard } from "./scryfall.ts";
 import { handleGuildMemberAdd, manageRoles } from "./role_management.ts";
-import { setup } from "./leagues/tmt/tmt.ts";
+import { setup } from "./leagues/sos/sos.ts";
 
 export { CONFIG };
 
@@ -161,8 +161,7 @@ async function handleMessage(
     )
   ) {
     // Skip logging bot messages with no text (e.g. Booster Tutor sends multiple empty messages + attachments)
-    const isBotWithNoText =
-      message.author.bot && !message.content?.trim();
+    const isBotWithNoText = message.author.bot && !message.content?.trim();
     if (!isBotWithNoText) {
       console.log(
         `${message.author.displayName} in ${
@@ -174,9 +173,9 @@ async function handleMessage(
                 const ch = message.channel as djs.DMChannel;
                 return (
                   ch.recipient?.displayName ??
-                  ch.recipient?.username ??
-                  ch.recipientId ??
-                  "unknown"
+                    ch.recipient?.username ??
+                    ch.recipientId ??
+                    "unknown"
                 );
               })()
             : "channel " + message.channel.name

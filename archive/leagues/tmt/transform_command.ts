@@ -1,6 +1,6 @@
 import { Client, Interaction, Message } from "discord.js";
-import { Handler } from "../dispatch.ts";
-import { transformPool } from "./tmt/transform.ts";
+import { Handler } from "../../../dispatch.ts";
+import { transformPool } from "./transform.ts";
 
 /**
  * Handler for !transform command - transforms each card in a sealeddeck.tech pool

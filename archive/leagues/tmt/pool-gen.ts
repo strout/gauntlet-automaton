@@ -1,16 +1,16 @@
 import * as djs from "discord.js";
 import { Buffer } from "node:buffer";
-import { Handler } from "../../dispatch.ts";
-import { CONFIG } from "../../config.ts";
-import { readStringPool } from "../../fix-pool.ts";
-import { waitForBoosterTutor, withPending } from "../../pending.ts";
+import { Handler } from "../../../dispatch.ts";
+import { CONFIG } from "../../../config.ts";
+import { readStringPool } from "../../../fix-pool.ts";
+import { waitForBoosterTutor, withPending } from "../../../pending.ts";
 import {
   fetchSealedDeck,
   makeSealedDeck,
   SealedDeckEntry,
-} from "../../sealeddeck.ts";
-import { addPoolChanges, getPlayers, getPoolChanges } from "../../standings.ts";
-import { ROWNUM } from "../../standings.ts";
+} from "../../../sealeddeck.ts";
+import { addPoolChanges, getPlayers, getPoolChanges } from "../../../standings.ts";
+import { ROWNUM } from "../../../standings.ts";
 import {
   appendToPoolPending,
   getMutagenTokens,
@@ -26,7 +26,7 @@ import {
   fetchCardsByIdentifier,
   ScryfallCard,
   tileRareImages,
-} from "../../scryfall.ts";
+} from "../../../scryfall.ts";
 
 const LINES_PER_PACK = 14;
 const PACKS_PER_POOL = 6;

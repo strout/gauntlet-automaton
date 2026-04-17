@@ -1,9 +1,9 @@
 /**
  * TMT-specific sheet operations for Standings, MUTAGEN TOKENS, and Pool Pending.
  */
-import { CONFIG } from "../../config.ts";
-import { readTable, ROW, ROWNUM } from "../../standings.ts";
-import { sheets, sheetsAppend, sheetsWrite } from "../../sheets.ts";
+import { CONFIG } from "../../../config.ts";
+import { readTable, ROW, ROWNUM } from "../../../standings.ts";
+import { sheets, sheetsAppend, sheetsWrite } from "../../../sheets.ts";
 
 const POOL_PENDING_SHEET_NAME = "Pool Pending";
 const PLAYER_DATABASE_SHEET_NAME = "Player Database";

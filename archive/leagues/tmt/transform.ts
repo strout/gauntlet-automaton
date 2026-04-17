@@ -3,8 +3,8 @@ import {
   makeSealedDeck,
   SealedDeckEntry,
   SealedDeckEntryRequest,
-} from "../../sealeddeck.ts";
-import { ScryfallCard, searchCards, transformCard } from "../../scryfall.ts";
+} from "../../../sealeddeck.ts";
+import { ScryfallCard, searchCards, transformCard } from "../../../scryfall.ts";
 
 /**
  * Looks up a card by name (and optionally set) on Scryfall to get full card data.
