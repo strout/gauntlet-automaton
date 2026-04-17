@@ -1,17 +1,17 @@
 import { z } from "zod";
 import { delay } from "@std/async";
 import { Client, Interaction, Message } from "discord.js";
-import { CONFIG } from "../../config.ts";
-import { Handler } from "../../dispatch.ts";
-import { mutex } from "../../mutex.ts";
-import { ScryfallCard, searchCards } from "../../scryfall.ts";
+import { CONFIG } from "../../../config.ts";
+import { Handler } from "../../../dispatch.ts";
+import { mutex } from "../../../mutex.ts";
+import { ScryfallCard, searchCards } from "../../../scryfall.ts";
 import {
   getAllMatches,
   getPlayers,
   MATCHTYPE,
   ROWNUM,
-} from "../../standings.ts";
-import { sheets, sheetsWrite } from "../../sheets.ts";
+} from "../../../standings.ts";
+import { sheets, sheetsWrite } from "../../../sheets.ts";
 import {
   genPoolHandler,
   matchpackHandler,
@@ -38,7 +38,7 @@ import {
   SealedDeckEntry,
   SealedDeckPool,
   SealedDeckPoolRequest,
-} from "../../sealeddeck.ts";
+} from "../../../sealeddeck.ts";
 
 // Path to the local Scryfall bulk data file (optional)
 const DEFAULT_CARDS_PATH = "./default-cards.json";

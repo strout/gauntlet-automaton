@@ -1,13 +1,13 @@
 import * as djs from "discord.js";
 import { Buffer } from "node:buffer";
-import { CONFIG } from "../../config.ts";
-import { ScryfallCard, searchCards, tileCardImages } from "../../scryfall.ts";
+import { CONFIG } from "../../../config.ts";
+import { ScryfallCard, searchCards, tileCardImages } from "../../../scryfall.ts";
 import {
   fetchSealedDeck,
   makeSealedDeck,
   SealedDeckEntry,
-} from "../../sealeddeck.ts";
-import { addPoolChange, getPoolChanges, getPlayers, ROWNUM } from "../../standings.ts";
+} from "../../../sealeddeck.ts";
+import { addPoolChange, getPoolChanges, getPlayers, ROWNUM } from "../../../standings.ts";
 import {
   decrementMutagenTokens,
   getMutagenTokens,

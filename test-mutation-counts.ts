@@ -1,4 +1,7 @@
-import { getAllArenaCards, getMutationCandidates } from "./leagues/tmt/tmt.ts";
+import {
+  getAllArenaCards,
+  getMutationCandidates,
+} from "./archive/leagues/tmt/tmt.ts";
 import { makeSealedDeck, SealedDeckEntryRequest } from "./sealeddeck.ts";
 
 interface RelaxationLevel {
@@ -13,7 +16,7 @@ async function main() {
   console.log("Loading all cards...");
   const allCards = await getAllArenaCards();
   const tmtCardsRaw = allCards.filter(
-    (c) => c.set?.toLowerCase() === "tmt" || c.set?.toLowerCase() === "pza"
+    (c) => c.set?.toLowerCase() === "tmt" || c.set?.toLowerCase() === "pza",
   );
 
   // Only consider cards once by name
@@ -37,7 +40,7 @@ async function main() {
 
   for (const card of tmtCards) {
     const result = await getMutationCandidates(card.name);
-    
+
     let sealedDeckUrl: string | undefined;
     if (result.candidates.length > 0) {
       const poolId = await makeSealedDeck({
@@ -50,7 +53,7 @@ async function main() {
       });
       sealedDeckUrl = `https://sealeddeck.tech/${poolId}`;
     }
-    
+
     results.push({
       name: card.name,
       rarity: card.rarity,
@@ -69,7 +72,9 @@ async function main() {
   for (const res of results) {
     const r = res.relaxed;
     console.log(
-      `"${res.name}","${res.rarity}",${res.count},${r.removeTypes},${r.addTypes},${r.addColors},${r.removeColors},${r.maxCmcDiff},${res.sealedDeckUrl || ""}`,
+      `"${res.name}","${res.rarity}",${res.count},${r.removeTypes},${r.addTypes},${r.addColors},${r.removeColors},${r.maxCmcDiff},${
+        res.sealedDeckUrl || ""
+      }`,
     );
   }
 
