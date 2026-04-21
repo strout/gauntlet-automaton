@@ -7,7 +7,8 @@ import { ScryfallCard, searchCards, tileRareImages } from "../../scryfall.ts";
 import { makeSealedDeck } from "../../sealeddeck.ts";
 import { addPoolChange, getPlayers } from "../../standings.ts";
 
-const BASE_MAIN_POOL_SEARCH = `game:arena s:sos -t:basic`;
+/** Main SOS card pool on Scryfall (shared with comeback packs). */
+export const BASE_MAIN_POOL_SEARCH = `game:arena s:sos -t:basic`;
 
 /**
  * Full Scryfall query (without `unique:` — pass `{ unique: "cards" }` to `searchCards`)
@@ -23,7 +24,7 @@ const SOS_POOL_COMMAND_CHANNEL_IDS = new Set([
   CONFIG.BOT_BUNKER_CHANNEL_ID,
 ]);
 
-function splitMythicalArchiveByRarity(cards: readonly ScryfallCard[]): {
+export function splitMythicalArchiveByRarity(cards: readonly ScryfallCard[]): {
   readonly uncommons: readonly ScryfallCard[];
   readonly rares: readonly ScryfallCard[];
   readonly mythics: readonly ScryfallCard[];
@@ -150,8 +151,8 @@ function resolveDiscordId(input: string): string | null {
 /**
  * Rolls a starting SOS pool: 6 rare/mythic (2:1 rare weighting), 18 uncommons,
  * 60 commons (six packs of 10: unique within each pack, each pack touches all
- * five colors), 6 Mythical Archive cards (5 uncommons + 1 rare/mythic at the
- * same 2:1 rare vs mythic card weights as the main pool).
+ * five colors), 6 Mythical Archive cards (5 uncommons + 1 rare/mythic at
+ * rare vs mythic weights `9.6/12.5` and `2.6/12.5` among MA prints).
  */
 export async function rollStartingPool(): Promise<ScryfallCard[]> {
   const pool: ScryfallCard[] = [];
@@ -239,9 +240,11 @@ export async function rollStartingPool(): Promise<ScryfallCard[]> {
       if (c) pool.push(c);
     }
 
+    const maRareWt = 9.6 / 12.5;
+    const maMythicWt = 2.6 / 12.5;
     const maRareMythicWeights: [ScryfallCard, number][] = [
-      ...maRares.map((card): [ScryfallCard, number] => [card, 2]),
-      ...maMythics.map((card): [ScryfallCard, number] => [card, 1]),
+      ...maRares.map((card): [ScryfallCard, number] => [card, maRareWt]),
+      ...maMythics.map((card): [ScryfallCard, number] => [card, maMythicWt]),
     ];
     const maRareOrMythic = weightedChoice(maRareMythicWeights);
     if (maRareOrMythic) pool.push(maRareOrMythic);
