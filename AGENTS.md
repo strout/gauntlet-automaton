@@ -22,7 +22,7 @@ The project uses [Deno](https://deno.com/).
 
 - **Format**: `deno fmt` - Rigorously followed.
 - **Lint**: `deno lint` - Must pass before any PR.
-- **Type Check**: `deno run --no-emit main.ts`
+- **Type Check**: `deno check --allow-import main.ts`
 
 ### Testing
 
