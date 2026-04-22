@@ -157,7 +157,7 @@ function resolveDiscordId(input: string): string | null {
 }
 
 /**
- * Rolls a starting SOS pool: 6 rare/mythic (2:1 rare weighting), 18 uncommons,
+ * Rolls a starting SOS pool: 6 rare/mythic (7:1 rare weighting), 18 uncommons,
  * 60 commons (six packs of 10: unique within each pack, each pack touches all
  * five colors), 6 Mythical Archive cards (5 uncommons + 1 rare/mythic at
  * rare vs mythic weights `9.6/12.5` and `2.6/12.5` among MA prints).
@@ -218,7 +218,7 @@ export async function rollStartingPool(): Promise<ScryfallCard[]> {
     }
 
     const rareMythicWeights: [ScryfallCard, number][] = [
-      ...rares.map((card): [ScryfallCard, number] => [card, 2]),
+      ...rares.map((card): [ScryfallCard, number] => [card, 7]),
       ...mythics.map((card): [ScryfallCard, number] => [card, 1]),
     ];
 

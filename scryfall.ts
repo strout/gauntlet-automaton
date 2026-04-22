@@ -49,6 +49,10 @@ export interface ScryfallCard {
     };
   }[];
   readonly games: readonly string[];
+  /** API object URI (present on most card payloads). */
+  readonly uri?: string;
+  /** Page on scryfall.com (present on most card payloads). */
+  readonly scryfall_uri?: string;
   readonly booster?: boolean;
   readonly digital?: boolean;
   readonly frame_effects?: readonly string[];
@@ -270,6 +274,64 @@ export async function searchCards(
 }
 
 /**
+ * Returns a random card matching a symbology query via `/cards/random`.
+ * Does not use the Scryfall response cache (each call should yield a new random card).
+ *
+ * @param query - Scryfall `q` search string
+ * @returns A card, or `null` if nothing matches (Scryfall 404 / empty search)
+ */
+export async function fetchRandomCardForQuery(
+  query: string,
+): Promise<ScryfallCard | null> {
+  const params = new URLSearchParams({ q: query });
+  const url = `https://api.scryfall.com/cards/random?${params.toString()}`;
+
+  return await withRetry(
+    async (disableRetry) => {
+      const response = await fetch(url);
+
+      if (response.status === 404) {
+        return null;
+      }
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          const retryAfter = response.headers.get("Retry-After");
+          const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : 0;
+          if (retryAfterSeconds > 0) {
+            throw new ScryfallRateLimitError(
+              `Scryfall API rate limit: ${response.status} ${response.statusText} for ${url}`,
+              retryAfterSeconds * 1000,
+            );
+          }
+          console.error(
+            `Scryfall API rate limit without Retry-After header for ${url}`,
+          );
+          disableRetry();
+        }
+        throw new Error(
+          `Scryfall API error: ${response.status} ${response.statusText} for ${url}`,
+        );
+      }
+
+      const body = await response.json() as { readonly object: string };
+      if (body.object !== "card") {
+        return null;
+      }
+      return body as ScryfallCard;
+    },
+    undefined,
+    undefined,
+    (error) => {
+      if (error instanceof ScryfallRateLimitError && error.retryAfterMs > 0) {
+        return error.retryAfterMs;
+      }
+      return undefined;
+    },
+  );
+}
+
+/**
  * Card identifier for /cards/collection endpoint
  */
 export interface CardIdentifier {
@@ -322,9 +384,7 @@ export async function fetchCardsByIdentifier(
         if (!response.ok) {
           if (response.status === 429) {
             const retryAfter = response.headers.get("Retry-After");
-            const retryAfterSeconds = retryAfter
-              ? parseInt(retryAfter, 10)
-              : 0;
+            const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : 0;
             if (retryAfterSeconds > 0) {
               throw new Error(
                 `Scryfall rate limited, retry after ${retryAfterSeconds}s`,

@@ -1,5 +1,10 @@
 import { Client, Interaction, Message } from "discord.js";
 import { Handler } from "../../dispatch.ts";
+import {
+  sosCourseTestMessageHandler,
+  sosCourseTestSelectHandler,
+} from "./course-test.ts";
+import { watchSosComebackPacks } from "./loss-watch.ts";
 import { sosStartingPoolHandler } from "./pools.ts";
 
 /**
@@ -12,8 +17,8 @@ export function setup(): Promise<{
   interactionHandlers: Handler<Interaction>[];
 }> {
   return Promise.resolve({
-    watch: () => Promise.resolve(),
-    messageHandlers: [sosStartingPoolHandler],
-    interactionHandlers: [],
+    watch: (client) => watchSosComebackPacks(client),
+    messageHandlers: [sosStartingPoolHandler, sosCourseTestMessageHandler],
+    interactionHandlers: [sosCourseTestSelectHandler],
   });
 }
