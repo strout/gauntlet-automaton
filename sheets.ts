@@ -1,9 +1,10 @@
 import { load } from "@std/dotenv";
-import { auth, Sheets } from "sheets";
+import { google } from "googleapis";
 import { withRetry } from "./retry.ts";
-import { GoogleApiError } from "googleapis";
 
 export const env = await load({ export: true });
+
+type Sheets = ReturnType<typeof google.sheets>;
 
 function withSmartRetry<T>(
   operation: (disable: () => void) => Promise<T>,
@@ -11,8 +12,8 @@ function withSmartRetry<T>(
   return withRetry(async (disable) => {
     try {
       return await operation(disable);
-    } catch (e) {
-      if (e instanceof GoogleApiError && e.code === 400) {
+    } catch (e: any) {
+      if (e.response?.status === 400) {
         // This won't succeed on a retry, so disable retries
         disable();
       }
@@ -37,13 +38,14 @@ export function sheetsRead(
   valueRenderOption: "FORMATTED_VALUE" | "UNFORMATTED_VALUE" | "FORMULA" =
     "FORMATTED_VALUE",
 ) {
-  return withSmartRetry(() =>
-    sheets.spreadsheetsValuesGet(
-      range,
-      sheetId,
-      { valueRenderOption },
-    )
-  );
+  return withSmartRetry(async () => {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: range,
+      valueRenderOption,
+    });
+    return res.data;
+  });
 }
 
 /**
@@ -53,7 +55,7 @@ export function sheetsRead(
  * @param sheetId - The Google Sheets document ID
  * @param range - The range to write to in A1 notation (e.g., "Sheet1!A1:C10") or R1C1 notation
  * @param values - 2D array of string(?) values to write
- * @param valueInputOption - RAW strings or USER_ENTERED; RAW is default here (not sure what underlying default is)
+ * @param valueInputOption - RAW strings or USER_ENTERED; RAW is default here
  * @returns Promise that resolves to the update response
  */
 export function sheetsWrite(
@@ -63,14 +65,15 @@ export function sheetsWrite(
   values: unknown[][],
   valueInputOption?: "RAW" | "USER_ENTERED",
 ) {
-  return withSmartRetry(() =>
-    sheets.spreadsheetsValuesUpdate(
-      range,
-      sheetId,
-      { values },
-      { valueInputOption: valueInputOption ?? "RAW" },
-    )
-  );
+  return withSmartRetry(async () => {
+    const res = await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: range,
+      valueInputOption: valueInputOption ?? "RAW",
+      requestBody: { values },
+    });
+    return res.data;
+  });
 }
 
 /**
@@ -89,14 +92,15 @@ export function sheetsAppend(
   values: unknown[][],
   valueInputOption?: "RAW" | "USER_ENTERED",
 ) {
-  return withSmartRetry(() =>
-    sheets.spreadsheetsValuesAppend(
-      range,
-      sheetId,
-      { values },
-      { valueInputOption: valueInputOption ?? "RAW" },
-    )
-  );
+  return withSmartRetry(async () => {
+    const res = await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetId,
+      range: range,
+      valueInputOption: valueInputOption ?? "RAW",
+      requestBody: { values },
+    });
+    return res.data;
+  });
 }
 
 /**
@@ -110,8 +114,14 @@ export let sheets: Sheets;
  *
  * @returns Promise that resolves when the sheets client is initialized
  */
-export const initSheets = async () =>
-  sheets ??= new Sheets((await auth.getApplicationDefault()).credential);
+export const initSheets = async () => {
+  if (sheets) return sheets;
+  const auth = new google.auth.GoogleAuth({
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  sheets = google.sheets({ version: "v4", auth });
+  return sheets;
+};
 
 /**
  * Converts column letters to a zero-based column index.
@@ -140,10 +150,11 @@ const SHEET_TIME_ZONE_CACHE = new Map<string, string>();
 export async function getSheetTimeZoneOffsetMs(sheetId: string) {
   let timeZone = SHEET_TIME_ZONE_CACHE.get(sheetId);
   if (!timeZone) {
-    const info = await sheets.spreadsheetsGet(sheetId);
-    timeZone = info.properties?.timeZone;
-    if (!timeZone) return 0;
-    SHEET_TIME_ZONE_CACHE.set(sheetId, timeZone);
+    const res = await withSmartRetry(() => sheets.spreadsheets.get({ spreadsheetId: sheetId }));
+    const tz = res.data.properties?.timeZone;
+    if (!tz) return 0;
+    timeZone = tz;
+    SHEET_TIME_ZONE_CACHE.set(sheetId, tz);
   }
   return utcOffsetMs(timeZone);
 }
@@ -155,7 +166,6 @@ export function readSheetsDate(date: number, offsetMs: number) {
 }
 
 export function utcOffsetMs(timeZone: string, date?: Date) {
-  // TODO is it just coincidental that en-UK produces offsets of GMT or is it reliable?
   const dtf = Intl.DateTimeFormat("en-UK", { timeZoneName: "short", timeZone });
   const parts = dtf.formatToParts(date);
   const gmtOffset = parts.find((part) => part.type === "timeZoneName")!.value;
@@ -186,14 +196,14 @@ async function getSheetIdByName(
     return spreadsheetCache.get(sheetName);
   }
 
-  const res = await withSmartRetry(() => sheets.spreadsheetsGet(spreadsheetId));
+  const res = await withSmartRetry(() => sheets.spreadsheets.get({ spreadsheetId }));
 
   if (!spreadsheetCache) {
     spreadsheetCache = new Map<string, number>();
     SHEET_ID_CACHE.set(spreadsheetId, spreadsheetCache);
   }
 
-  for (const sheet of res.sheets ?? []) {
+  for (const sheet of res.data.sheets ?? []) {
     if (sheet.properties?.title && sheet.properties?.sheetId != null) {
       spreadsheetCache.set(sheet.properties.title, sheet.properties.sheetId);
     }
@@ -223,22 +233,25 @@ export function sheetsDeleteRow(
       const error = new Error(
         `Sheet with name "${sheetName}" not found in spreadsheet ${spreadsheetId}`,
       );
-      // This is a permanent error, don't retry
       disable();
       throw error;
     }
 
-    return sheets.spreadsheetsBatchUpdate(spreadsheetId, {
-      requests: [{
-        deleteDimension: {
-          range: {
-            sheetId,
-            dimension: "ROWS",
-            startIndex: rowIndex - 1, // API is 0-indexed
-            endIndex: rowIndex,
+    const res = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: rowIndex - 1,
+              endIndex: rowIndex,
+            },
           },
-        },
-      }],
+        }],
+      },
     });
+    return res.data;
   });
 }
