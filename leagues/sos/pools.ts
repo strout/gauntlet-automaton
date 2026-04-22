@@ -80,6 +80,7 @@ function decadeCoversWubrg(cards: readonly ScryfallCard[]): boolean {
  */
 function rollCommonDecade(
   commons: readonly ScryfallCard[],
+  dualLands: readonly ScryfallCard[],
   maxAttempts: number,
 ): ScryfallCard[] | null {
   const wubrg = ["W", "U", "B", "R", "G"] as const;
@@ -134,6 +135,13 @@ function rollCommonDecade(
 
     const decade = [...colorCover, ...fillers];
     if (decadeCoversWubrg(decade)) {
+      if (Math.random() < 0.5) {
+        const replaceIdx = Math.floor(Math.random() * decade.length);
+        const dualLand = choice(dualLands);
+        if (dualLand) {
+          decade[replaceIdx] = dualLand;
+        }
+      }
       return decade;
     }
   }
@@ -163,6 +171,7 @@ export async function rollStartingPool(): Promise<ScryfallCard[]> {
       mythics,
       uncommons,
       commons,
+      dualLands,
       mythicalArchive,
     ] = await Promise.all([
       searchCards(`${BASE_MAIN_POOL_SEARCH} rarity:rare`, {
@@ -174,7 +183,10 @@ export async function rollStartingPool(): Promise<ScryfallCard[]> {
       searchCards(`${BASE_MAIN_POOL_SEARCH} rarity:uncommon`, {
         unique: "cards",
       }),
-      searchCards(`${BASE_MAIN_POOL_SEARCH} rarity:common`, {
+      searchCards(`${BASE_MAIN_POOL_SEARCH} rarity:common -otag:dual-land`, {
+        unique: "cards",
+      }),
+      searchCards(`${BASE_MAIN_POOL_SEARCH} rarity:common otag:dual-land`, {
         unique: "cards",
       }),
       searchCards(SOS_MYTHICAL_ARCHIVE_SCRYFALL_QUERY, { unique: "cards" }),
@@ -222,7 +234,7 @@ export async function rollStartingPool(): Promise<ScryfallCard[]> {
 
     const poolCommons: ScryfallCard[] = [];
     for (let d = 0; d < 6; d++) {
-      const decade = rollCommonDecade(commons, MAX_DECADE_ATTEMPTS);
+      const decade = rollCommonDecade(commons, dualLands, MAX_DECADE_ATTEMPTS);
       if (!decade) {
         throw new Error(
           `Could not roll commons decade ${
