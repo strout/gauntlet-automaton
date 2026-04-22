@@ -370,7 +370,7 @@ export async function manageRoles(
       if (guildId === CONFIG.GUILD_ID) {
         try {
           const guild = await client.guilds.fetch(guildId);
-          const members = await guild.members.fetch({ limit: 1000 });
+          const members = await guild.members.fetch();
           await assignLeagueRole(
             members,
             CONFIG.REGISTRATION_LEAGUE_ROLE,
