@@ -46,6 +46,83 @@ export function sheetsRead(
   );
 }
 
+/** First URL string from `=HYPERLINK("https://…", "…")` / single-arg `HYPERLINK`. */
+function hyperlinkUrlFromCellFormula(formulaValue: string): string | null {
+  const f = formulaValue.trim();
+  const m = f.match(
+    /^=\s*HYPERLINK\s*\(\s*"((?:\\"|[^"])*)"\s*[,;]/i,
+  );
+  if (m) return m[1].replace(/\\"/g, '"');
+  const m2 = f.match(/^=\s*HYPERLINK\s*\(\s*"((?:\\"|[^"])*)"\s*\)\s*$/i);
+  if (m2) return m2[1].replace(/\\"/g, '"');
+  return null;
+}
+
+/**
+ * Reads **hyperlink** URLs for a single-column range via `spreadsheets.get` + `includeGridData`
+ * (needed when links are inserted from the Sheets UI so **FORMULA** may be empty in Values API).
+ *
+ * @param expectedSheetTitle - `properties.title` used to pick the right sheet in the response
+ * @returns One entry per row in the requested range (same order as `rowData`), `null` when empty
+ */
+export function sheetsReadColumnHyperlinkUrls(
+  sheets: Sheets,
+  spreadsheetId: string,
+  rangeA1: string,
+  expectedSheetTitle: string,
+): Promise<(string | null)[]> {
+  return withSmartRetry(async () => {
+    const res = await sheets.spreadsheetsGet(spreadsheetId, {
+      ranges: rangeA1,
+      includeGridData: true,
+    });
+
+    type GridCell = {
+      readonly hyperlink?: string;
+      readonly userEnteredValue?: { readonly formulaValue?: string };
+    };
+    type SheetOut = {
+      readonly properties?: { readonly title?: string };
+      readonly data?: readonly {
+        readonly rowData?: readonly {
+          readonly values?: readonly GridCell[];
+        }[];
+      }[];
+    };
+
+    const sheetsOut = (res as { sheets?: readonly SheetOut[] }).sheets ?? [];
+    const sh = sheetsOut.find((s) =>
+      s.properties?.title === expectedSheetTitle
+    ) ??
+      sheetsOut[0];
+    const rowData = sh?.data?.[0]?.rowData ?? [];
+    const out: (string | null)[] = [];
+
+    for (let i = 0; i < rowData.length; i++) {
+      const cell = rowData[i]?.values?.[0];
+      if (!cell) {
+        out.push(null);
+        continue;
+      }
+      const link = typeof cell.hyperlink === "string"
+        ? cell.hyperlink.trim()
+        : "";
+      if (link) {
+        out.push(link);
+        continue;
+      }
+      const fv = cell.userEnteredValue?.formulaValue;
+      if (typeof fv === "string") {
+        const url = hyperlinkUrlFromCellFormula(fv);
+        out.push(url?.trim() ? url.trim() : null);
+      } else {
+        out.push(null);
+      }
+    }
+    return out;
+  });
+}
+
 /**
  * Writes values to a Google Sheets range with retry logic.
  *
