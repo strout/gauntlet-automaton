@@ -32,11 +32,12 @@ const markRoleAdded = async (
   column: number,
   discordId: djs.Snowflake,
 ) => {
-  await sheets.spreadsheetsValuesUpdate(
-    `${CONFIG.REGISTRATION_SHEET_NAME}!R${row}C${column}`,
+  await sheetsWrite(
+    sheets,
     CONFIG.REGISTRATION_SHEET_ID,
-    { values: [[discordId]] },
-    { valueInputOption: "RAW" },
+    `${CONFIG.REGISTRATION_SHEET_NAME}!R${row}C${column}`,
+    [[discordId]],
+    "RAW",
   );
   console.log(`Marked R${row}C${column}`);
 };

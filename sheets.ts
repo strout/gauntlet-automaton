@@ -1,9 +1,13 @@
 import { load } from "@std/dotenv";
-import { auth, Sheets } from "sheets";
+import { google, sheets_v4 } from "googleapis";
 import { withRetry } from "./retry.ts";
-import { GoogleApiError } from "googleapis";
 
 export const env = await load({ export: true });
+
+/**
+ * Type for the Google Sheets client.
+ */
+export type Sheets = sheets_v4.Sheets;
 
 function withSmartRetry<T>(
   operation: (disable: () => void) => Promise<T>,
@@ -11,8 +15,8 @@ function withSmartRetry<T>(
   return withRetry(async (disable) => {
     try {
       return await operation(disable);
-    } catch (e) {
-      if (e instanceof GoogleApiError && e.code === 400) {
+    } catch (e: any) {
+      if (e.code === 400) {
         // This won't succeed on a retry, so disable retries
         disable();
       }
@@ -37,13 +41,14 @@ export function sheetsRead(
   valueRenderOption: "FORMATTED_VALUE" | "UNFORMATTED_VALUE" | "FORMULA" =
     "FORMATTED_VALUE",
 ) {
-  return withSmartRetry(() =>
-    sheets.spreadsheetsValuesGet(
+  return withSmartRetry(async () => {
+  const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
       range,
-      sheetId,
-      { valueRenderOption },
-    )
-  );
+      valueRenderOption,
+    });
+    return res.data;
+  });
 }
 
 /** First URL string from `=HYPERLINK("https://…", "…")` / single-arg `HYPERLINK`. */
@@ -72,8 +77,9 @@ export function sheetsReadColumnHyperlinkUrls(
   expectedSheetTitle: string,
 ): Promise<(string | null)[]> {
   return withSmartRetry(async () => {
-    const res = await sheets.spreadsheetsGet(spreadsheetId, {
-      ranges: rangeA1,
+    const res = await sheets.spreadsheets.get({
+      spreadsheetId,
+      ranges: [rangeA1],
       includeGridData: true,
     });
 
@@ -90,7 +96,7 @@ export function sheetsReadColumnHyperlinkUrls(
       }[];
     };
 
-    const sheetsOut = (res as { sheets?: readonly SheetOut[] }).sheets ?? [];
+    const sheetsOut = (res.data as { sheets?: readonly SheetOut[] }).sheets ?? [];
     const sh = sheetsOut.find((s) =>
       s.properties?.title === expectedSheetTitle
     ) ??
@@ -140,14 +146,15 @@ export function sheetsWrite(
   values: unknown[][],
   valueInputOption?: "RAW" | "USER_ENTERED",
 ) {
-  return withSmartRetry(() =>
-    sheets.spreadsheetsValuesUpdate(
+  return withSmartRetry(async () => {
+    const res = await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
       range,
-      sheetId,
-      { values },
-      { valueInputOption: valueInputOption ?? "RAW" },
-    )
-  );
+      valueInputOption: valueInputOption ?? "RAW",
+      requestBody: { values },
+    });
+    return res.data;
+  });
 }
 
 /**
@@ -155,8 +162,9 @@ export function sheetsWrite(
  *
  * @param sheets - Authenticated Sheets client instance
  * @param sheetId - The Google Sheets document ID
- * @param range - The range to append to in A1 notation (e.g., "Sheet1!A:A") or R1C1 notation
+ * @param range - The range to append to in A1 notation (e.g., "Sheet1!A:A")
  * @param values - 2D array of string values to append
+ * @param valueInputOption - RAW strings or USER_ENTERED; RAW is default here (not sure what underlying default is)
  * @returns Promise that resolves to the append response
  */
 export function sheetsAppend(
@@ -166,14 +174,15 @@ export function sheetsAppend(
   values: unknown[][],
   valueInputOption?: "RAW" | "USER_ENTERED",
 ) {
-  return withSmartRetry(() =>
-    sheets.spreadsheetsValuesAppend(
+  return withSmartRetry(async () => {
+    const res = await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetId,
       range,
-      sheetId,
-      { values },
-      { valueInputOption: valueInputOption ?? "RAW" },
-    )
-  );
+      valueInputOption: valueInputOption ?? "RAW",
+      requestBody: { values },
+    });
+    return res.data;
+  });
 }
 
 /**
@@ -187,8 +196,14 @@ export let sheets: Sheets;
  *
  * @returns Promise that resolves when the sheets client is initialized
  */
-export const initSheets = async () =>
-  sheets ??= new Sheets((await auth.getApplicationDefault()).credential);
+export const initSheets = async () => {
+  if (sheets) return sheets;
+  const auth = new google.auth.GoogleAuth({
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  sheets = google.sheets({ version: "v4", auth });
+  return sheets;
+};
 
 /**
  * Converts column letters to a zero-based column index.
@@ -217,8 +232,8 @@ const SHEET_TIME_ZONE_CACHE = new Map<string, string>();
 export async function getSheetTimeZoneOffsetMs(sheetId: string) {
   let timeZone = SHEET_TIME_ZONE_CACHE.get(sheetId);
   if (!timeZone) {
-    const info = await sheets.spreadsheetsGet(sheetId);
-    timeZone = info.properties?.timeZone;
+    const res = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+    timeZone = res.data.properties?.timeZone ?? undefined;
     if (!timeZone) return 0;
     SHEET_TIME_ZONE_CACHE.set(sheetId, timeZone);
   }
@@ -263,14 +278,16 @@ async function getSheetIdByName(
     return spreadsheetCache.get(sheetName);
   }
 
-  const res = await withSmartRetry(() => sheets.spreadsheetsGet(spreadsheetId));
+  const res = await withSmartRetry(() =>
+    sheets.spreadsheets.get({ spreadsheetId })
+  );
 
   if (!spreadsheetCache) {
     spreadsheetCache = new Map<string, number>();
     SHEET_ID_CACHE.set(spreadsheetId, spreadsheetCache);
   }
 
-  for (const sheet of res.sheets ?? []) {
+  for (const sheet of res.data.sheets ?? []) {
     if (sheet.properties?.title && sheet.properties?.sheetId != null) {
       spreadsheetCache.set(sheet.properties.title, sheet.properties.sheetId);
     }
@@ -305,17 +322,20 @@ export function sheetsDeleteRow(
       throw error;
     }
 
-    return sheets.spreadsheetsBatchUpdate(spreadsheetId, {
-      requests: [{
-        deleteDimension: {
-          range: {
-            sheetId,
-            dimension: "ROWS",
-            startIndex: rowIndex - 1, // API is 0-indexed
-            endIndex: rowIndex,
+    return sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: rowIndex - 1, // API is 0-indexed
+              endIndex: rowIndex,
+            },
           },
-        },
-      }],
+        }],
+      },
     });
   });
 }
