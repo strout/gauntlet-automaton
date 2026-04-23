@@ -8,6 +8,11 @@ import {
   ROWNUM,
 } from "../../standings.ts";
 import { sheets, sheetsWrite } from "../../sheets.ts";
+import { validateElectivesSheet } from "./electives-watch.ts";
+import {
+  electiveRowTierFromLosses,
+  getComebackElectiveScryfallQueries,
+} from "./electives-watch.ts";
 import { generateAndSendComebackPack } from "./comeback-pack.ts";
 
 const MATCH_BOT_MESSAGED_COL = "G";
@@ -39,16 +44,35 @@ export async function checkSosComebackPacksOnLoss(
 
     if (loser["TOURNAMENT STATUS"] === "Eliminated") continue;
 
+    const losses = Number(loser.Losses);
+    const electiveQueries = await getComebackElectiveScryfallQueries(
+      loser.Identification,
+      Number.isFinite(losses) ? losses : 0,
+    );
+    if (electiveQueries === null) {
+      console.log(
+        `[SOS comeback] Waiting: no valid Electives row (ERROR clear) for ${loser.Identification} at elective tier ${
+          electiveRowTierFromLosses(Number.isFinite(losses) ? losses : 0)
+        } (matches row ${record[ROWNUM]}).`,
+      );
+      continue;
+    }
+
     const sheetRow = record[ROWNUM];
     const cellRef = record[MATCHTYPE] === "entropy"
       ? `Entropy!${ENTROPY_BOT_MESSAGED_COL}${sheetRow}`
       : `Matches!${MATCH_BOT_MESSAGED_COL}${sheetRow}`;
 
     try {
-      await generateAndSendComebackPack(client, {
-        identification: loser.Identification,
-        discordId: loser["Discord ID"],
-      });
+      await generateAndSendComebackPack(
+        client,
+        {
+          identification: loser.Identification,
+          discordId: loser["Discord ID"],
+          losses: Number.isFinite(losses) ? losses : 0,
+        },
+        electiveQueries,
+      );
 
       await sheetsWrite(sheets, CONFIG.LIVE_SHEET_ID, cellRef, [["1"]]);
     } catch (error) {
@@ -63,10 +87,14 @@ export async function checkSosComebackPacksOnLoss(
 /** FIN-style polling interval for comeback processing. */
 export async function watchSosComebackPacks(client: djs.Client): Promise<void> {
   while (true) {
-    try {
-      await checkSosComebackPacksOnLoss(client);
-    } catch (error) {
-      console.error("[SOS comeback] watch loop error:", error);
+    const results = await Promise.allSettled([
+      checkSosComebackPacksOnLoss(client),
+      validateElectivesSheet(),
+    ]);
+    for (const r of results) {
+      if (r.status === "rejected") {
+        console.error("[SOS periodic] task error:", r.reason);
+      }
     }
     await delay(60_000);
   }

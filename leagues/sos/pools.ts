@@ -7,7 +7,6 @@ import { ScryfallCard, searchCards, tileRareImages } from "../../scryfall.ts";
 import { makeSealedDeck } from "../../sealeddeck.ts";
 import { addPoolChange, getPlayers } from "../../standings.ts";
 
-/** Main SOS card pool on Scryfall (shared with comeback packs). */
 export const BASE_MAIN_POOL_SEARCH = `game:arena s:sos -t:basic`;
 
 /**

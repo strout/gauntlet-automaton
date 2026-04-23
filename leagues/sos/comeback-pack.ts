@@ -2,9 +2,15 @@ import * as djs from "discord.js";
 import { Buffer } from "node:buffer";
 import { CONFIG } from "../../config.ts";
 import { choice, weightedChoice } from "../../random.ts";
-import { ScryfallCard, searchCards, tileCardImages } from "../../scryfall.ts";
+import {
+  fetchRandomCardForQuery,
+  ScryfallCard,
+  searchCards,
+  tileCardImages,
+} from "../../scryfall.ts";
 import { formatPool, makeSealedDeck } from "../../sealeddeck.ts";
 import { addPoolChange, getPoolChanges } from "../../standings.ts";
+import { getComebackElectiveScryfallQueries } from "./electives-watch.ts";
 import {
   BASE_MAIN_POOL_SEARCH,
   SOS_MYTHICAL_ARCHIVE_SCRYFALL_QUERY,
@@ -63,19 +69,51 @@ function rollOneMythicalArchiveComebackCard(
   return choice(list) ?? null;
 }
 
-/**
- * Three extra comeback cards driven by season context (stub: returns none).
- * Implement when rules depend on week, bracket, losses, etc.
- */
-export function rollComebackPackVariableSlots(): Promise<readonly ScryfallCard[]> {
-  return Promise.resolve([]);
+async function rollComebackElectiveCards(
+  identification: string,
+  losses: number,
+  electiveQueries: readonly [string, string, string] | null | undefined,
+): Promise<readonly ScryfallCard[]> {
+  const queries = electiveQueries ??
+    await getComebackElectiveScryfallQueries(identification, losses);
+  if (!queries) {
+    throw new Error(
+      "SOS comeback: elective row or Course Sheet mapping not ready",
+    );
+  }
+  const cards: (ScryfallCard | null)[] = [];
+  for (let i = 0; i < queries.length; i++) {
+    const q = queries[i]!;
+    console.log(
+      `[SOS comeback] elective ${i + 1}/${queries.length} /cards/random q=${q}`,
+    );
+    cards.push(await fetchRandomCardForQuery(q));
+  }
+  for (let i = 0; i < cards.length; i++) {
+    if (!cards[i]) {
+      console.error(
+        `[SOS comeback] Scryfall /cards/random returned no card for elective ${
+          i + 1
+        }/3; q=${queries[i]}`,
+      );
+      throw new Error(
+        "SOS comeback: Scryfall returned no card for an elective query",
+      );
+    }
+  }
+  return cards as ScryfallCard[];
 }
 
 /**
  * Rolls one SOS comeback pack: 1 main-pool rare/mythic (2:1), 1 weighted MA
- * card, 3 uncommons, 6 commons, plus {@link rollComebackPackVariableSlots}.
+ * card, 3 uncommons, 6 commons, plus 3 elective-driven randoms from **Course Sheet**
+ * queries (see {@link getComebackElectiveScryfallQueries}).
  */
-export async function rollComebackPack(): Promise<ScryfallCard[]> {
+export async function rollComebackPack(args: {
+  readonly identification: string;
+  readonly losses: number;
+  readonly electiveQueries?: readonly [string, string, string] | null;
+}): Promise<ScryfallCard[]> {
   const [rares, mythics, uncommons, commons, mythicalArchive] = await Promise
     .all([
       searchCards(`${BASE_MAIN_POOL_SEARCH} rarity:rare`, { unique: "cards" }),
@@ -128,8 +166,12 @@ export async function rollComebackPack(): Promise<ScryfallCard[]> {
     pack.push(c);
   }
 
-  const variable = await rollComebackPackVariableSlots();
-  pack.push(...variable);
+  const electiveCards = await rollComebackElectiveCards(
+    args.identification,
+    args.losses,
+    args.electiveQueries,
+  );
+  pack.push(...electiveCards);
 
   return pack;
 }
@@ -137,6 +179,8 @@ export async function rollComebackPack(): Promise<ScryfallCard[]> {
 export interface SosComebackPlayer {
   readonly identification: string;
   readonly discordId: string;
+  /** Player Database loss count when granting this comeback. */
+  readonly losses: number;
 }
 
 /**
@@ -147,8 +191,14 @@ export interface SosComebackPlayer {
 export async function generateAndSendComebackPack(
   client: djs.Client,
   player: SosComebackPlayer,
+  /** When already resolved in the loss loop, avoids a second sheet read. */
+  electiveQueries?: readonly [string, string, string] | null,
 ): Promise<void> {
-  const packCards = await rollComebackPack();
+  const packCards = await rollComebackPack({
+    identification: player.identification,
+    losses: player.losses,
+    electiveQueries: electiveQueries ?? undefined,
+  });
   if (packCards.length === 0) {
     throw new Error("Comeback pack rolled zero cards");
   }
