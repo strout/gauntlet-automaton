@@ -3,24 +3,14 @@ import { CONFIG } from "./config.ts";
 import { delay } from "@std/async";
 import { parseArgs } from "@std/cli/parse-args";
 import * as djs from "discord.js";
-import {
-  columnIndex,
-  env,
-  initSheets,
-  sheets,
-  sheetsRead,
-  sheetsWrite,
-} from "./sheets.ts";
-import { mutex } from "./mutex.ts";
+import { env, initSheets, sheets, sheetsWrite } from "./sheets.ts";
 
 import {
   fetchSealedDeck,
-  formatPool,
   makeSealedDeck,
   SealedDeckEntry,
-  SealedDeckPool,
 } from "./sealeddeck.ts";
-import { pendingHandler, waitForBoosterTutor } from "./pending.ts";
+import { pendingHandler } from "./pending.ts";
 import { dispatch, Handler } from "./dispatch.ts";
 
 import {
@@ -184,15 +174,12 @@ async function handleMessage(
     }
   }
   const { claimed, finish } = await dispatch(message, [
-    choiceHandler,
-    choiceRequestHandler,
     speakHandler,
     rebuildHandler,
     populateHandler,
     populateLorwynHandler,
     populateShadowmoorHandler,
     pendingHandler,
-    clearChoiceHandler,
     deckCheckHandler,
     ...messageHandlers,
   ]);
@@ -209,35 +196,6 @@ const speakHandler: Handler<djs.Message> = async (message, handle) => {
   }
 };
 
-const choiceHandler: Handler<djs.Message> = async (message, handle) => {
-  if (
-    message.content.startsWith("!choose ") ||
-    message.content.startsWith("!discard ")
-  ) {
-    handle.claim();
-    await handleChoice(message);
-  }
-};
-
-const choiceRequestHandler: Handler<djs.Message> = async (message, handle) => {
-  if (
-    message.content.startsWith("!choice ") ||
-    message.content.startsWith("!choice-not ")
-  ) {
-    // extract sets to choose from & user id
-    const rx =
-      /^\!(choice|choice-not)((?: [|:a-zA-Z0-9+-]+)+)(?: <@\!?(\d+)>)?/;
-    const match = message.content.match(rx);
-    if (match) {
-      handle.claim();
-      const type = match[1] === "choice" ? "!choose" : "!discard";
-      const rounds = match[2].trim().split(" ").map((x) => x.split("|"));
-      const userId = match[3];
-      await initiateChoice(message, rounds, userId, type, message.client);
-    }
-  }
-};
-
 function isDM(message: djs.Message<boolean>): message is djs.Message<false> {
   return !message.inGuild();
 }
@@ -246,7 +204,6 @@ async function onReady(
   client: djs.Client<true>,
   watch: (client: djs.Client<true>) => Promise<void>,
 ) {
-  await restoreState(client);
   await Promise.all([manageRoles(client, pretend, once), watch(client)]);
 }
 
@@ -526,7 +483,7 @@ export async function populateLorwynPools(
               }
             }
           }
-        } catch (e) {
+        } catch (_e) {
           // Message doesn't reference another message, skip it
           continue;
         }
@@ -687,376 +644,6 @@ export async function populatePools(
       }
     }
   }
-}
-
-const choiceLock = mutex();
-
-type OutstandingChoice = {
-  type: "!choose" | "!discard";
-  packs: Record<string, SealedDeckPool>;
-  originalMessage?: djs.Message;
-  myMessage: djs.Message;
-  moreRounds: string[][];
-};
-
-const outstandingChoices: Record<string, Record<string, OutstandingChoice>> =
-  {};
-
-export function outstandingChoiceFor(
-  channelId: djs.Snowflake,
-  userId: djs.Snowflake,
-) {
-  return outstandingChoices[channelId]?.[userId];
-}
-
-async function clearChoiceHandler(
-  message: djs.Message,
-  handle: { claim(): void; release(): void },
-) {
-  const [command, url] = message.content.split(" ");
-  if (command !== "!clearChoice") return;
-  const guild = await message.client.guilds.fetch(CONFIG.GUILD_ID);
-  let member;
-  try {
-    member = await guild.members.fetch(message.author.id);
-  } catch (e) {
-    console.error(e);
-    return;
-  }
-  if (!member.roles.cache.has(CONFIG.LEAGUE_COMMITTEE_ROLE_ID)) return;
-  handle.claim();
-  using _ = await choiceLock();
-  const msg = await fetchMessageByUrl(message.client, url);
-  const user = msg?.mentions.users.first();
-  if (
-    msg && user &&
-    outstandingChoices[msg.channel.id]?.[user.id].myMessage.id === msg.id
-  ) {
-    delete outstandingChoices[msg.channel.id][user.id];
-    await saveState();
-    await msg.react("❌");
-    await message.reply("Done.");
-  } else if (user) {
-    await message.reply(
-      "Couldn't find a pending choice for " + user.displayName +
-        " in that message.",
-    );
-  } else await message.reply("Couldn't find a user mentioned in " + url);
-}
-
-export async function initiateChoice(
-  message: djs.Message,
-  rounds: string[][],
-  userId: string,
-  type: "!choose" | "!discard",
-  client: djs.Client,
-  channelId?: djs.Snowflake,
-): Promise<void>;
-export async function initiateChoice(
-  message: djs.Message | null,
-  rounds: string[][],
-  userId: string,
-  type: "!choose" | "!discard",
-  client: djs.Client,
-  channelId: djs.Snowflake,
-): Promise<void>;
-export async function initiateChoice(
-  message: djs.Message | null,
-  rounds: string[][],
-  userId: string,
-  type: "!choose" | "!discard",
-  client: djs.Client,
-  channelId?: djs.Snowflake,
-): Promise<void> {
-  console.log(rounds);
-  channelId ??= message?.channelId!;
-  const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-  const destChannel = await guild.channels.fetch(channelId) as djs.TextChannel;
-  using _ = await choiceLock();
-  if (
-    userId && channelId in outstandingChoices &&
-    userId in outstandingChoices[channelId]
-  ) {
-    if (outstandingChoices[channelId][userId].myMessage) {
-      const error = `<@!${userId}> already has a choice waiting: ${
-        outstandingChoices[channelId][userId].myMessage?.url
-      }`;
-      await (message?.reply(error) ?? destChannel.send(error));
-    } else {
-      const error = `<@!${userId}> already has a choice to be made.`;
-      await (message?.reply(error) ?? destChannel.send(error));
-    }
-    return;
-  }
-  const channel = await guild.channels.fetch(
-    CONFIG.BOT_BUNKER_CHANNEL_ID,
-  ) as djs.TextChannel;
-  if (!channel) throw new Error("Oops! No bot bunker somehow.");
-  const packs: Record<string, SealedDeckPool> = {};
-  for (const set of rounds[0]) {
-    const packMatch = set.match(/^(?:.*:)?pack-(\w+)$/);
-    let pack;
-    if (packMatch) {
-      pack = { success: await fetchSealedDeck(packMatch[1]) };
-    } else {
-      const cmd = set.includes("+")
-        ? `!pool ${set.replaceAll("+", "|").replace(/^.*:/, "")}`
-        : `!${set.replace(/^.*:/, "").replace(/^cube-/, "cube ")}`;
-      pack = await waitForBoosterTutor(channel.send(
-        `${cmd} - choice ${
-          message
-            ? "for " + message.url
-            : "for <@!" + userId + "> in " + destChannel.url
-        }`,
-      ));
-    }
-    if ("error" in pack) {
-      const error = "Error generating packs for <@!" + userId + ">:\n> " +
-        pack.error;
-      await (message?.reply(error) ?? destChannel.send(error));
-    } else {
-      packs[set.replace(/:.*$/, "")] = pack.success;
-    }
-  }
-  const opts = Object.keys(packs).map((
-    set,
-  ) =>
-    `\`${type} ${set}\`: https://sealeddeck.tech/${packs[set].poolId}\n${
-      formatPool(packs[set])
-    }`
-  );
-  const text = `<@!${userId}> Choose which pack to ${
-    type === "!choose"
-      ? "keep"
-      : type === "!discard"
-      ? "discard"
-      : type satisfies never
-  }. Your choices are:\n\n${opts.join("\n")}`;
-  const myMessage = await (message?.reply(text) ?? destChannel.send(text));
-  if (userId) {
-    outstandingChoices[channelId] ??= {};
-    outstandingChoices[channelId][userId] = {
-      originalMessage: message ?? undefined,
-      myMessage,
-      packs,
-      moreRounds: rounds.slice(1),
-      type,
-    };
-    await saveState();
-  }
-}
-
-async function handleChoice(message: djs.Message<boolean>) {
-  const [type, set] = message.content.split(" ");
-  let nextRound = () => Promise.resolve();
-  try {
-    using _ = await choiceLock();
-    const item = outstandingChoices[message.channelId]?.[message.author.id];
-    if (!item) {
-      await message.reply(
-        "I don't see a choice for you. Make sure you're responding in the same channel the choice was presented in.",
-      );
-      return;
-    }
-    const actualType = item.type ?? "!choose";
-    if (!item.myMessage) {
-      await message.reply("Hold on, I haven't even made all the packs yet...");
-      return;
-    }
-    for (const [s, pack] of Object.entries(item.packs)) {
-      // TODO why not just store them lowercase then???
-      if (type === actualType && s.toLowerCase() === set.toLowerCase()) {
-        const packs = type === "!choose"
-          ? [pack]
-          : type === "!discard"
-          ? Object.values(item.packs).filter((p) => p !== pack)
-          : type satisfies never;
-        const isPackGen = message.channelId === CONFIG.PACKGEN_CHANNEL_ID;
-        await message.reply(
-          `You ${isPackGen ? "get" : "would get"} ${
-            packs.map((p) => `https://sealeddeck.tech/${p.poolId}`).join(
-              " and ",
-            )
-          }`,
-        );
-        await item.myMessage.edit(
-          item.myMessage.content + "\n(" + s + " chosen)",
-        );
-        delete outstandingChoices[message.channelId][message.author.id];
-        if (isPackGen) {
-          // C = discord id, D = name, G = current pool
-          try {
-            const poolsData = await sheetsRead(
-              sheets,
-              CONFIG.LIVE_SHEET_ID,
-              "Pools!C7:G",
-            );
-            const poolIdx = poolsData.values!.findIndex((r) =>
-              r[columnIndex("C", "C")] == message.author.id
-            );
-            if (poolIdx < 0) {
-              await message.reply(
-                "ERROR: Couldn't find you on the spreadsheet. CC <@!" +
-                  CONFIG.OWNER_ID + ">",
-              );
-              return;
-            }
-            const name: string =
-              poolsData.values![poolIdx][columnIndex("D", "C")];
-            const currentPoolLink: string =
-              poolsData.values![poolIdx][columnIndex("G", "C")];
-            for (const p of packs) {
-              await addPoolChange(
-                name,
-                "add pack",
-                p.poolId,
-                JSON.stringify({
-                  type,
-                  choice: s,
-                  notChosen: Object.values(item.packs).filter((p) =>
-                    !packs.includes(p)
-                  ).map((x) => x.poolId),
-                }),
-              );
-            }
-            const currentPoolId = currentPoolLink.split(".tech/")[1];
-            const newPoolId = await makeSealedDeck({
-              sideboard: packs.flatMap((p) => p.sideboard),
-            }, currentPoolId);
-            const newPoolLink = "https://sealeddeck.tech/" + newPoolId;
-            // row 7 is index 0 so index + 7 is the current row
-            await sheetsWrite(
-              sheets,
-              CONFIG.LIVE_SHEET_ID,
-              "Pools!G" + (poolIdx + 7),
-              [
-                [newPoolLink],
-              ],
-            );
-          } catch (e) {
-            console.error(e);
-            await message.reply(
-              "You're all set, but something went wrong updating the spreadsheet. CC <@!" +
-                CONFIG.OWNER_ID + ">",
-            );
-          }
-        }
-        if (item.moreRounds.length) {
-          nextRound = () =>
-            initiateChoice(
-              item.originalMessage ?? null,
-              item.moreRounds,
-              message.author.id,
-              actualType,
-              message.client,
-              message.channelId,
-            );
-        } else {
-          await saveState();
-        }
-        return;
-      }
-    }
-    await message.reply(
-      "Sorry, that's not a choice I understand. Try one of these:\n\n" +
-        Object.keys(item.packs).map((x) => "`" + actualType + " " + x + "`")
-          .join(
-            "\n",
-          ),
-    );
-  } finally {
-    await nextRound();
-  }
-}
-
-async function restoreState(client: djs.Client<true>) {
-  if (!CONFIG.LIVE_SHEET_ID) return;
-  const text = await sheetsRead(
-    sheets,
-    CONFIG.LIVE_SHEET_ID,
-    "BotStuff!B1",
-  );
-  using _ = await choiceLock();
-  try {
-    const json: ReturnType<typeof serializebleState> = JSON.parse(
-      text.values![0][0],
-    );
-    console.log("restoring", json);
-    const guild = await client.guilds.fetch(CONFIG.GUILD_ID);
-    for (const [cid, choices] of Object.entries(json)) {
-      const channel = await guild.channels.fetch(cid) as djs.TextChannel;
-      outstandingChoices[cid] ??= {};
-      for (
-        const [uid, choice] of Object.entries(choices)
-      ) {
-        const originalMessage = choice.originalMessage === undefined
-          ? undefined
-          : await channel.messages.fetch(
-            choice.originalMessage,
-          );
-        const myMessage = await channel.messages.fetch(
-          choice.myMessage,
-        );
-        const packs: Record<string, SealedDeckPool> = {};
-        for (const [set, poolId] of Object.entries(choice.packs)) {
-          packs[set] = await fetchSealedDeck(poolId);
-        }
-        outstandingChoices[cid][uid] = {
-          originalMessage,
-          myMessage,
-          packs,
-          type: choice.type,
-          moreRounds: choice.moreRounds,
-        };
-      }
-    }
-  } catch (e) {
-    console.error("while restoring", e);
-  }
-}
-
-async function saveState() {
-  try {
-    await sheetsWrite(sheets, CONFIG.LIVE_SHEET_ID, "BotStuff!B1", [[
-      JSON.stringify(
-        serializebleState(),
-      ),
-    ]]);
-  } catch (e) {
-    console.error("while saving", e);
-    try {
-      // just to be safe, wipe out any stale data there
-      await sheetsWrite(sheets, CONFIG.LIVE_SHEET_ID, "BotStuff!B1", [[
-        "{}",
-      ]]);
-      // deno-lint-ignore no-empty
-    } catch (_e) {}
-  }
-}
-
-function serializebleState() {
-  return Object.fromEntries(
-    Object.entries(outstandingChoices).map((
-      [cid, choices],
-    ) => [
-      cid,
-      Object.fromEntries(
-        Object.entries(choices).filter(([_, c]) => !!c.myMessage).map((
-          [uid, choice],
-        ) => [uid, {
-          originalMessage: choice.originalMessage?.id,
-          myMessage: choice.myMessage!.id,
-          packs: Object.fromEntries(
-            Object.entries(choice.packs).map((
-              [s, r],
-            ) => [s, r.poolId]),
-          ),
-          type: choice.type,
-          moreRounds: choice.moreRounds,
-        }]),
-      ),
-    ]),
-  );
 }
 
 export async function fetchMessageByUrl(client: djs.Client, url: string) {
