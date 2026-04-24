@@ -81,9 +81,9 @@ export async function checkSosComebackPacksOnLoss(
     }
 
     const sheetRow = record[ROWNUM];
-    const cellRef = `${sheetName[record[MATCHTYPE]]}!${
-      headerColumns[record[MATCHTYPE]]["Bot Messaged"]
-    }${sheetRow}`;
+    const cellRef = record[MATCHTYPE] === "match"
+      ? `Matches!G${sheetRow}`
+      : `Entropy!J${sheetRow}`;
 
     try {
       await generateAndSendComebackPack(
