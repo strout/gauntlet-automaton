@@ -1,4 +1,4 @@
-import { CONFIG } from "./main.ts";
+import { CONFIG } from "./config.ts";
 import {
   fetchSealedDeck,
   makeSealedDeck,
