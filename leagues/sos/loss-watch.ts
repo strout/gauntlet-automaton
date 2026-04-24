@@ -8,10 +8,12 @@ import {
   ROWNUM,
 } from "../../standings.ts";
 import { sheets, sheetsWrite } from "../../sheets.ts";
-import { validateElectivesSheet } from "./electives-watch.ts";
 import {
   electiveRowTierFromLosses,
-  getComebackElectiveScryfallQueries,
+  getComebackElectiveCoursesFromValidated,
+  resolveCoursesToScryfallQueries,
+  validateElectivesSheet,
+  type ValidElectiveRow,
 } from "./electives-watch.ts";
 import { generateAndSendComebackPack } from "./comeback-pack.ts";
 
@@ -24,9 +26,13 @@ const ENTROPY_BOT_MESSAGED_COL = "J";
  */
 export async function checkSosComebackPacksOnLoss(
   client: djs.Client,
+  validSubmissions: Map<string, ValidElectiveRow[]>,
 ): Promise<void> {
-  const { rows: records } = await getAllMatches();
+  const { rows: records, sheetName, headerColumns } = await getAllMatches();
   const { rows: players } = await getPlayers();
+
+  // Group records by loser name for efficient lookup
+  const recordsByLoser = Object.groupBy(records, (r) => r["Loser Name"]);
 
   for (const record of records) {
     if (record["Bot Messaged"] || !record["Script Handled"]) continue;
@@ -44,24 +50,40 @@ export async function checkSosComebackPacksOnLoss(
 
     if (loser["TOURNAMENT STATUS"] === "Eliminated") continue;
 
-    const losses = Number(loser.Losses);
-    const electiveQueries = await getComebackElectiveScryfallQueries(
+    // Determine which loss number this match represents
+    // (records is already sorted by timestamp from getAllMatches)
+    const loserRecords = recordsByLoser[loserName]!;
+    const lossNumber = loserRecords.indexOf(record) + 1;
+
+    const electiveCourses = getComebackElectiveCoursesFromValidated(
       loser.Identification,
-      Number.isFinite(losses) ? losses : 0,
+      lossNumber,
+      validSubmissions,
+    );
+    if (electiveCourses === null) {
+      const tier = electiveRowTierFromLosses(lossNumber);
+      console.log(
+        `[SOS comeback] Waiting: ${loser.Identification} needs ${tier} valid Electives submission(s) for comeback pack at loss #${lossNumber} (matches row ${
+          record[ROWNUM]
+        }).`,
+      );
+      continue;
+    }
+
+    const electiveQueries = await resolveCoursesToScryfallQueries(
+      electiveCourses,
     );
     if (electiveQueries === null) {
-      console.log(
-        `[SOS comeback] Waiting: no valid Electives row (ERROR clear) for ${loser.Identification} at elective tier ${
-          electiveRowTierFromLosses(Number.isFinite(losses) ? losses : 0)
-        } (matches row ${record[ROWNUM]}).`,
+      console.warn(
+        `[SOS comeback] Could not resolve courses to Scryfall queries for ${loser.Identification} at loss #${lossNumber}.`,
       );
       continue;
     }
 
     const sheetRow = record[ROWNUM];
-    const cellRef = record[MATCHTYPE] === "entropy"
-      ? `Entropy!${ENTROPY_BOT_MESSAGED_COL}${sheetRow}`
-      : `Matches!${MATCH_BOT_MESSAGED_COL}${sheetRow}`;
+    const cellRef = `${sheetName[record[MATCHTYPE]]}!${
+      headerColumns[record[MATCHTYPE]]["Bot Messaged"]
+    }${sheetRow}`;
 
     try {
       await generateAndSendComebackPack(
@@ -69,7 +91,7 @@ export async function checkSosComebackPacksOnLoss(
         {
           identification: loser.Identification,
           discordId: loser["Discord ID"],
-          losses: Number.isFinite(losses) ? losses : 0,
+          losses: lossNumber,
         },
         electiveQueries,
       );
@@ -87,15 +109,18 @@ export async function checkSosComebackPacksOnLoss(
 /** FIN-style polling interval for comeback processing. */
 export async function watchSosComebackPacks(client: djs.Client): Promise<void> {
   while (true) {
-    const results = await Promise.allSettled([
-      checkSosComebackPacksOnLoss(client),
-      validateElectivesSheet(),
-    ]);
-    for (const r of results) {
-      if (r.status === "rejected") {
-        console.error("[SOS periodic] task error:", r.reason);
-      }
+    // Validate electives FIRST, then process matches with validated data (avoid race condition)
+    const validationResult = await validateElectivesSheet();
+
+    try {
+      await checkSosComebackPacksOnLoss(
+        client,
+        validationResult.validSubmissions,
+      );
+    } catch (error) {
+      console.error("[SOS periodic] checkSosComebackPacksOnLoss error:", error);
     }
+
     await delay(60_000);
   }
 }

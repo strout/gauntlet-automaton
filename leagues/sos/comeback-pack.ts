@@ -10,7 +10,6 @@ import {
 } from "../../scryfall.ts";
 import { formatPool, makeSealedDeck } from "../../sealeddeck.ts";
 import { addPoolChange, getPoolChanges } from "../../standings.ts";
-import { getComebackElectiveScryfallQueries } from "./electives-watch.ts";
 import {
   BASE_MAIN_POOL_SEARCH,
   SOS_MYTHICAL_ARCHIVE_SCRYFALL_QUERY,
@@ -72,15 +71,9 @@ function rollOneMythicalArchiveComebackCard(
 async function rollComebackElectiveCards(
   identification: string,
   losses: number,
-  electiveQueries: readonly [string, string, string] | null | undefined,
+  electiveQueries: readonly [string, string, string],
 ): Promise<readonly ScryfallCard[]> {
-  const queries = electiveQueries ??
-    await getComebackElectiveScryfallQueries(identification, losses);
-  if (!queries) {
-    throw new Error(
-      "SOS comeback: elective row or Course Sheet mapping not ready",
-    );
-  }
+  const queries = electiveQueries;
   const cards: (ScryfallCard | null)[] = [];
   for (let i = 0; i < queries.length; i++) {
     const q = queries[i]!;
@@ -107,12 +100,12 @@ async function rollComebackElectiveCards(
 /**
  * Rolls one SOS comeback pack: 1 main-pool rare/mythic (2:1), 1 weighted MA
  * card, 3 uncommons, 6 commons, plus 3 elective-driven randoms from **Course Sheet**
- * queries (see {@link getComebackElectiveScryfallQueries}).
+ * queries.
  */
 export async function rollComebackPack(args: {
   readonly identification: string;
   readonly losses: number;
-  readonly electiveQueries?: readonly [string, string, string] | null;
+  readonly electiveQueries: readonly [string, string, string];
 }): Promise<ScryfallCard[]> {
   const [rares, mythics, uncommons, commons, mythicalArchive] = await Promise
     .all([
@@ -191,13 +184,13 @@ export interface SosComebackPlayer {
 export async function generateAndSendComebackPack(
   client: djs.Client,
   player: SosComebackPlayer,
-  /** When already resolved in the loss loop, avoids a second sheet read. */
-  electiveQueries?: readonly [string, string, string] | null,
+  /** Already resolved elective queries from validated submissions. */
+  electiveQueries: readonly [string, string, string],
 ): Promise<void> {
   const packCards = await rollComebackPack({
     identification: player.identification,
     losses: player.losses,
-    electiveQueries: electiveQueries ?? undefined,
+    electiveQueries,
   });
   if (packCards.length === 0) {
     throw new Error("Comeback pack rolled zero cards");
