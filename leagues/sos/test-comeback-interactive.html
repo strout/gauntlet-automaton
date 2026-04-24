@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SOS Comeback Pack Distribution Tester</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    h1 {
+      color: #333;
+    }
+
+    .controls {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .control-row label {
+      min-width: 200px;
+      font-weight: 500;
+    }
+
+    .control-row input[type="number"] {
+      width: 80px;
+      padding: 5px 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+
+    .control-row input[type="range"] {
+      flex: 1;
+    }
+
+    .control-row span {
+      min-width: 50px;
+      text-align: right;
+    }
+
+    button {
+      background: #6366f1;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    button:hover {
+      background: #4f46e5;
+    }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .stats {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #333;
+    }
+
+    .stat-value.good {
+      color: #22c55e;
+    }
+
+    .stat-value.medium {
+      color: #f59e0b;
+    }
+
+    .stat-value.bad {
+      color: #ef4444;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    th,
+    td {
+      padding: 10px 15px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+
+    th {
+      background: #f8f9fa;
+      font-weight: 600;
+    }
+
+    tr:hover {
+      background: #f8f9fa;
+    }
+
+    .color-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .color-W {
+      background: #fff9e3;
+      color: #333;
+    }
+
+    .color-U {
+      background: #0e68ab;
+      color: white;
+    }
+
+    .color-B {
+      background: #7c3aed;
+      color: white;
+    }
+
+    .color-R {
+      background: #d3202a;
+      color: white;
+    }
+
+    .color-G {
+      background: #00733e;
+      color: white;
+    }
+
+    .color-C {
+      background: #6b7280;
+      color: white;
+    }
+
+    .color-M {
+      background: #e87800;
+      color: white;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+
+    .error {
+      background: #fef2f2;
+      color: #dc2626;
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>SOS Comeback Pack Distribution Tester</h1>
+
+  <div class="controls">
+    <h3>Parameters</h3>
+    <div class="control-row">
+      <label>A - 2-color weight in color slots (mono = 1):</label>
+      <input type="number" id="paramA" value="0.5" step="0.1" min="0.1" max="2">
+      <input type="range" id="rangeA" value="0.5" step="0.1" min="0.1" max="2">
+      <span id="displayA">0.5</span>
+    </div>
+    <div class="control-row">
+      <label>B - 2-color weight in all-card slot (mono = 1):</label>
+      <input type="number" id="paramB" value="1" step="0.1" min="0.1" max="3">
+      <input type="range" id="rangeB" value="1" step="0.1" min="0.1" max="3">
+      <span id="displayB">1</span>
+    </div>
+    <div class="control-row">
+      <label>C - mono-color weight in all-card slot (colorless = 1):</label>
+      <input type="number" id="paramC" value="0.5" step="0.1" min="0.1" max="5">
+      <input type="range" id="rangeC" value="0.5" step="0.1" min="0.1" max="5">
+      <span id="displayC">0.5</span>
+    </div>
+    <div class="control-row">
+      <label>Packs to simulate:</label>
+      <input type="number" id="numPacks" value="10000" step="1000" min="1000" max="50000">
+      <span id="displayPacks">10000</span>
+    </div>
+    <button id="runBtn">Run Simulation</button>
+  </div>
+
+  <div id="errorDiv"></div>
+
+  <div class="stats" id="statsDiv" style="display: none;">
+    <h3>Statistics</h3>
+    <div class="stats-grid">
+      <div class="stat-item">
+        <div class="stat-label">Coefficient of Variation</div>
+        <div class="stat-value" id="cvValue">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Mean</div>
+        <div class="stat-value" id="meanValue">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Std Dev</div>
+        <div class="stat-value" id="stdValue">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Min</div>
+        <div class="stat-value" id="minValue">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Max</div>
+        <div class="stat-value" id="maxValue">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Range</div>
+        <div class="stat-value" id="rangeValue">-</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats" id="categoryStatsDiv" style="display: none;">
+    <h3>Average by Category</h3>
+    <div class="stats-grid">
+      <div class="stat-item">
+        <div class="stat-label">Single-Color</div>
+        <div class="stat-value" id="singleColorAvg">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Multi-Color</div>
+        <div class="stat-value" id="multiColorAvg">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Colorless</div>
+        <div class="stat-value" id="colorlessAvg">-</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tableDiv" style="display: none;">
+    <h3>Card Distribution</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Card Name</th>
+          <th>Colors</th>
+          <th>Count</th>
+          <th>%</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    // Card data - fetched from Scryfall
+    let cardData = null;
+
+    async function fetchCardData() {
+      const pools = await Promise.all([
+        fetch('https://api.scryfall.com/cards/search?q=s:sos+game:arena+rarity:common+c:w+-t:basic&unique=cards').then(r => r.json()),
+        fetch('https://api.scryfall.com/cards/search?q=s:sos+game:arena+rarity:common+c:u+-t:basic&unique=cards').then(r => r.json()),
+        fetch('https://api.scryfall.com/cards/search?q=s:sos+game:arena+rarity:common+c:b+-t:basic&unique=cards').then(r => r.json()),
+        fetch('https://api.scryfall.com/cards/search?q=s:sos+game:arena+rarity:common+c:r+-t:basic&unique=cards').then(r => r.json()),
+        fetch('https://api.scryfall.com/cards/search?q=s:sos+game:arena+rarity:common+c:g+-t:basic&unique=cards').then(r => r.json()),
+        fetch('https://api.scryfall.com/cards/search?q=s:sos+game:arena+rarity:common+-t:basic&unique=cards').then(r => r.json()),
+      ]);
+
+      cardData = {
+        hasWhite: pools[0].data,
+        hasBlue: pools[1].data,
+        hasBlack: pools[2].data,
+        hasRed: pools[3].data,
+        hasGreen: pools[4].data,
+        allCommons: pools[5].data,
+      };
+      console.log('Pool sizes:', {
+        white: cardData.hasWhite.length,
+        blue: cardData.hasBlue.length,
+        black: cardData.hasBlack.length,
+        red: cardData.hasRed.length,
+        green: cardData.hasGreen.length,
+        all: cardData.allCommons.length,
+      });
+    }
+
+    function colorCount(card) {
+      const colors = card.colors?.filter(c => "WUBRG".includes(c));
+      return colors?.length ?? 0;
+    }
+
+    function cardIdentity(card) {
+      return card.oracle_id ?? `${card.name}\0${card.set}`;
+    }
+
+    function weightedChoice(weights) {
+      const total = weights.reduce((sum, [, w]) => sum + w, 0);
+      if (total === 0) {
+        // throw if all weights 0
+        throw new Error("All weights 0", weights);
+      }
+      let r = Math.random() * total;
+      for (const [card, weight] of weights) {
+        r -= weight;
+        if (r <= 0) return card;
+      }
+      return weights[weights.length - 1][0];
+    }
+
+    function rollPacks(hasWhite, hasBlue, hasBlack, hasRed, hasGreen, allCommons, params, numPacks) {
+      const monoSlotWeights = [
+        hasWhite.map(c => [c, colorCount(c) === 1 ? 1 : params.A]),
+        hasBlue.map(c => [c, colorCount(c) === 1 ? 1 : params.A]),
+        hasBlack.map(c => [c, colorCount(c) === 1 ? 1 : params.A]),
+        hasRed.map(c => [c, colorCount(c) === 1 ? 1 : params.A]),
+        hasGreen.map(c => [c, colorCount(c) === 1 ? 1 : params.A]),
+      ];
+
+      const allSlotWeights = allCommons.map(c => {
+        const cc = colorCount(c);
+        if (cc === 0) return [c, 1]; // colorless = 1
+        if (cc === 1) return [c, params.C]; // mono = C
+        return [c, params.B];
+      });
+
+      console.log("params", params);
+      console.log("mono slots", monoSlotWeights);
+      console.log("all slots", allSlotWeights);
+
+      const cardCounts = {};
+
+      for (let i = 0; i < numPacks; i++) {
+        do {
+          const commons = [];
+          const seen = new Set();
+
+          commons.push(weightedChoice(monoSlotWeights[0]));
+          commons.push(weightedChoice(monoSlotWeights[1]));
+          commons.push(weightedChoice(monoSlotWeights[2]));
+          commons.push(weightedChoice(monoSlotWeights[3]));
+          commons.push(weightedChoice(monoSlotWeights[4]));
+          commons.push(weightedChoice(allSlotWeights));
+
+          let hasDuplicate = false;
+          for (const c of commons) {
+            const id = cardIdentity(c);
+            if (seen.has(id)) {
+              hasDuplicate = true;
+              break;
+            }
+            seen.add(id);
+          }
+
+          if (!hasDuplicate) {
+            for (const c of commons) {
+              const id = cardIdentity(c);
+              cardCounts[id] = (cardCounts[id] ?? 0) + 1;
+            }
+            break;
+          }
+        } while (true);
+      }
+
+      return cardCounts;
+    }
+
+    function computeStats(counts) {
+      const values = Object.values(counts);
+      const n = values.length;
+      const mean = values.reduce((a, b) => a + b, 0) / n;
+      const std = Math.sqrt(values.reduce((sum, c) => sum + (c - mean) ** 2, 0) / n);
+      const cv = std / mean;
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      return {n, mean, std, cv, min, max};
+    }
+
+    function getColors(card) {
+      const colors = card.colors?.filter(c => "WUBRG".includes(c));
+      if (colors && colors.length > 0) return colors.join("");
+      const colorIdentity = card.color_identity.filter(c => "WUBRG".includes(c));
+      return colorIdentity.length > 0 ? colorIdentity.join("") : "C";
+    }
+
+    function getColorClass(colors) {
+      if (colors === "C") return "color-C";
+      if (colors.length > 1) return "color-M";
+      return `color-${colors}`;
+    }
+
+    async function runSimulation() {
+      const btn = document.getElementById('runBtn');
+      const errorDiv = document.getElementById('errorDiv');
+      const statsDiv = document.getElementById('statsDiv');
+      const tableDiv = document.getElementById('tableDiv');
+
+      btn.disabled = true;
+      btn.textContent = 'Running...';
+      errorDiv.innerHTML = '';
+      statsDiv.style.display = 'none';
+      document.getElementById('categoryStatsDiv').style.display = 'none';
+      tableDiv.style.display = 'none';
+
+      try {
+        if (!cardData) {
+          document.getElementById('errorDiv').innerHTML = '<div class="loading">Fetching card data from Scryfall...</div>';
+          cardData = await fetchCardData();
+          document.getElementById('errorDiv').innerHTML = '';
+        }
+
+        const params = {
+          A: parseFloat(document.getElementById('paramA').value),
+          B: parseFloat(document.getElementById('paramB').value),
+          C: parseFloat(document.getElementById('paramC').value),
+        };
+        const numPacks = parseInt(document.getElementById('numPacks').value);
+
+        const cardCounts = rollPacks(
+          cardData.hasWhite,
+          cardData.hasBlue,
+          cardData.hasBlack,
+          cardData.hasRed,
+          cardData.hasGreen,
+          cardData.allCommons,
+          params,
+          numPacks
+        );
+
+        const stats = computeStats(cardCounts);
+
+        // Update stats display
+        document.getElementById('cvValue').textContent = stats.cv.toFixed(4);
+        document.getElementById('cvValue').className = 'stat-value ' + (stats.cv < 0.05 ? 'good' : stats.cv < 0.1 ? 'medium' : 'bad');
+        document.getElementById('meanValue').textContent = stats.mean.toFixed(1);
+        document.getElementById('stdValue').textContent = stats.std.toFixed(1);
+        document.getElementById('minValue').textContent = stats.min;
+        document.getElementById('maxValue').textContent = stats.max;
+        document.getElementById('rangeValue').textContent = stats.max - stats.min;
+
+        // Build card info map
+        const cardInfoMap = new Map();
+        for (const card of cardData.allCommons) {
+          cardInfoMap.set(cardIdentity(card), {
+            name: card.name,
+            colors: getColors(card),
+            colorCount: colorCount(card),
+          });
+        }
+        console.log('Card categories:', {
+          single: Array.from(cardInfoMap.values()).filter(c => c.colorCount === 1).length,
+          multi: Array.from(cardInfoMap.values()).filter(c => c.colorCount > 1).length,
+          colorless: Array.from(cardInfoMap.values()).filter(c => c.colorCount === 0).length,
+        });
+
+        // Calculate category averages
+        let singleColorTotal = 0, singleColorCount = 0;
+        let multiColorTotal = 0, multiColorCount = 0;
+        let colorlessTotal = 0, colorlessCount = 0;
+
+        for (const [id, count] of Object.entries(cardCounts)) {
+          const cardInfo = cardInfoMap.get(id);
+          if (!cardInfo) continue;
+          const cc = cardInfo.colorCount;
+          if (cc === 1) {
+            singleColorTotal += count;
+            singleColorCount++;
+          } else if (cc > 1) {
+            multiColorTotal += count;
+            multiColorCount++;
+          } else {
+            colorlessTotal += count;
+            colorlessCount++;
+          }
+        }
+
+        document.getElementById('singleColorAvg').textContent = singleColorCount > 0 ? (singleColorTotal / singleColorCount).toFixed(1) : '-';
+        document.querySelector('#categoryStatsDiv .stat-item:first-child .stat-label').textContent = `Single-Color (${singleColorCount} cards)`;
+        document.getElementById('multiColorAvg').textContent = multiColorCount > 0 ? (multiColorTotal / multiColorCount).toFixed(1) : '-';
+        document.querySelector('#categoryStatsDiv .stat-item:nth-child(2) .stat-label').textContent = `Multi-Color (${multiColorCount} cards)`;
+        document.getElementById('colorlessAvg').textContent = colorlessCount > 0 ? (colorlessTotal / colorlessCount).toFixed(1) : '-';
+        document.querySelector('#categoryStatsDiv .stat-item:nth-child(3) .stat-label').textContent = `Colorless (${colorlessCount} cards)`;
+
+        // Build table
+        const entries = Object.entries(cardCounts).map(([id, count]) => ({
+          id,
+          count,
+          name: cardInfoMap.get(id)?.name ?? 'Unknown',
+          colors: cardInfoMap.get(id)?.colors ?? '?',
+        }));
+        entries.sort((a, b) => b.count - a.count);
+
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i];
+          const pct = (entry.count / (numPacks * 6)) * 100;
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${i + 1}</td>
+            <td>${entry.name}</td>
+            <td><span class="color-badge ${getColorClass(entry.colors)}">${entry.colors}</span></td>
+            <td>${entry.count}</td>
+            <td>${pct.toFixed(2)}%</td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        statsDiv.style.display = 'block';
+        document.getElementById('categoryStatsDiv').style.display = 'block';
+        tableDiv.style.display = 'block';
+      } catch (err) {
+        errorDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+        console.error(err);
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Run Simulation';
+    }
+
+    // Sync sliders and inputs
+    ['A', 'B', 'C'].forEach(letter => {
+      const input = document.getElementById(`param${letter}`);
+      const range = document.getElementById(`range${letter}`);
+      const display = document.getElementById(`display${letter}`);
+
+      input.addEventListener('input', () => {
+        range.value = input.value;
+        display.textContent = input.value;
+      });
+
+      range.addEventListener('input', () => {
+        input.value = range.value;
+        display.textContent = range.value;
+      });
+    });
+
+    document.getElementById('numPacks').addEventListener('input', (e) => {
+      document.getElementById('displayPacks').textContent = e.target.value;
+    });
+
+    document.getElementById('runBtn').addEventListener('click', runSimulation);
+
+    // Initial fetch
+    fetchCardData().then(() => {
+      if (cardData) {
+        console.log('Card data loaded:', cardData.allCommons.length, 'commons');
+      }
+    }).catch(err => {
+      document.getElementById('errorDiv').innerHTML = `<div class="error">Failed to load card data: ${err.message}</div>`;
+    });
+  </script>
+</body>
+
+</html>
