@@ -3,6 +3,10 @@
 This document provides essential information for AI agents working on the
 Gauntlet Automaton repository.
 
+**What This Is**: A Discord bot for managing Magic: The Gathering league play. It
+handles pool management and standings via Google Sheets. League logic lives in
+`leagues/<season>/` and changes each release.
+
 ## Commands
 
 The project uses [Deno](https://deno.com/).
@@ -22,16 +26,7 @@ The project uses [Deno](https://deno.com/).
 
 - **Format**: `deno fmt` - Rigorously followed.
 - **Lint**: `deno lint` - Must pass before any PR.
-- **Type Check**: `deno check --allow-import main.ts`
-
-### Testing
-
-- **Run All Tests**: `deno test --allow-all`
-- **Run Single File**: `deno test --allow-all <path_to_file>`
-- **Run Specific Test**:
-  `deno test --allow-all --filter "/test name/" <path_to_file>`
-- **Scripts**: Files like `test-scryfall-queries.ts` or `test-tiling.ts` are
-  utility scripts, not formal tests.
+- **Type Check**: `deno check main.ts`
 
 ## Project Structure
 
@@ -46,6 +41,7 @@ The project uses [Deno](https://deno.com/).
 - `sheets.ts`: Low-level Google Sheets API wrapper.
 - `dispatch.ts`: Custom event dispatch system using "claim/release" handlers.
 - `mutex.ts`: Mutual exclusion for sensitive operations (like state saving).
+- `retry.ts`: Retry wrapper for unstable external APIs.
 - `archive/`: Legacy league code (mostly excluded from standard Deno tasks).
 
 ## Code Style & Conventions
@@ -89,6 +85,20 @@ The project uses [Deno](https://deno.com/).
   - `handle.claim()` prevents subsequent handlers from seeing the event.
   - `handle.release()` allows concurrent processing by other handlers.
 - Event handlers are registered in `main.ts` or through league `setup()`.
+- **Adding Features**: New bot commands or event handling typically means adding
+  a handler function and registering it in `main.ts` or a league's `setup()`.
+
+## Design Principles
+
+- **Parse, Don't Validate**: When receiving data, parse it into a structured type
+  rather than just validating it. This transforms unstructured input into a
+  typed representation you can safely work with.
+- **Parse at the Boundaries**: Perform parsing as close to the system boundary as
+  possible (e.g., at API endpoints, file I/O, or external data sources). This
+  keeps the rest of your codebase working with well-typed, validated data.
+- **Prefer Total Functions**: Design functions that handle all possible inputs
+  without throwing or returning undefined. Use types like `Result<T, E>` or
+  `Option<T>` to make partiality explicit in the type system.
 
 ## Core Logic: Pool Management
 
@@ -100,16 +110,6 @@ The project uses [Deno](https://deno.com/).
   `fetchSealedDeck(id)` to get pool contents.
 - **Spreadsheet Sync**: `standings.ts` handles reading tables using `Zod` for
   validation.
-
-## Bot Commands Reference
-
-- `!choose <set>` / `!discard <set>`: Used for pack selection during drafts or
-  pool additions.
-- `!rebuild <player>`: Forces a reconstruction of a player's pool from the
-  change log.
-- `!deckcheck <link>`: Analyzes a sealeddeck.tech link to ensure it's legal for
-  the league.
-- `!say <link|user>`: Bot-level command to speak through the bot (Owner only).
 
 ## Rules & Instructions
 
