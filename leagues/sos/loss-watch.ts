@@ -43,7 +43,7 @@ async function sendElectiveReminder(
     const user = await client.users.fetch(discordId);
     const dmChannel = await user.createDM();
     await dmChannel.send(
-      "📜 **Elective Reminder**\n\nIt seems you haven't submitted your elective courses yet. Please add your selections to the Electives sheet to receive your comeback pack.",
+      "📜 **Elective Reminder**\n\nIt seems you haven't submitted your elective courses yet. Please submit your courses for the current term (see #rules-and-registration) to receive your comeback pack.",
     );
     console.log(
       `[SOS reminder] Sent elective reminder to ${player.Identification}`,
