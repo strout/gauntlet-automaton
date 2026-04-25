@@ -287,6 +287,7 @@ const playerShape = {
   "MATCHES TO PLAY STATUS": z.string(),
   "TOURNAMENT STATUS": z.string(),
   "Survey Sent": z.coerce.boolean(),
+  "Reminder at Loss": z.number().optional(),
 };
 
 export type Player<S extends z.ZodRawShape = Record<never, never>> = z.infer<
@@ -316,7 +317,8 @@ export async function getPlayers<
   });
   // filter out junk rows (which show up with the identification "  - ")
   table.rows = table.rows.filter((x) =>
-    typeof x.Identification === "string" && typeof x["Matches Played"] !== 'number' && x.Identification.length > 4
+    typeof x.Identification === "string" &&
+    typeof x["Matches Played"] !== "number" && x.Identification.length > 4
   );
   // TODO why do I need this cast?
   return schema.parse(table) as Table<Player<S>>;
