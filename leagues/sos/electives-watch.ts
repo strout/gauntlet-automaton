@@ -467,8 +467,8 @@ export const sosTranscriptHandler: Handler<Message> = async (
   const identification = player.Identification;
   const losses = Number(player.Losses);
   const normalizedLosses = Number.isFinite(losses) ? losses : 0;
-  const required = requiredElectiveSubmissions(normalizedLosses);
-  const isEvenLosses = normalizedLosses % 2 === 0;
+  const maxAllowed = requiredElectiveSubmissions(normalizedLosses);
+  const minimumRequired = Math.ceil(normalizedLosses / 2);
 
   // Read and validate electives
   const rows = await readElectivesParsedRows();
@@ -523,8 +523,7 @@ export const sosTranscriptHandler: Handler<Message> = async (
 
   // Build the transcript message
   let transcript = `📜 **${identification}'s Academic Transcript**\n\n`;
-  transcript +=
-    `*Losses: ${normalizedLosses} | Required submissions: ${required}*\n\n`;
+  transcript += `*Losses: ${normalizedLosses}*\n\n`;
 
   if (transcriptRows.length === 0) {
     transcript += "No valid elective courses on record.\n";
@@ -542,22 +541,25 @@ export const sosTranscriptHandler: Handler<Message> = async (
     }
   }
 
-  // Add status note about whether they can change selections
-  if (isEvenLosses) {
-    const currentCount = transcriptRows.filter((r) =>
-      r.status === "valid"
-    ).length;
-    if (currentCount < required) {
-      transcript += `⚠️ *You are late to sign up for courses, please submit ${
-        required - currentCount
-      } more elective batch(es) to receive the comeback packs you are due.*`;
-    } else {
-      transcript +=
-        `📝 *Your most recent selections are open for revision. Submit a new batch to update your record.*`;
-    }
+  // Count valid submissions
+  const validCount = transcriptRows.filter((r) => r.status === "valid").length;
+
+  // Add submission count and status note
+  transcript += `*Submitted: ${validCount} / ${maxAllowed}*\n\n`;
+
+  if (validCount < minimumRequired) {
+    transcript += `⚠️ *You are late to sign up for courses, please submit ${
+      minimumRequired - validCount
+    } more elective batch(es) to receive the comeback packs you are due.*`;
+  } else if (minimumRequired === maxAllowed) {
+    transcript +=
+      `🔒 *Your current course schedule is fixed until the end of the term.*`;
+  } else if (validCount === minimumRequired) {
+    transcript +=
+      `📚 *Registration is open for the next term. Submit your elective batch before your next match.*`;
   } else {
     transcript +=
-      `🔒 *Your selections are locked. Wait for your next loss milestone to submit additional electives.*`;
+      `📝 *Your most recent selections are open for revision. Submit a new batch to update your record.*`;
   }
 
   await message.reply(transcript);
