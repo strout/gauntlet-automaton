@@ -491,7 +491,7 @@ export const sosTranscriptHandler: Handler<Message> = async (
 
   if (playerRows.length === 0) {
     await message.reply(
-      `📜 **${identification}** — No elective courses recorded yet.\n\nYou may submit your first batch of 3 electives once eligible.`,
+      `📜 **${identification}** — No elective courses recorded yet.`,
     );
     return;
   }
@@ -548,12 +548,12 @@ export const sosTranscriptHandler: Handler<Message> = async (
       r.status === "valid"
     ).length;
     if (currentCount < required) {
-      transcript += `📝 *You may still submit ${
+      transcript += `⚠️ *You are late to sign up for courses, please submit ${
         required - currentCount
-      } more elective batch(es).*`;
+      } more elective batch(es) to receive the comeback packs you are due.*`;
     } else {
       transcript +=
-        `📝 *Your selections are open for revision. Submit a new batch to update your record.*`;
+        `📝 *Your most recent selections are open for revision. Submit a new batch to update your record.*`;
     }
   } else {
     transcript +=
