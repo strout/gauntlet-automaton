@@ -525,24 +525,20 @@ export const sosTranscriptHandler: Handler<Message> = async (
   let transcript = `📜 **${identification}'s Academic Transcript**\n\n`;
   transcript += `*Losses: ${normalizedLosses}*\n\n`;
 
-  if (transcriptRows.length === 0) {
-    transcript += "No valid elective courses on record.\n";
-  } else {
-    // Show only valid (non-replaced) rows in the transcript
-    const validRows = transcriptRows.filter((r) => r.status === "valid");
-    for (let i = 0; i < validRows.length; i++) {
-      const row = validRows[i]!;
-      const term = i + 1;
-      transcript += `**Term ${term}:**\n`;
-      transcript += `• ${row.courses[0]}\n`;
-      transcript += `• ${row.courses[1]}\n`;
-      transcript += `• ${row.courses[2]}\n`;
-      transcript += "\n";
-    }
+  // Show only valid (non-replaced) rows in the transcript
+  const validRows = transcriptRows.filter((r) => r.status === "valid");
+  for (let i = 0; i < validRows.length; i++) {
+    const row = validRows[i]!;
+    const term = i + 1;
+    transcript += `**Term ${term}:**\n`;
+    transcript += `• ${row.courses[0]}\n`;
+    transcript += `• ${row.courses[1]}\n`;
+    transcript += `• ${row.courses[2]}\n`;
+    transcript += "\n";
   }
 
   // Count valid submissions
-  const validCount = transcriptRows.filter((r) => r.status === "valid").length;
+  const validCount = validRows.length;
 
   // Add submission count and status note
   transcript += `*Submitted: ${validCount} / ${maxAllowed}*\n\n`;
