@@ -4,6 +4,7 @@ import {
   sosCourseTestMessageHandler,
   sosCourseTestSelectHandler,
 } from "./course-test.ts";
+import { sosTranscriptHandler } from "./electives-watch.ts";
 import { watchSosComebackPacks } from "./loss-watch.ts";
 import { sosStartingPoolHandler } from "./pools.ts";
 
@@ -18,7 +19,11 @@ export function setup(): Promise<{
 }> {
   return Promise.resolve({
     watch: (client) => watchSosComebackPacks(client),
-    messageHandlers: [sosStartingPoolHandler, sosCourseTestMessageHandler],
+    messageHandlers: [
+      sosStartingPoolHandler,
+      sosCourseTestMessageHandler,
+      sosTranscriptHandler,
+    ],
     interactionHandlers: [sosCourseTestSelectHandler],
   });
 }

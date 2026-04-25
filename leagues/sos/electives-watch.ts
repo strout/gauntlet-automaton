@@ -1,5 +1,7 @@
 import { delay } from "@std/async";
 import { CONFIG } from "../../config.ts";
+import { Handler } from "../../dispatch.ts";
+import { Message } from "discord.js";
 import {
   fetchSosCourses,
   scryfallQueryForElectiveCourseTitle,
@@ -430,3 +432,133 @@ export async function validateElectivesSheet(): Promise<
 
   return { validSubmissions };
 }
+
+/**
+ * DM command handler for !transcript - shows a player's elective history.
+ */
+export const sosTranscriptHandler: Handler<Message> = async (
+  message,
+  handle,
+) => {
+  if (message.inGuild() || message.content !== "!transcript") return;
+  handle.claim();
+
+  const discordId = message.author.id;
+
+  // Find the player by Discord ID
+  let players: readonly Player[];
+  try {
+    const { rows } = await getPlayers();
+    players = rows as unknown as readonly Player[];
+  } catch (e) {
+    console.error("[SOS transcript] getPlayers failed:", e);
+    await message.reply("📜 The archives are inaccessible... try again later.");
+    return;
+  }
+
+  const player = players.find((p) => String(p["Discord ID"]) === discordId);
+  if (!player) {
+    await message.reply(
+      "📜 I cannot find your name in the student registry. Are you enrolled?",
+    );
+    return;
+  }
+
+  const identification = player.Identification;
+  const losses = Number(player.Losses);
+  const normalizedLosses = Number.isFinite(losses) ? losses : 0;
+  const required = requiredElectiveSubmissions(normalizedLosses);
+  const isEvenLosses = normalizedLosses % 2 === 0;
+
+  // Read and validate electives
+  const rows = await readElectivesParsedRows();
+  if (!rows) {
+    await message.reply(
+      "📜 The elective records are corrupted... try again later.",
+    );
+    return;
+  }
+
+  // Find this player's rows
+  const playerKey = normalizeKey(identification);
+  const playerRows = rows
+    .filter((r) => normalizeKey(r.rawName) === playerKey)
+    .sort((a, z) => {
+      const d = a.timestamp - z.timestamp;
+      if (d !== 0) return d;
+      return a.rowNum - z.rowNum;
+    });
+
+  if (playerRows.length === 0) {
+    await message.reply(
+      `📜 **${identification}** — No elective courses recorded yet.\n\nYou may submit your first batch of 3 electives once eligible.`,
+    );
+    return;
+  }
+
+  // Build transcript from valid (non-ERROR, non-REPLACED) rows
+  const transcriptRows: {
+    rowNum: number;
+    courses: [string, string, string];
+    status: "valid" | "replaced" | "illegal";
+  }[] = [];
+
+  for (const r of playerRows) {
+    if (rowIsCompletelyBlank(r.rawName, r.course1, r.course2, r.course3)) {
+      continue;
+    }
+
+    const marker = currentRowMarker(r.currentErrorCell);
+    const status = markerToStatus(marker);
+
+    // Skip invalid entries
+    if (status === "illegal") continue;
+
+    transcriptRows.push({
+      rowNum: r.rowNum,
+      courses: [r.course1, r.course2, r.course3],
+      status,
+    });
+  }
+
+  // Build the transcript message
+  let transcript = `📜 **${identification}'s Academic Transcript**\n\n`;
+  transcript +=
+    `*Losses: ${normalizedLosses} | Required submissions: ${required}*\n\n`;
+
+  if (transcriptRows.length === 0) {
+    transcript += "No valid elective courses on record.\n";
+  } else {
+    // Show only valid (non-replaced) rows in the transcript
+    const validRows = transcriptRows.filter((r) => r.status === "valid");
+    for (let i = 0; i < validRows.length; i++) {
+      const row = validRows[i]!;
+      const term = i + 1;
+      transcript += `**Term ${term}:**\n`;
+      transcript += `• ${row.courses[0]}\n`;
+      transcript += `• ${row.courses[1]}\n`;
+      transcript += `• ${row.courses[2]}\n`;
+      transcript += "\n";
+    }
+  }
+
+  // Add status note about whether they can change selections
+  if (isEvenLosses) {
+    const currentCount = transcriptRows.filter((r) =>
+      r.status === "valid"
+    ).length;
+    if (currentCount < required) {
+      transcript += `📝 *You may still submit ${
+        required - currentCount
+      } more elective batch(es).*`;
+    } else {
+      transcript +=
+        `📝 *Your selections are open for revision. Submit a new batch to update your record.*`;
+    }
+  } else {
+    transcript +=
+      `🔒 *Your selections are locked. Wait for your next loss milestone to submit additional electives.*`;
+  }
+
+  await message.reply(transcript);
+};
