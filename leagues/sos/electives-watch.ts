@@ -214,12 +214,33 @@ export interface ValidElectiveRow {
   readonly course3: string;
 }
 
+/** Reason a row was marked as illegal (ERROR). */
+export type IllegalReason =
+  | "excess"
+  | "missing-courses"
+  | "duplicate-within-row"
+  | "duplicate-across-submissions"
+  | "unknown-player"
+  | "no-name";
+
+/** A row that was newly marked as illegal during this validation run. */
+export interface NewlyIllegalRow {
+  readonly rowNum: number;
+  readonly rawName: string;
+  readonly reason: IllegalReason;
+  readonly courses: readonly [string, string, string];
+  /** The specific course names that caused a duplicate error, if applicable. */
+  readonly duplicates?: readonly string[];
+}
+
 /**
  * Result of validating the electives sheet.
  * Maps player identification to their valid (non-ERROR, non-REPLACED) submissions, ordered by timestamp.
+ * Also includes rows that were newly marked as illegal (ERROR) this run.
  */
 export interface ElectiveValidationResult {
   readonly validSubmissions: Map<string, ValidElectiveRow[]>;
+  readonly newlyIllegal: NewlyIllegalRow[];
 }
 
 /**
@@ -243,7 +264,10 @@ export async function validateElectivesSheet(): Promise<
   ElectiveValidationResult
 > {
   const rows = await readElectivesParsedRows();
-  if (!rows) return { validSubmissions: new Map() };
+  if (!rows) return { validSubmissions: new Map(), newlyIllegal: [] };
+
+  // Track which rows were already marked as illegal before this run
+  const preExistingIllegal = new Set<number>();
 
   // Track row status: "illegal" → ERROR, "replaced" → REPLACED, undefined → valid
   // Pre-populate with existing markers to preserve them
@@ -254,7 +278,20 @@ export async function validateElectivesSheet(): Promise<
     if (status !== "valid") {
       rowStatus.set(r.rowNum, status);
     }
+    if (status === "illegal") {
+      preExistingIllegal.add(r.rowNum);
+    }
   }
+
+  // Track details for newly-marked illegal rows
+  const illegalDetails = new Map<
+    number,
+    {
+      reason: IllegalReason;
+      courses: readonly [string, string, string];
+      duplicates?: readonly string[];
+    }
+  >();
 
   const contentRows = rows.filter((r) =>
     !rowIsCompletelyBlank(
@@ -269,6 +306,10 @@ export async function validateElectivesSheet(): Promise<
   for (const r of contentRows) {
     if (!r.rawName && (r.course1 || r.course2 || r.course3)) {
       rowStatus.set(r.rowNum, "illegal");
+      illegalDetails.set(r.rowNum, {
+        reason: "no-name",
+        courses: [r.course1, r.course2, r.course3],
+      });
     }
   }
 
@@ -278,7 +319,7 @@ export async function validateElectivesSheet(): Promise<
     players = rows as unknown as readonly Player[];
   } catch (e) {
     console.error("[SOS electives] getPlayers failed:", e);
-    return { validSubmissions: new Map() };
+    return { validSubmissions: new Map(), newlyIllegal: [] };
   }
 
   const byPlayerKey = new Map<string, ElectiveRowParsed[]>();
@@ -311,7 +352,13 @@ export async function validateElectivesSheet(): Promise<
     );
     if (!player) {
       // Unknown player: all rows become illegal
-      for (const r of validRows) rowStatus.set(r.rowNum, "illegal");
+      for (const r of validRows) {
+        rowStatus.set(r.rowNum, "illegal");
+        illegalDetails.set(r.rowNum, {
+          reason: "unknown-player",
+          courses: [r.course1, r.course2, r.course3],
+        });
+      }
       continue;
     }
 
@@ -332,7 +379,12 @@ export async function validateElectivesSheet(): Promise<
       } else {
         // Odd losses: excess rows are illegal
         for (let i = required; i < n; i++) {
-          rowStatus.set(validRows[i]!.rowNum, "illegal");
+          const row = validRows[i]!;
+          rowStatus.set(row.rowNum, "illegal");
+          illegalDetails.set(row.rowNum, {
+            reason: "excess",
+            courses: [row.course1, row.course2, row.course3],
+          });
         }
       }
     }
@@ -357,26 +409,46 @@ export async function validateElectivesSheet(): Promise<
       // Missing courses → illegal
       if (!c1 || !c2 || !c3) {
         rowStatus.set(r.rowNum, "illegal");
+        illegalDetails.set(r.rowNum, {
+          reason: "missing-courses",
+          courses: [r.course1, r.course2, r.course3],
+        });
         continue;
       }
 
       // Duplicate within row → illegal
       const trio = [c1, c2, c3];
+      const orig = [r.course1, r.course2, r.course3];
       if (new Set(trio).size !== 3) {
+        // Find which courses are duplicated, using original names
+        const counts = new Map<string, number>();
+        for (const c of trio) counts.set(c, (counts.get(c) ?? 0) + 1);
+        const dupKeys = [...counts.entries()]
+          .filter(([, n]) => n > 1)
+          .map(([name]) => name);
+        const dups = dupKeys.flatMap((key) =>
+          orig.filter((o) => normalizeCourseName(o) === key)
+        );
         rowStatus.set(r.rowNum, "illegal");
+        illegalDetails.set(r.rowNum, {
+          reason: "duplicate-within-row",
+          courses: [r.course1, r.course2, r.course3],
+          duplicates: dups,
+        });
         continue;
       }
 
       // Duplicate across submissions → illegal
-      let hasDuplicate = false;
-      for (const c of trio) {
-        if (priorCourses.has(c)) {
-          hasDuplicate = true;
-          break;
-        }
-      }
-      if (hasDuplicate) {
+      const acrossDups = trio.flatMap((c, i) =>
+        priorCourses.has(c) ? [orig[i]!] : []
+      );
+      if (acrossDups.length > 0) {
         rowStatus.set(r.rowNum, "illegal");
+        illegalDetails.set(r.rowNum, {
+          reason: "duplicate-across-submissions",
+          courses: [r.course1, r.course2, r.course3],
+          duplicates: acrossDups,
+        });
         continue;
       }
 
@@ -400,7 +472,8 @@ export async function validateElectivesSheet(): Promise<
     }
   }
 
-  // Write markers to column G
+  // Write markers to column G and collect newly illegal rows
+  const newlyIllegal: NewlyIllegalRow[] = [];
   for (const r of rows) {
     const blank = rowIsCompletelyBlank(
       r.rawName,
@@ -414,6 +487,23 @@ export async function validateElectivesSheet(): Promise<
     const wantMarker = status === undefined ? "valid" : status;
     const wantLiteral = desiredRowMarker(wantMarker);
     const curLiteral = currentRowMarker(r.currentErrorCell);
+
+    // Track newly illegal rows (were not illegal before, now are)
+    if (wantMarker === "illegal" && !preExistingIllegal.has(r.rowNum)) {
+      const details = illegalDetails.get(r.rowNum);
+      if (!details) {
+        console.warn(
+          `[SOS electives] Row ${r.rowNum} marked illegal but missing details — this is a bug.`,
+        );
+      }
+      newlyIllegal.push({
+        rowNum: r.rowNum,
+        rawName: r.rawName,
+        reason: details?.reason ?? "unknown-player",
+        courses: details?.courses ?? [r.course1, r.course2, r.course3],
+        duplicates: details?.duplicates,
+      });
+    }
 
     if (wantLiteral === curLiteral) continue;
 
@@ -430,7 +520,7 @@ export async function validateElectivesSheet(): Promise<
     }
   }
 
-  return { validSubmissions };
+  return { validSubmissions, newlyIllegal };
 }
 
 /**
