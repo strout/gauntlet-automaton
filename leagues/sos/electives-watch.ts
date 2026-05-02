@@ -100,9 +100,11 @@ export function getComebackElectiveCoursesFromValidated(
 
 /**
  * Resolves course titles to Scryfall queries using the Course Sheet.
+ * At elective tier 5 (losses 9–10), uses **Course Sheet** column F when set.
  */
 export async function resolveCoursesToScryfallQueries(
   courses: readonly [string, string, string],
+  losses: number,
 ): Promise<readonly [string, string, string] | null> {
   let catalog: Awaited<ReturnType<typeof fetchSosCourses>>;
   try {
@@ -112,9 +114,11 @@ export async function resolveCoursesToScryfallQueries(
     return null;
   }
 
-  const q1 = scryfallQueryForElectiveCourseTitle(courses[0], catalog);
-  const q2 = scryfallQueryForElectiveCourseTitle(courses[1], catalog);
-  const q3 = scryfallQueryForElectiveCourseTitle(courses[2], catalog);
+  const electiveTier = electiveRowTierFromLosses(losses);
+  const tierOpt = { electiveTier } as const;
+  const q1 = scryfallQueryForElectiveCourseTitle(courses[0], catalog, tierOpt);
+  const q2 = scryfallQueryForElectiveCourseTitle(courses[1], catalog, tierOpt);
+  const q3 = scryfallQueryForElectiveCourseTitle(courses[2], catalog, tierOpt);
   if (!q1 || !q2 || !q3) {
     return null;
   }

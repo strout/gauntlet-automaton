@@ -227,6 +227,7 @@ export async function checkSosComebackPacksOnLoss(
 
     const electiveQueries = await resolveCoursesToScryfallQueries(
       electiveCourses,
+      lossNumber,
     );
     if (electiveQueries === null) {
       console.warn(
