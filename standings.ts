@@ -288,6 +288,8 @@ const playerShape = {
   "TOURNAMENT STATUS": z.string(),
   "Survey Sent": z.coerce.boolean(),
   "Reminder at Loss": z.number().optional(),
+  Streak: z.coerce.number().optional(),
+  College: z.string().optional(),
 };
 
 export type Player<S extends z.ZodRawShape = Record<never, never>> = z.infer<
@@ -304,7 +306,8 @@ export type Table<T> = {
  * @returns Player records with stats and metadata
  */
 export async function getPlayers<
-  S extends z.ZodRawShape = Record<string, never>,
+  // deno-lint-ignore ban-types
+  S extends z.ZodRawShape = {},
 >(
   sheetId = CONFIG.LIVE_SHEET_ID,
   ...[extras]: S extends Record<string, never> ? [S?] : [S]
@@ -383,6 +386,7 @@ export async function getMatches<S extends z.ZodRawShape>(
     Notes: z.string().optional(),
     "Script Handled": z.coerce.boolean(),
     "Bot Messaged": z.coerce.boolean(),
+    "Announcement Sent": z.coerce.boolean(),
     ...extras,
   }, table);
   quotas = await quotaTask;

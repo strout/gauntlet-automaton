@@ -19,6 +19,7 @@ import {
   type ValidElectiveRow,
 } from "./electives-watch.ts";
 import { generateAndSendComebackPack } from "./comeback-pack.ts";
+import { checkSosAnnouncements } from "./announcements.ts";
 import { z } from "zod";
 
 const MATCH_BOT_MESSAGED_COL = "G";
@@ -278,6 +279,12 @@ export async function watchSosComebackPacks(client: djs.Client): Promise<void> {
     }
     for (const row of validationResult.newlyIllegal) {
       sendElectiveRejectionDM(client, row, players);
+    }
+
+    try {
+      await checkSosAnnouncements();
+    } catch (error) {
+      console.error("[SOS periodic] checkSosAnnouncements error:", error);
     }
 
     try {
