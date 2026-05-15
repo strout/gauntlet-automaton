@@ -573,10 +573,12 @@ export const sosTranscriptHandler: Handler<Message> = async (
     return;
   }
 
-  // Find this player's rows
-  const playerKey = normalizeKey(identification);
+  // Find this player's rows using same matching as electives validation
   const playerRows = rows
-    .filter((r) => normalizeKey(r.rawName) === playerKey)
+    .filter((r) => {
+      const matched = findPlayerForElectiveRow(players, r.rawName);
+      return matched?.Identification === identification;
+    })
     .sort((a, z) => {
       const d = a.timestamp - z.timestamp;
       if (d !== 0) return d;
