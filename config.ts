@@ -18,6 +18,7 @@ export interface Config {
   readonly ELIMINATED_ROLE_ID: string;
   readonly ELIMINATE: boolean;
   readonly LEAGUE_COMMITTEE_ROLE_ID: string;
+  readonly MAX_LOSSES: number;
   // TODO replace this with a record of sheet ids
   readonly LIVE_SHEET_ID: string;
   readonly LEAGUE_ROLES: readonly LeagueRole[];

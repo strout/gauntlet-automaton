@@ -3,9 +3,9 @@
 This document provides essential information for AI agents working on the
 Gauntlet Automaton repository.
 
-**What This Is**: A Discord bot for managing Magic: The Gathering league play. It
-handles pool management and standings via Google Sheets. League logic lives in
-`leagues/<season>/` and changes each release.
+**What This Is**: A Discord bot for managing Magic: The Gathering league play.
+It handles pool management and standings via Google Sheets. League logic lives
+in `leagues/<season>/` and changes each release.
 
 ## Commands
 
@@ -90,11 +90,11 @@ The project uses [Deno](https://deno.com/).
 
 ## Design Principles
 
-- **Parse, Don't Validate**: When receiving data, parse it into a structured type
-  rather than just validating it. This transforms unstructured input into a
+- **Parse, Don't Validate**: When receiving data, parse it into a structured
+  type rather than just validating it. This transforms unstructured input into a
   typed representation you can safely work with.
-- **Parse at the Boundaries**: Perform parsing as close to the system boundary as
-  possible (e.g., at API endpoints, file I/O, or external data sources). This
+- **Parse at the Boundaries**: Perform parsing as close to the system boundary
+  as possible (e.g., at API endpoints, file I/O, or external data sources). This
   keeps the rest of your codebase working with well-typed, validated data.
 - **Prefer Total Functions**: Design functions that handle all possible inputs
   without throwing or returning undefined. Use types like `Result<T, E>` or

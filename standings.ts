@@ -287,7 +287,7 @@ const playerShape = {
   "MATCHES TO PLAY STATUS": z.string(),
   "TOURNAMENT STATUS": z.string(),
   "Survey Sent": z.coerce.boolean(),
-  "Reminder at Loss": z.number().optional(),
+  Streak: z.coerce.number().optional(),
 };
 
 export type Player<S extends z.ZodRawShape = Record<never, never>> = z.infer<
@@ -529,4 +529,36 @@ export async function getExpectedPool(
     ? currentPoolId
     : (await makeSealedDeck({ sideboard: expected }));
   return "https://sealeddeck.tech/" + poolId;
+}
+
+/**
+ * Records a pack addition for a player, updating the pool snapshot.
+ * @param name - Player name
+ * @param pack - The SealedDeck pool object for the pack
+ * @param comment - Comment explaining the addition
+ * @param sheetId - The Google Sheets document ID
+ */
+export async function recordPackAddition(
+  name: string,
+  pack: import("./sealeddeck.ts").SealedDeckPool,
+  comment: string,
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  const poolChanges = await getPoolChanges(sheetId);
+  const playerChanges = poolChanges.rows.filter((c) => c.Name === name);
+  const currentPoolId = playerChanges.findLast((c) => c["Full Pool"])?.["Full Pool"];
+
+  const newPoolId = await makeSealedDeck(
+    { sideboard: pack.sideboard },
+    currentPoolId ?? undefined,
+  );
+
+  await addPoolChange(
+    name,
+    "add pack",
+    pack.poolId,
+    comment,
+    newPoolId,
+    sheetId,
+  );
 }

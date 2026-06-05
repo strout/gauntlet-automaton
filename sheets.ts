@@ -42,7 +42,7 @@ export function sheetsRead(
     "FORMATTED_VALUE",
 ) {
   return withSmartRetry(async () => {
-  const res = await sheets.spreadsheets.values.get({
+    const res = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
       range,
       valueRenderOption,
@@ -96,7 +96,8 @@ export function sheetsReadColumnHyperlinkUrls(
       }[];
     };
 
-    const sheetsOut = (res.data as { sheets?: readonly SheetOut[] }).sheets ?? [];
+    const sheetsOut = (res.data as { sheets?: readonly SheetOut[] }).sheets ??
+      [];
     const sh = sheetsOut.find((s) =>
       s.properties?.title === expectedSheetTitle
     ) ??
