@@ -13,6 +13,7 @@ import {
   sheetsWrite,
   writeSheetsDate,
   getSheetTimeZoneOffsetMs,
+  readSheetsDate,
 } from "./sheets.ts";
 import { z } from "zod";
 
@@ -424,7 +425,11 @@ export async function isLeagueOver() {
   const allQuotas = await getQuotas();
   if (allQuotas.length === 0) return false;
   const lastQuota = allQuotas[allQuotas.length - 1];
-  return Date.now() > lastQuota.toDate;
+  
+  const offsetMs = await getSheetTimeZoneOffsetMs(CONFIG.LIVE_SHEET_ID);
+  const endDateTime = readSheetsDate(lastQuota.toDate, offsetMs);
+  
+  return Date.now() > endDateTime.getTime();
 }
 
 export const MATCHTYPE = "MATCHTYPE";

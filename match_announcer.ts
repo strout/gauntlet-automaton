@@ -220,12 +220,15 @@ function escapeMarkdown(str: string) {
  * for the current entropy week.
  */
 export async function announceEntropy(client: Client) {
-  console.log("Checking for entropy...");
+  const currentWeek = await getCurrentWeek();
+  const entropyWeek = await getEntropyWeek();
+  const leagueOver = await isLeagueOver();
+  console.log(`Checking for entropy... (Current Week: ${currentWeek}, Entropy Week: ${entropyWeek}, League Over: ${leagueOver})`);
   try {
-    const currentWeek = await getCurrentWeek();
-    const entropyWeek = await getEntropyWeek();
+    // currentWeek and entropyWeek are already fetched above
+    // leagueOver is already fetched above
 
-    const leagueOver = await isLeagueOver();
+
     if (entropyWeek > currentWeek || (entropyWeek === currentWeek && !leagueOver)) {
       console.log(`Waiting until week ${entropyWeek} ends (League Over: ${leagueOver}). Skipping.`);
       return;
