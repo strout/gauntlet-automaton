@@ -10,6 +10,7 @@ import {
   sheetsAppend,
   sheetsDeleteRow,
   sheetsRead,
+  sheetsWrite,
 } from "./sheets.ts";
 import { z } from "zod";
 
@@ -83,6 +84,57 @@ export async function getCurrentWeek() {
   return z.tuple([z.tuple([z.coerce.number()])]).parse(
     (await sheetsRead(sheets, CONFIG.LIVE_SHEET_ID, "Quotas!B2")).values,
   )[0][0];
+}
+
+/**
+ * Gets the entropy week from the Quotas sheet.
+ * @returns The entropy week number
+ */
+export async function getEntropyWeek() {
+  return z.tuple([z.tuple([z.coerce.number()])]).parse(
+    (await sheetsRead(sheets, CONFIG.LIVE_SHEET_ID, "Quotas!D2")).values,
+  )[0][0];
+}
+
+/**
+ * Sets the entropy week in the Quotas sheet.
+ * @param week - The new entropy week number
+ */
+export async function setEntropyWeek(week: number) {
+  await sheetsWrite(
+    sheets,
+    CONFIG.LIVE_SHEET_ID,
+    "Quotas!D2",
+    [[week]],
+    "RAW",
+  );
+}
+
+/**
+ * Records an entropy loss in the Entropy sheet.
+ * @param playerName - Name of the player
+ * @param week - The week the entropy occurred
+ */
+export async function addEntropyRow(playerName: string, week: number) {
+  const date = new Date();
+  const serialDate = (date.getTime() - new Date(1899, 11, 30).getTime()) / (1000 * 60 * 60 * 24);
+  await sheetsAppend(
+    sheets,
+    CONFIG.LIVE_SHEET_ID,
+    "Entropy!A4:I",
+    [[
+      "", // MATCH # (Auto-filled or ignored)
+      week,
+      "ENTROPY",
+      playerName,
+      "2",
+      "0",
+      "", // RESULT is vestigial
+      true,
+      serialDate,
+    ]],
+    "RAW",
+  );
 }
 
 /**
