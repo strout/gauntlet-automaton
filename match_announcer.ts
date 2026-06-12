@@ -5,10 +5,6 @@ import {
   getPlayers,
   getQuotas,
   recordPackAddition,
-  getEntropyWeek,
-  setEntropyWeek,
-  addEntropyRow,
-  getCurrentWeek,
 } from "./standings.ts";
 import { sheets, sheetsWrite } from "./sheets.ts";
 import { waitForBoosterTutor, PackWithOrder } from "./pending.ts";
@@ -211,96 +207,4 @@ function escapeMarkdown(str: string) {
     /([^a-zA-Z0-9 ])/g,
     (x) => (x.charCodeAt(0) > 127 ? x : "\\" + x),
   );
-}
-
-
-/**
- * Processes entropy losses for players who haven't met the minimum match requirement
- * for the current entropy week.
- */
-export async function announceEntropy(client: Client) {
-  console.log("Checking for entropy...");
-  try {
-    const currentWeek = await getCurrentWeek();
-    const entropyWeek = await getEntropyWeek();
-
-    if (entropyWeek > currentWeek) {
-      console.log(`Entropy week ${entropyWeek} is in the future. Skipping.`);
-      return;
-    }
-
-    const players = await getPlayers();
-    const quotas = await getQuotas();
-    const currentQuota = quotas.find((q) => q.week === entropyWeek);
-
-    if (!currentQuota) {
-      console.log(`No quota found for entropy week ${entropyWeek}. Advancing to ${entropyWeek + 1}...`);
-      await setEntropyWeek(entropyWeek + 1);
-      return;
-    }
-
-    const packGenChannel = await client.channels.fetch(
-      CONFIG.PACKGEN_CHANNEL_ID,
-    ) as TextChannel;
-    if (!packGenChannel) {
-      console.error("Could not find pack generation channel");
-      return;
-    }
-
-    for (const player of players.rows) {
-      if (CONFIG.WAIVE_ENTROPY.includes(player.Identification)) continue;
-
-      const wins = player.Wins;
-      const losses = player.Losses;
-      const matchesPlayed = wins + losses;
-      const minMatches = currentQuota.matchesMin;
-
-      if (matchesPlayed < minMatches) {
-        const toAdd = Math.min(minMatches - matchesPlayed, CONFIG.MAX_LOSSES - losses);
-        if (toAdd <= 0) continue;
-
-        const discordId = player["Discord ID"];
-        if (!discordId) {
-          console.warn(`No Discord ID for player ${player.Identification}`);
-          continue;
-        }
-        const mention = `<@!${discordId}>`;
-
-        if (losses + toAdd >= CONFIG.MAX_LOSSES) {
-          // Elimination case
-          for (let i = 0; i < toAdd; i++) {
-            await addEntropyRow(player.Identification, entropyWeek);
-          }
-          await packGenChannel.send(`${mention} was eliminated by ENTROPY.`);
-        } else {
-          // Pack generation case
-          for (let i = 0; i < toAdd; i++) {
-            await addEntropyRow(player.Identification, entropyWeek);
-            const sentMessage = await packGenChannel.send(
-              `!cube SET ${mention} was defeated by ENTROPY.`,
-            );
-
-            try {
-              const result = await waitForBoosterTutor(Promise.resolve(sentMessage));
-              if ("success" in result) {
-                await recordPackAddition(
-                  player.Identification,
-                  result.success,
-                  `Entropy loss (Week ${entropyWeek})`,
-                );
-              }
-            } catch (e) {
-              console.error(`Failed to record entropy pack for ${player.Identification}:`, e);
-            }
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
-        }
-      }
-    }
-
-    await setEntropyWeek(entropyWeek + 1);
-    console.log(`Entropy for week ${entropyWeek} processed. Next: ${entropyWeek + 1}`);
-  } catch (e) {
-    console.error("Error in announceEntropy:", e);
-  }
 }

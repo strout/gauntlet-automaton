@@ -27,7 +27,7 @@ import {
 import { ScryfallCard } from "./scryfall.ts";
 import { handleGuildMemberAdd, manageRoles } from "./role_management.ts";
 import { setup } from "./leagues/set/set.ts";
-import { announceMatches, announceEntropy } from "./match_announcer.ts";
+import { announceMatches } from "./match_announcer.ts";
 
 export { CONFIG };
 
@@ -183,7 +183,6 @@ async function runMatchAnnouncer(client: djs.Client<true>) {
   while (true) {
     try {
       await announceMatches(client);
-      await announceEntropy(client);
     } catch (err) {
       console.error("Error in match announcer loop:", err);
     }
