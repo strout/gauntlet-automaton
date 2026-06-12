@@ -9,7 +9,6 @@ import {
   setEntropyWeek,
   addEntropyRow,
   getCurrentWeek,
-  isLeagueOver,
 } from "./standings.ts";
 import { sheets, sheetsWrite } from "./sheets.ts";
 import { waitForBoosterTutor, PackWithOrder } from "./pending.ts";
@@ -225,9 +224,8 @@ export async function announceEntropy(client: Client) {
     const currentWeek = await getCurrentWeek();
     const entropyWeek = await getEntropyWeek();
 
-    const leagueOver = await isLeagueOver();
-    if (entropyWeek > currentWeek || (entropyWeek === currentWeek && !leagueOver)) {
-      console.log(`Waiting until week ${entropyWeek} ends (League Over: ${leagueOver}). Skipping.`);
+    if (entropyWeek > currentWeek) {
+      console.log(`Entropy week ${entropyWeek} is in the future. Skipping.`);
       return;
     }
 
