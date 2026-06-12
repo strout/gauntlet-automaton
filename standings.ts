@@ -11,6 +11,8 @@ import {
   sheetsDeleteRow,
   sheetsRead,
   sheetsWrite,
+  writeSheetsDate,
+  getSheetTimeZoneOffsetMs,
 } from "./sheets.ts";
 import { z } from "zod";
 
@@ -116,14 +118,14 @@ export async function setEntropyWeek(week: number) {
  * @param week - The week the entropy occurred
  */
 export async function addEntropyRow(playerName: string, week: number) {
-  const date = new Date();
-  const serialDate = (date.getTime() - new Date(1899, 11, 30).getTime()) / (1000 * 60 * 60 * 24);
+  const offsetMs = await getSheetTimeZoneOffsetMs(CONFIG.LIVE_SHEET_ID);
+  const serialDate = writeSheetsDate(new Date(), offsetMs);
   await sheetsAppend(
     sheets,
     CONFIG.LIVE_SHEET_ID,
-    "Entropy!A4:I",
+    "Entropy!A:I",
     [[
-      "", // MATCH # (Auto-filled or ignored)
+      0, // MATCH #
       week,
       "ENTROPY",
       playerName,
@@ -412,6 +414,17 @@ export async function getQuotas() {
     matchesMax: x.MAX,
   }));
   return quotas;
+}
+
+/**
+ * Checks if the league is officially over based on the last quota's end date.
+ * @returns True if the current date is past the final quota's end date.
+ */
+export async function isLeagueOver() {
+  const allQuotas = await getQuotas();
+  if (allQuotas.length === 0) return false;
+  const lastQuota = allQuotas[allQuotas.length - 1];
+  return Date.now() > lastQuota.toDate;
 }
 
 export const MATCHTYPE = "MATCHTYPE";

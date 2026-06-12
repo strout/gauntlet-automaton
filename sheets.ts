@@ -186,6 +186,8 @@ export function sheetsAppend(
   });
 }
 
+
+
 /**
  * Global Sheets client instance. Must be initialized with `initSheets()` before use.
  * Will throw an error if accessed before initialization.
@@ -245,6 +247,10 @@ export function readSheetsDate(date: number, offsetMs: number) {
   return new Date(
     date * 1000 * 24 * 60 * 60 + Date.UTC(1899, 11, 30) - offsetMs,
   );
+}
+
+export function writeSheetsDate(date: Date, offsetMs: number) {
+  return (date.getTime() + offsetMs - Date.UTC(1899, 11, 30)) / (1000 * 60 * 60 * 24);
 }
 
 export function utcOffsetMs(timeZone: string, date?: Date) {
