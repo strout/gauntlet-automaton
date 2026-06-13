@@ -134,7 +134,7 @@ export async function announceMatches(client: Client) {
       let message = "";
       if (loserInfo.Losses >= CONFIG.MAX_LOSSES) {
         message =
-          `!cube SET ${loserMention} was eliminated by ${winnerMention}.`;
+          `${loserMention} was eliminated by ${winnerMention}.`;
       } else {
         message =
           `!cube SET ${loserMention} was defeated ${result} by ${winnerMention}.`;
