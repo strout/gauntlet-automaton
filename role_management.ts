@@ -3,7 +3,13 @@ import { delay } from "@std/async";
 import * as djs from "discord.js";
 import { columnIndex, env, sheets, sheetsRead, sheetsWrite } from "./sheets.ts";
 import { mutex } from "./mutex.ts";
-import { getPlayers, parseTable, readTable, ROW, ROWNUM } from "./standings.ts";
+import {
+  liveSheet,
+  parseTable,
+  readTable,
+  ROW,
+  ROWNUM,
+} from "./standings.ts";
 import { z } from "zod";
 
 type Role = { id: djs.Snowflake; name: string };
@@ -45,9 +51,9 @@ const markRoleAdded = async (
 const SURVEY_COLUMN = "C";
 const getPlayerStatuses = async () => {
   if (
-    !CONFIG.ELIMINATED_ROLE_ID || !CONFIG.LIVE_SHEET_ID || !CONFIG.ELIMINATE
+    !CONFIG.ELIMINATED_ROLE_ID || !liveSheet.sheetId || !CONFIG.ELIMINATE
   ) return null;
-  return await getPlayers();
+  return await liveSheet.getPlayers();
 };
 
 async function addRole(member: djs.GuildMember, roleId: djs.Snowflake) {
@@ -301,7 +307,7 @@ const assignEliminatedRole = async (
       (x["Matches played"] == 30 || x["TOURNAMENT STATUS"] === "Eliminated") // TODO change matchesPlayed back after short league is done
     ) ?? [];
     let anySent = false;
-    if (CONFIG.LIVE_SHEET_ID) {
+    if (liveSheet.sheetId) {
       for (const player of surveyablePlayers) {
         const { toSurveyDate } = surveySendDate[player["Discord ID"]] ??
           [null];
@@ -314,7 +320,7 @@ const assignEliminatedRole = async (
           // TODO covnert to a log entry; not that we'd have late joiners after surveys are being sent but still...
           await sheetsWrite(
             sheets,
-            CONFIG.LIVE_SHEET_ID,
+            liveSheet.sheetId,
             "BotStuff!" + SURVEY_COLUMN + player[ROWNUM],
             [[true]],
           );
@@ -328,7 +334,7 @@ const assignEliminatedRole = async (
           // TODO covnert to a log entry; not that we'd have late joiners after surveys are being sent but still...
           await sheetsWrite(
             sheets,
-            CONFIG.LIVE_SHEET_ID,
+            liveSheet.sheetId,
             "BotStuff!" + SURVEY_COLUMN + player[ROWNUM],
             [[false]],
           );

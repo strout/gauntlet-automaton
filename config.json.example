@@ -11,8 +11,13 @@
   "BOT_BUNKER_CHANNEL_ID": "some channel id",
   "NEW_PLAYER_ROLE_ID": "some role id",
   "ELIMINATED_ROLE_ID": "some role id",
+  "ELIMINATE": false,
+  "MAX_LOSSES": 10,
+  "WAIVE_ENTROPY": [],
   "LEAGUE_COMMITTEE_ROLE_ID": "some role id",
   "LIVE_SHEET_ID": "some sheet id",
+  "UPCOMING_SHEET_ID": "optional sheet id for the next league",
+  "ARCHIVE_SHEET_IDS": ["optional past league sheet ids"],
   "LEAGUE_ROLES": [
     {
       "id": "some role id",
