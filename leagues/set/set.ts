@@ -1,18 +1,17 @@
-import { Client, Interaction, Message } from "discord.js";
-import { Handler } from "../../dispatch.ts";
-import { LeagueSheet, liveSheet, upcomingSheet } from "../../standings.ts";
+import { getMatchAnnouncer } from "../../match_announcer.ts";
+import { liveSheet } from "../../standings.ts";
+import { LeagueSetup } from "../setup.ts";
+import { watchSetMatches } from "./match-watch.ts";
 
-export function setup(): Promise<{
-  liveSheet: LeagueSheet;
-  upcomingSheet: LeagueSheet | undefined;
-  watch: (client: Client) => Promise<void>;
-  messageHandlers: Handler<Message>[];
-  interactionHandlers: Handler<Interaction>[];
-}> {
+const announcer = getMatchAnnouncer(liveSheet, "set");
+
+/** SET — currently live league (`!cube SET` loss packs + entropy). */
+export function setup(): Promise<LeagueSetup> {
   return Promise.resolve({
-    liveSheet,
-    upcomingSheet,
-    watch: () => Promise.resolve(),
+    name: "set",
+    sheet: liveSheet,
+    announcer,
+    watch: watchSetMatches,
     messageHandlers: [],
     interactionHandlers: [],
   });

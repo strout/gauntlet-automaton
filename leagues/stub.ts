@@ -1,17 +1,11 @@
-import { Client, Interaction, Message } from "discord.js";
-import { Handler } from "../dispatch.ts";
-import { LeagueSheet, liveSheet, upcomingSheet } from "../standings.ts";
+import { liveSheet, upcomingSheet } from "../standings.ts";
+import { LeagueSetup } from "./setup.ts";
 
-export function setup(): Promise<{
-  liveSheet: LeagueSheet;
-  upcomingSheet: LeagueSheet | undefined;
-  watch: (client: Client) => Promise<void>;
-  messageHandlers: Handler<Message>[];
-  interactionHandlers: Handler<Interaction>[];
-}> {
+/** Minimal league setup for tests or placeholders. */
+export function setup(): Promise<LeagueSetup> {
   return Promise.resolve({
-    liveSheet,
-    upcomingSheet,
+    name: "stub",
+    sheet: upcomingSheet ?? liveSheet,
     watch: () => Promise.resolve(),
     messageHandlers: [],
     interactionHandlers: [],
