@@ -20,12 +20,12 @@ import {
   rebuildPoolContents,
   ROW,
   ROWNUM,
+  upcomingSheet,
 } from "./standings.ts";
 
 import { ScryfallCard } from "./scryfall.ts";
 import { handleGuildMemberAdd, manageRoles } from "./role_management.ts";
-import { setup } from "./leagues/set/set.ts";
-import { announceEntropy, announceMatches } from "./match_announcer.ts";
+import { setupLeagues } from "./leagues/index.ts";
 
 export { CONFIG };
 
@@ -43,7 +43,7 @@ if (args.help) {
 
 Commands:
   bot             Run the Discord bot
-  pop             Populate pools
+  pop [live|upcoming]  Populate starting pools (default: live)
   check           Check pools
   rebuild         Rebuild pools
 
@@ -83,15 +83,31 @@ const rebuildHandler: Handler<djs.Message> = async (message, handle) => {
 };
 
 const populateHandler: Handler<djs.Message> = async (message, handle) => {
+  const match = message.content.match(/^!populate(?:\s+(live|upcoming))?$/);
   if (
-    !isDM(message) || message.content !== "!populate" ||
+    !isDM(message) || !match ||
     message.author.id !== CONFIG.OWNER_ID
   ) return;
   handle.claim();
+  const target = match[1] ?? "live";
+  const sheetId = target === "upcoming"
+    ? upcomingSheet?.sheetId
+    : liveSheet.sheetId;
+  if (!sheetId) {
+    await message.reply(
+      target === "upcoming"
+        ? "No UPCOMING_SHEET_ID configured."
+        : "No LIVE_SHEET_ID configured.",
+    );
+    return;
+  }
   await populatePools(
-    liveSheet.sheetId,
+    sheetId,
     (await (await message.client.guilds.fetch(CONFIG.GUILD_ID))
       .channels.fetch(CONFIG.STARTING_POOL_CHANNEL_ID))!,
+  );
+  await message.reply(
+    `Populated starting pools on the ${target} league sheet.`,
   );
 };
 
@@ -173,20 +189,7 @@ async function onReady(
   await Promise.all([
     manageRoles(client, pretend, once),
     watch(client),
-    runMatchAnnouncer(client),
   ]);
-}
-
-async function runMatchAnnouncer(client: djs.Client<true>) {
-  while (true) {
-    try {
-      await announceMatches(client);
-      await announceEntropy(client);
-    } catch (err) {
-      console.error("Error in match announcer loop:", err);
-    }
-    await delay(30 * 1000);
-  }
 }
 
 async function handleRebuild(input: string) {
@@ -222,9 +225,18 @@ if (import.meta.main) {
 
     const djs_client = makeClient();
 
-    const { watch, messageHandlers, interactionHandlers } = await setup();
+    const leagues = await setupLeagues();
+    console.log(
+      "Leagues loaded:",
+      leagues.leagues.map((l) => `${l.name} (${l.sheet.sheetId})`).join(", "),
+    );
 
-    configureClient(djs_client, watch, messageHandlers, interactionHandlers);
+    configureClient(
+      djs_client,
+      leagues.watch,
+      leagues.messageHandlers,
+      leagues.interactionHandlers,
+    );
 
     await djs_client.login(DISCORD_TOKEN);
   }
@@ -235,10 +247,22 @@ if (import.meta.main) {
     const djs_client = makeClient();
     await djs_client.login(DISCORD_TOKEN);
     console.log("populate");
+    const target = args._[1] === "upcoming" ? "upcoming" : "live";
+    const sheetId = target === "upcoming"
+      ? upcomingSheet?.sheetId
+      : liveSheet.sheetId;
+    if (!sheetId) {
+      throw new Error(
+        target === "upcoming"
+          ? "UPCOMING_SHEET_ID is not configured"
+          : "LIVE_SHEET_ID is not configured",
+      );
+    }
     const guild = await djs_client.guilds.fetch(CONFIG.GUILD_ID);
     const channel = await guild.channels
       .fetch(CONFIG.STARTING_POOL_CHANNEL_ID);
-    await populatePools(liveSheet.sheetId, channel!);
+    await populatePools(sheetId, channel!);
+    console.log(`Populated ${target} league (${sheetId})`);
   }
   if (command === "check") {
     await initSheets();

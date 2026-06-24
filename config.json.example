@@ -12,7 +12,7 @@
   "NEW_PLAYER_ROLE_ID": "some role id",
   "ELIMINATED_ROLE_ID": "some role id",
   "ELIMINATE": false,
-  "MAX_LOSSES": 10,
+  "MAX_LOSSES": 11,
   "WAIVE_ENTROPY": [],
   "LEAGUE_COMMITTEE_ROLE_ID": "some role id",
   "LIVE_SHEET_ID": "some sheet id",

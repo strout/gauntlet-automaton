@@ -306,6 +306,10 @@ export class LeagueSheet {
   async getMatches<S extends z.ZodRawShape>(
     extras?: S,
     quotasOverride?: QuotaInfo[],
+    botColumns: z.ZodRawShape = {
+      "Script Handled": z.coerce.boolean(),
+      "Bot Messaged": z.coerce.boolean(),
+    },
   ) {
     const quotaTask = quotasOverride ?? this.getQuotas();
     const LAST_COLUMN = "L";
@@ -316,8 +320,7 @@ export class LeagueSheet {
       "Loser Name": z.string(),
       Result: z.string(),
       Notes: z.string().optional(),
-      "Script Handled": z.coerce.boolean(),
-      "Bot Messaged": z.coerce.boolean(),
+      ...botColumns,
       ...extras,
     }, table);
     const resolvedQuotas = await quotaTask;
@@ -366,9 +369,10 @@ export class LeagueSheet {
     matchExtras?: SM,
     entropyExtras?: SE,
     quotasOverride?: QuotaInfo[],
+    matchBotColumns?: z.ZodRawShape,
   ) {
     const [matches, entropy] = await Promise.all([
-      this.getMatches(matchExtras, quotasOverride),
+      this.getMatches(matchExtras, quotasOverride, matchBotColumns),
       this.getEntropy(entropyExtras),
     ]);
     const rows = [...matches.rows, ...entropy.rows].sort((a, b) =>
