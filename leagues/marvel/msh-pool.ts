@@ -63,7 +63,7 @@ export function originMenuDescription(pack: ComebackPackDef): string {
 
 export function buildMshOriginMessage(): string {
   const lines = [
-    "Five packs of Marvel Superheroes are yours. Who were you before you walked away from it all?",
+    "**Choose Your Origin Story** and receive a sixth pack for your starting pool:",
     "",
   ];
   for (const pack of mshOriginPacks()) {
