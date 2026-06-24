@@ -20,8 +20,12 @@ export interface Config {
   readonly LEAGUE_COMMITTEE_ROLE_ID: string;
   readonly MAX_LOSSES: number;
   readonly WAIVE_ENTROPY: readonly string[];
-  // TODO replace this with a record of sheet ids
+  /** The currently running league spreadsheet. */
   readonly LIVE_SHEET_ID: string;
+  /** Optional spreadsheet for the next league, while the current one is still live. */
+  readonly UPCOMING_SHEET_ID?: string;
+  /** Past league spreadsheets kept for record-keeping. */
+  readonly ARCHIVE_SHEET_IDS?: readonly string[];
   readonly LEAGUE_ROLES: readonly LeagueRole[];
   readonly BOT_ROLES: BotRole[];
   readonly REGISTRATION_LEAGUE_ROLE: LeagueRole | null;

@@ -6,14 +6,14 @@ import {
 } from "./sealeddeck.ts";
 import {
   columnIndex,
+  getSheetTimeZoneOffsetMs,
+  readSheetsDate,
   sheets,
   sheetsAppend,
   sheetsDeleteRow,
   sheetsRead,
   sheetsWrite,
   writeSheetsDate,
-  getSheetTimeZoneOffsetMs,
-  readSheetsDate,
 } from "./sheets.ts";
 import { z } from "zod";
 
@@ -22,42 +22,40 @@ import { z } from "zod";
 // Would like these to be symbols but Zod eats them https://github.com/colinhacks/zod/issues/2734
 export const ROW = "ROW";
 export const ROWNUM = "ROWNUM";
+export const MATCHTYPE = "MATCHTYPE";
 
-// TODO use this & something to assert particular columns exist, rather than relying on changing column indices over and over.
-export async function readTable(
-  range: string,
-  headerRowNum = 1,
-  sheetId = CONFIG.LIVE_SHEET_ID,
-) {
-  const data = await sheetsRead(sheets, sheetId, range, "UNFORMATTED_VALUE");
-  const [headerRow, ...rows] = data.values!;
-  const parsedRows = rows.map((r, rowOffset) => {
-    const ret: { [key: string]: unknown; [ROW]: unknown[]; [ROWNUM]: number } =
-      {
-        [ROW]: r,
-        [ROWNUM]: rowOffset + 1 + headerRowNum,
-      };
-    for (let i = 0; i < r.length && i < headerRow.length; i++) {
-      ret[headerRow[i]] ??= r[i];
-    }
-    return ret;
-  });
-  // headers maps names to their lowest index and all indices to names
-  const headers = headerRow;
-  const headerColumns: Record<string, number> = {};
-  for (let i = 0; i < headers.length; i++) {
-    headerColumns[headerRow[i]] ??= i;
-  }
-  return { rows: parsedRows, headers, headerColumns };
-}
+const POOL_CHANGES_SHEET_NAME = "Pool Changes";
 
-export function parseTable<S extends z.ZodRawShape>(
-  rowShape: S,
-  table: Awaited<ReturnType<typeof readTable>>,
-) {
-  const schema = tableSchema(rowShape);
-  return schema.parse(table);
-}
+const playerShape = {
+  Identification: z.string(),
+  Name: z.string(),
+  "Arena ID": z.string(),
+  "Discord ID": z.coerce.string(),
+  "Matches played": z.number(),
+  Wins: z.number(),
+  Losses: z.number(),
+  "MATCHES TO PLAY STATUS": z.string(),
+  "TOURNAMENT STATUS": z.string(),
+  "Survey Sent": z.coerce.boolean(),
+  Streak: z.coerce.number().optional(),
+};
+
+export type Player<S extends z.ZodRawShape = Record<never, never>> = z.infer<
+  z.ZodObject<typeof playerShape & S>
+>;
+export type Table<T> = {
+  rows: (T & { [ROW]: unknown[]; [ROWNUM]: number })[];
+  headers: string[];
+  headerColumns: Partial<Record<string, number>> & Record<keyof T, number>;
+};
+
+type QuotaInfo = {
+  matchesMin: number;
+  matchesMax: number;
+  week: number;
+  fromDate: number;
+  toDate: number;
+};
 
 export function tableSchema<
   S extends z.ZodRawShape,
@@ -79,75 +77,461 @@ export function tableSchema<
   return schema;
 }
 
-/**
- * Gets the current week number from the spreadsheet.
- * @returns The current week number
- */
-export async function getCurrentWeek() {
-  return z.tuple([z.tuple([z.coerce.number()])]).parse(
-    (await sheetsRead(sheets, CONFIG.LIVE_SHEET_ID, "Quotas!B2")).values,
-  )[0][0];
+export function parseTable<S extends z.ZodRawShape>(
+  rowShape: S,
+  table: Awaited<ReturnType<LeagueSheet["readTable"]>>,
+) {
+  const schema = tableSchema(rowShape);
+  return schema.parse(table);
 }
 
-/**
- * Gets the entropy week from the Quotas sheet.
- * @returns The entropy week number
- */
-export async function getEntropyWeek() {
-  return z.tuple([z.tuple([z.coerce.number()])]).parse(
-    (await sheetsRead(sheets, CONFIG.LIVE_SHEET_ID, "Quotas!D2")).values,
-  )[0][0];
+const sheetCache = new Map<string, LeagueSheet>();
+
+/** Returns a cached {@link LeagueSheet} for the given spreadsheet ID. */
+export function getLeagueSheet(sheetId: string): LeagueSheet {
+  let sheet = sheetCache.get(sheetId);
+  if (!sheet) {
+    sheet = new LeagueSheet(sheetId);
+    sheetCache.set(sheetId, sheet);
+  }
+  return sheet;
 }
 
-/**
- * Sets the entropy week in the Quotas sheet.
- * @param week - The new entropy week number
- */
-export async function setEntropyWeek(week: number) {
-  await sheetsWrite(
-    sheets,
-    CONFIG.LIVE_SHEET_ID,
-    "Quotas!D2",
-    [[week]],
-    "RAW",
-  );
+/** Spreadsheet operations for a single league season. */
+export class LeagueSheet {
+  #quotas: QuotaInfo[] | undefined;
+
+  constructor(readonly sheetId: string) {}
+
+  // TODO use this & something to assert particular columns exist, rather than relying on changing column indices over and over.
+  async readTable(range: string, headerRowNum = 1) {
+    const data = await sheetsRead(
+      sheets,
+      this.sheetId,
+      range,
+      "UNFORMATTED_VALUE",
+    );
+    const [headerRow, ...rows] = data.values!;
+    const parsedRows = rows.map((r, rowOffset) => {
+      const ret: {
+        [key: string]: unknown;
+        [ROW]: unknown[];
+        [ROWNUM]: number;
+      } = {
+        [ROW]: r,
+        [ROWNUM]: rowOffset + 1 + headerRowNum,
+      };
+      for (let i = 0; i < r.length && i < headerRow.length; i++) {
+        ret[headerRow[i]] ??= r[i];
+      }
+      return ret;
+    });
+    const headers = headerRow;
+    const headerColumns: Record<string, number> = {};
+    for (let i = 0; i < headers.length; i++) {
+      headerColumns[headerRow[i]] ??= i;
+    }
+    return { rows: parsedRows, headers, headerColumns };
+  }
+
+  /** Gets the current week number from the spreadsheet. */
+  async getCurrentWeek() {
+    return z.tuple([z.tuple([z.coerce.number()])]).parse(
+      (await sheetsRead(sheets, this.sheetId, "Quotas!B2")).values,
+    )[0][0];
+  }
+
+  /** Gets the entropy week from the Quotas sheet. */
+  async getEntropyWeek() {
+    return z.tuple([z.tuple([z.coerce.number()])]).parse(
+      (await sheetsRead(sheets, this.sheetId, "Quotas!D2")).values,
+    )[0][0];
+  }
+
+  /** Sets the entropy week in the Quotas sheet. */
+  async setEntropyWeek(week: number) {
+    await sheetsWrite(
+      sheets,
+      this.sheetId,
+      "Quotas!D2",
+      [[week]],
+      "RAW",
+    );
+  }
+
+  /** Records an entropy loss in the Entropy sheet. */
+  async addEntropyRow(playerName: string, week: number) {
+    const offsetMs = await getSheetTimeZoneOffsetMs(this.sheetId);
+    const serialDate = writeSheetsDate(new Date(), offsetMs);
+    await sheetsAppend(
+      sheets,
+      this.sheetId,
+      "Entropy!A:I",
+      [[
+        0, // MATCH #
+        week,
+        "ENTROPY",
+        playerName,
+        "2",
+        "0",
+        "", // RESULT is vestigial
+        true,
+        serialDate,
+      ]],
+      "RAW",
+    );
+  }
+
+  addPoolChange(
+    name: string,
+    type: string,
+    value: string,
+    comment: string,
+    newPoolId?: string,
+    sheetName = POOL_CHANGES_SHEET_NAME,
+  ) {
+    return this.addPoolChanges(
+      [[
+        name,
+        type,
+        value,
+        comment,
+        ...[newPoolId].filter(Boolean) as [newPoolId?: string],
+      ]],
+      sheetName,
+    );
+  }
+
+  async addPoolChanges(
+    changes: [
+      name: string,
+      type: string,
+      value: string,
+      comment: string,
+      newPoolId?: string,
+    ][],
+    sheetName = POOL_CHANGES_SHEET_NAME,
+  ) {
+    const timestamp = new Date().toISOString();
+    await sheetsAppend(
+      sheets,
+      this.sheetId,
+      `${sheetName}!A1:F`,
+      changes.map((c) => [timestamp, ...c as string[]]),
+    );
+  }
+
+  async deletePoolChange(
+    rowNum: number,
+    sheetName = POOL_CHANGES_SHEET_NAME,
+  ) {
+    return await sheetsDeleteRow(
+      sheets,
+      this.sheetId,
+      sheetName,
+      rowNum,
+    );
+  }
+
+  async getPoolChanges<S extends z.ZodRawShape>(
+    sheetName = POOL_CHANGES_SHEET_NAME,
+    extras?: z.ZodObject<S>,
+  ) {
+    const table = await this.readTable(`${sheetName}!A:F`, 1);
+    return parseTable(
+      {
+        Timestamp: z.union([z.string(), z.number()]),
+        Name: z.string(),
+        Type: z.string(), // TODO maybe enforce known types?
+        Value: z.string(),
+        Comment: z.string().nullable(),
+        "Full Pool": z.string().nullable().optional(),
+        ...extras?.shape,
+      },
+      table,
+    );
+  }
+
+  async getPlayers<
+    S extends z.ZodRawShape = Record<string, never>,
+  >(
+    extras?: S,
+  ): Promise<Table<Player<S>>> {
+    const LAST_COLUMN = "AI";
+    const table = await this.readTable("Player Database!A:" + LAST_COLUMN, 1);
+    const schema = tableSchema({
+      ...playerShape,
+      ...extras as S,
+    });
+    table.rows = table.rows.filter((x) =>
+      typeof x.Identification === "string" &&
+      typeof x["Matches Played"] !== "number" && x.Identification.length > 4
+    );
+    return schema.parse(table) as Table<Player<S>>;
+  }
+
+  /** Gets quota information for different weeks. */
+  async getQuotas() {
+    if (this.#quotas) return this.#quotas;
+    const table = await this.readTable("Quotas!A7:E11", 3);
+    const parsed = parseTable({
+      WEEK: z.number(),
+      FROM: z.union([z.number(), z.literal("Registration")]),
+      TO: z.number(),
+      MIN: z.number(),
+      MAX: z.number(),
+    }, table);
+    this.#quotas = parsed.rows.filter((x) => x.WEEK > 0).map((x) => ({
+      week: x.WEEK,
+      fromDate: x.FROM === "Registration" ? 0 : x.FROM,
+      toDate: x.TO,
+      matchesMin: x.MIN,
+      matchesMax: x.MAX,
+    }));
+    return this.#quotas;
+  }
+
+  /** Checks if the league is officially over based on the last quota's end date. */
+  async isLeagueOver() {
+    const allQuotas = await this.getQuotas();
+    if (allQuotas.length === 0) return false;
+    const lastQuota = allQuotas[allQuotas.length - 1];
+
+    const offsetMs = await getSheetTimeZoneOffsetMs(this.sheetId);
+    const endDateTime = readSheetsDate(lastQuota.toDate, offsetMs);
+
+    return Date.now() > endDateTime.getTime();
+  }
+
+  async getMatches<S extends z.ZodRawShape>(
+    extras?: S,
+    quotasOverride?: QuotaInfo[],
+  ) {
+    const quotaTask = quotasOverride ?? this.getQuotas();
+    const LAST_COLUMN = "L";
+    const table = await this.readTable("Matches!A:" + LAST_COLUMN);
+    const parsed = parseTable({
+      Timestamp: z.number(),
+      "Your Name": z.string(),
+      "Loser Name": z.string(),
+      Result: z.string(),
+      Notes: z.string().optional(),
+      "Script Handled": z.coerce.boolean(),
+      "Bot Messaged": z.coerce.boolean(),
+      ...extras,
+    }, table);
+    const resolvedQuotas = await quotaTask;
+    return {
+      ...parsed,
+      rows: parsed.rows.map((r) => ({
+        ...r,
+        [MATCHTYPE]: "match" as const,
+        WEEK: resolvedQuotas.findLast((q) => q.fromDate <= r.Timestamp)?.week ??
+          0,
+      })),
+    };
+  }
+
+  async getEntropy<S extends z.ZodRawShape>(
+    extras?: S,
+  ) {
+    const LAST_COLUMN = "L";
+    const table = await this.readTable("Entropy!A4:" + LAST_COLUMN, 4);
+    const parsed = parseTable({
+      WEEK: z.number(),
+      Timestamp: z.number(),
+      "PLAYER 1": z.string(),
+      "PLAYER 2": z.string(),
+      RESULT: z.string(),
+      "Bot Messaged": z.coerce.boolean(),
+      ...extras,
+    }, { ...table, rows: table.rows.filter((r) => r["PLAYER 2"]) });
+    return {
+      ...parsed,
+      rows: parsed.rows.map((r) => ({
+        ...r,
+        "Your Name": r["PLAYER 1"],
+        "Loser Name": r["PLAYER 2"],
+        "Script Handled": true,
+        [MATCHTYPE]: "entropy" as const,
+      })),
+    };
+  }
+
+  /** Get all matches and entropy, sorted by timestamp. */
+  async getAllMatches<
+    SM extends z.ZodRawShape,
+    SE extends z.ZodRawShape,
+  >(
+    matchExtras?: SM,
+    entropyExtras?: SE,
+    quotasOverride?: QuotaInfo[],
+  ) {
+    const [matches, entropy] = await Promise.all([
+      this.getMatches(matchExtras, quotasOverride),
+      this.getEntropy(entropyExtras),
+    ]);
+    const rows = [...matches.rows, ...entropy.rows].sort((a, b) =>
+      a.Timestamp - b.Timestamp
+    );
+    return {
+      rows,
+      headers: {
+        entropy: entropy.headers,
+        match: matches.headers,
+      },
+      headerColumns: {
+        entropy: entropy.headerColumns,
+        match: matches.headerColumns,
+      },
+      sheetName: {
+        match: "Matches",
+        entropy: "Entropy",
+      },
+    };
+  }
+
+  /**
+   * @deprecated {@link getPoolChanges} now includes the pool ID with most entries and programmatic access to the Pools sheet is discouraged.
+   */
+  async getPools() {
+    const range = await sheetsRead(
+      sheets,
+      this.sheetId,
+      "Pools!C7:H",
+    );
+    return range.values?.map((row, i) => ({
+      rowNum: i + 7,
+      name: row[columnIndex("D", "C")] as string,
+      id: row[columnIndex("C", "C")] as string,
+      wins: +row[columnIndex("E", "C")] as number,
+      losses: +row[columnIndex("F", "C")] as number,
+      currentPoolLink: row[columnIndex("H", "C")] as string,
+      initialPoolLink: row[columnIndex("I", "C")] as string,
+      row,
+    })).filter((x) => x.id) ?? [];
+  }
+
+  /** Latest sealeddeck.tech URL recorded in the pool change log for a player. */
+  getCurrentPoolLink(
+    name: string,
+    poolChanges: Awaited<ReturnType<LeagueSheet["getPoolChanges"]>>,
+  ): string | undefined {
+    const poolId = poolChanges.rows.filter((c) => c.Name === name).findLast(
+      (c) => c["Full Pool"],
+    )?.["Full Pool"];
+    return poolId ? "https://sealeddeck.tech/" + poolId : undefined;
+  }
+
+  async getExpectedPool(
+    name: string,
+    poolsChangesSheet?: Awaited<ReturnType<LeagueSheet["getPoolChanges"]>>,
+  ) {
+    poolsChangesSheet ??= await this.getPoolChanges();
+    const changesForName = poolsChangesSheet.rows.filter((x) =>
+      x.Name === name
+    );
+    const currentPoolId = changesForName.findLast((c) => c["Full Pool"])?.[
+      "Full Pool"
+    ];
+    const expected = await rebuildPoolContents(
+      changesForName.map((x) => [x.Timestamp, x.Name, x.Type, x.Value]),
+    );
+    const actual = currentPoolId ? await fetchSealedDeck(currentPoolId) : null;
+    const expectedMap = Map.groupBy(
+      expected.flatMap((x) => new Array<string>(x.count).fill(x.name)),
+      (x) => x,
+    );
+    const actualMap = actual && Map.groupBy(
+      actual.sideboard.flatMap((x) => new Array<string>(x.count).fill(x.name)),
+      (x) => x,
+    );
+    let ok = true;
+    for (
+      const cardName of new Set([
+        ...expectedMap.keys(),
+        ...actualMap?.keys() ?? [],
+      ])
+    ) {
+      const exp = expectedMap.get(cardName)?.length ?? 0;
+      const act = actualMap?.get(cardName)?.length ?? 0;
+      if (exp !== act) {
+        console.log(cardName + ": Expected " + exp + " but got " + act);
+        ok = false;
+      }
+    }
+    const poolId = ok
+      ? currentPoolId
+      : (await makeSealedDeck({ sideboard: expected }));
+    return "https://sealeddeck.tech/" + poolId;
+  }
+
+  async recordPackAddition(
+    name: string,
+    pack: import("./sealeddeck.ts").SealedDeckPool,
+    comment: string,
+  ) {
+    const poolChanges = await this.getPoolChanges();
+    const playerChanges = poolChanges.rows.filter((c) => c.Name === name);
+    const currentPoolId = playerChanges.findLast((c) => c["Full Pool"])
+      ?.["Full Pool"];
+
+    const newPoolId = await makeSealedDeck(
+      { sideboard: pack.sideboard },
+      currentPoolId ?? undefined,
+    );
+
+    await this.addPoolChange(
+      name,
+      "add pack",
+      pack.poolId,
+      comment,
+      newPoolId,
+    );
+  }
 }
 
-/**
- * Records an entropy loss in the Entropy sheet.
- * @param playerName - Name of the player
- * @param week - The week the entropy occurred
- */
-export async function addEntropyRow(playerName: string, week: number) {
-  const offsetMs = await getSheetTimeZoneOffsetMs(CONFIG.LIVE_SHEET_ID);
-  const serialDate = writeSheetsDate(new Date(), offsetMs);
-  await sheetsAppend(
-    sheets,
-    CONFIG.LIVE_SHEET_ID,
-    "Entropy!A:I",
-    [[
-      0, // MATCH #
-      week,
-      "ENTROPY",
-      playerName,
-      "2",
-      "0",
-      "", // RESULT is vestigial
-      true,
-      serialDate,
-    ]],
-    "RAW",
-  );
+export const liveSheet = getLeagueSheet(CONFIG.LIVE_SHEET_ID);
+export const upcomingSheet = CONFIG.UPCOMING_SHEET_ID
+  ? getLeagueSheet(CONFIG.UPCOMING_SHEET_ID)
+  : undefined;
+export const archiveSheets = (CONFIG.ARCHIVE_SHEET_IDS ?? []).map(
+  getLeagueSheet,
+);
+
+// --- Backward-compatible module-level wrappers (default to the live league) ---
+
+export async function readTable(
+  range: string,
+  headerRowNum = 1,
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  return await getLeagueSheet(sheetId).readTable(range, headerRowNum);
 }
 
-/**
- * Adds a single pool change to the spreadsheet.
- * @param name - Player name
- * @param type - Type of change (e.g., "add pack", "remove card")
- * @param value - Value of the change (pack ID, card name, etc.)
- * @param comment - Comment explaining the change
- * @param newPoolId - Optional new pool ID
- */
+export async function getCurrentWeek(sheetId = CONFIG.LIVE_SHEET_ID) {
+  return await getLeagueSheet(sheetId).getCurrentWeek();
+}
+
+export async function getEntropyWeek(sheetId = CONFIG.LIVE_SHEET_ID) {
+  return await getLeagueSheet(sheetId).getEntropyWeek();
+}
+
+export async function setEntropyWeek(
+  week: number,
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  return await getLeagueSheet(sheetId).setEntropyWeek(week);
+}
+
+export async function addEntropyRow(
+  playerName: string,
+  week: number,
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  return await getLeagueSheet(sheetId).addEntropyRow(playerName, week);
+}
+
 export const addPoolChange = (
   name: string,
   type: string,
@@ -157,22 +541,15 @@ export const addPoolChange = (
   sheetId = CONFIG.LIVE_SHEET_ID,
   sheetName = POOL_CHANGES_SHEET_NAME,
 ) =>
-  addPoolChanges(
-    [[
-      name,
-      type,
-      value,
-      comment,
-      ...[newPoolId].filter(Boolean) as [newPoolId?: string],
-    ]],
-    sheetId,
+  getLeagueSheet(sheetId).addPoolChange(
+    name,
+    type,
+    value,
+    comment,
+    newPoolId,
     sheetName,
   );
 
-/**
- * Adds multiple pool changes to the spreadsheet with timestamps.
- * @param changes - Array of pool changes to add
- */
 export async function addPoolChanges(
   changes: [
     name: string,
@@ -184,57 +561,97 @@ export async function addPoolChanges(
   sheetId = CONFIG.LIVE_SHEET_ID,
   sheetName = POOL_CHANGES_SHEET_NAME,
 ) {
-  const timestamp = new Date().toISOString();
-  await sheetsAppend(
-    sheets,
-    sheetId,
-    `${sheetName}!A1:F`,
-    changes.map((c) => [timestamp, ...c as string[]]),
-  );
+  return await getLeagueSheet(sheetId).addPoolChanges(changes, sheetName);
 }
 
-const POOL_CHANGES_SHEET_NAME = "Pool Changes";
-
-/**
- * Deletes a single pool change from the spreadsheet.
- * @param rowNum - The 1-based row number of the change to delete.
- * @param sheetId - The ID of the spreadsheet.
- */
 export async function deletePoolChange(
   rowNum: number,
   sheetId = CONFIG.LIVE_SHEET_ID,
   sheetName = POOL_CHANGES_SHEET_NAME,
 ) {
-  return await sheetsDeleteRow(
-    sheets,
-    sheetId,
-    sheetName,
-    rowNum,
-  );
+  return await getLeagueSheet(sheetId).deletePoolChange(rowNum, sheetName);
 }
 
-/**
- * Retrieves all pool changes from the spreadsheet.
- * @returns Pool change records with metadata and original row data
- */
 export async function getPoolChanges<S extends z.ZodRawShape>(
   sheetId = CONFIG.LIVE_SHEET_ID,
   sheetName = POOL_CHANGES_SHEET_NAME,
   extras?: z.ZodObject<S>,
 ) {
-  const table = await readTable(`${sheetName}!A:F`, 1, sheetId);
-  return parseTable(
-    {
-      Timestamp: z.union([z.string(), z.number()]),
-      Name: z.string(),
-      Type: z.string(), // TODO maybe enforce known types?
-      Value: z.string(),
-      Comment: z.string().nullable(),
-      "Full Pool": z.string().nullable().optional(),
-      ...extras?.shape,
-    },
-    table,
+  return await getLeagueSheet(sheetId).getPoolChanges(sheetName, extras);
+}
+
+export async function getPlayers<
+  S extends z.ZodRawShape = Record<string, never>,
+>(
+  sheetId = CONFIG.LIVE_SHEET_ID,
+  ...[extras]: S extends Record<string, never> ? [S?] : [S]
+): Promise<Table<Player<S>>> {
+  return await getLeagueSheet(sheetId).getPlayers(extras) as Promise<
+    Table<Player<S>>
+  >;
+}
+
+export async function getQuotas(sheetId = CONFIG.LIVE_SHEET_ID) {
+  return await getLeagueSheet(sheetId).getQuotas();
+}
+
+export async function isLeagueOver(sheetId = CONFIG.LIVE_SHEET_ID) {
+  return await getLeagueSheet(sheetId).isLeagueOver();
+}
+
+export async function getMatches<S extends z.ZodRawShape>(
+  extras?: S,
+  quotas?: QuotaInfo[],
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  return await getLeagueSheet(sheetId).getMatches(extras, quotas);
+}
+
+export async function getEntropy<S extends z.ZodRawShape>(
+  extras?: S,
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  return await getLeagueSheet(sheetId).getEntropy(extras);
+}
+
+export async function getAllMatches<
+  SM extends z.ZodRawShape,
+  SE extends z.ZodRawShape,
+>(
+  matchExtras?: SM,
+  entropyExtras?: SE,
+  quotas?: QuotaInfo[],
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  return await getLeagueSheet(sheetId).getAllMatches(
+    matchExtras,
+    entropyExtras,
+    quotas,
   );
+}
+
+export async function getPools(sheetId = CONFIG.LIVE_SHEET_ID) {
+  return await getLeagueSheet(sheetId).getPools();
+}
+
+export async function getExpectedPool(
+  name: string,
+  poolsChangesSheet?: Awaited<ReturnType<typeof getPoolChanges>>,
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  return await getLeagueSheet(sheetId).getExpectedPool(
+    name,
+    poolsChangesSheet,
+  );
+}
+
+export async function recordPackAddition(
+  name: string,
+  pack: import("./sealeddeck.ts").SealedDeckPool,
+  comment: string,
+  sheetId = CONFIG.LIVE_SHEET_ID,
+) {
+  return await getLeagueSheet(sheetId).recordPackAddition(name, pack, comment);
 }
 
 /**
@@ -283,17 +700,17 @@ export async function rebuildPoolContents(
         break;
       }
       case "add card": {
-        const name = splitCardNames.has(e[3].split(" //")[0])
+        const cardName = splitCardNames.has(e[3].split(" //")[0])
           ? e[3]
           : e[3].split(" //")[0];
-        cards.set(name, (cards.get(name) ?? 0) + 1);
+        cards.set(cardName, (cards.get(cardName) ?? 0) + 1);
         break;
       }
       case "remove card": {
-        const name = splitCardNames.has(e[3].split(" //")[0])
+        const cardName = splitCardNames.has(e[3].split(" //")[0])
           ? e[3]
           : e[3].split(" //")[0];
-        cards.set(name, (cards.get(name) ?? 0) - 1);
+        cards.set(cardName, (cards.get(cardName) ?? 0) - 1);
         break;
       }
     }
@@ -323,312 +740,10 @@ export async function rebuildPoolContents(
     }
   }
   const sideboard = [...cards.entries()].filter((x) => x[1] > 0).map((
-    [name, count],
+    [cardName, count],
   ) => ({
-    name,
+    name: cardName,
     count,
   }));
   return sideboard;
-}
-
-const playerShape = {
-  Identification: z.string(),
-  Name: z.string(),
-  "Arena ID": z.string(),
-  "Discord ID": z.coerce.string(),
-  "Matches played": z.number(),
-  Wins: z.number(),
-  Losses: z.number(),
-  "MATCHES TO PLAY STATUS": z.string(),
-  "TOURNAMENT STATUS": z.string(),
-  "Survey Sent": z.coerce.boolean(),
-  Streak: z.coerce.number().optional(),
-};
-
-export type Player<S extends z.ZodRawShape = Record<never, never>> = z.infer<
-  z.ZodObject<typeof playerShape & S>
->;
-export type Table<T> = {
-  rows: (T & { [ROW]: unknown[]; [ROWNUM]: number })[];
-  headers: string[];
-  headerColumns: Partial<Record<string, number>> & Record<keyof T, number>;
-};
-
-/**
- * Gets all players from the Player Database sheet.
- * @returns Player records with stats and metadata
- */
-export async function getPlayers<
-  S extends z.ZodRawShape = Record<string, never>,
->(
-  sheetId = CONFIG.LIVE_SHEET_ID,
-  ...[extras]: S extends Record<string, never> ? [S?] : [S]
-): Promise<Table<Player<S>>> {
-  const LAST_COLUMN = "AI";
-  const table = await readTable("Player Database!A:" + LAST_COLUMN, 1, sheetId);
-  const schema = tableSchema({
-    ...playerShape,
-    ...extras as S, // this cast is safe because extras is undefined iff it's not-S and only when S is {}
-  });
-  // filter out junk rows (which show up with the identification "  - ")
-  table.rows = table.rows.filter((x) =>
-    typeof x.Identification === "string" &&
-    typeof x["Matches Played"] !== "number" && x.Identification.length > 4
-  );
-  // TODO why do I need this cast?
-  return schema.parse(table) as Table<Player<S>>;
-}
-
-const playerTableSchema = tableSchema({
-  ...playerShape,
-  ...{ Ship: z.string() },
-});
-type PlayerTable = z.infer<typeof playerTableSchema>;
-
-let quotas: undefined | {
-  matchesMin: number;
-  matchesMax: number;
-  week: number;
-  fromDate: number;
-  toDate: number;
-}[] = undefined;
-
-/**
- * Gets quota information for different weeks.
- * @returns Weekly quota configurations with match requirements and date ranges
- */
-export async function getQuotas() {
-  if (quotas) return quotas;
-  const table = await readTable("Quotas!A7:E11", 3);
-  const parsed = parseTable({
-    WEEK: z.number(),
-    FROM: z.union([z.number(), z.literal("Registration")]),
-    TO: z.number(),
-    MIN: z.number(),
-    MAX: z.number(),
-  }, table);
-  quotas = parsed.rows.filter((x) => x.WEEK > 0).map((x) => ({
-    week: x.WEEK,
-    fromDate: x.FROM === "Registration" ? 0 : x.FROM,
-    toDate: x.TO,
-    matchesMin: x.MIN,
-    matchesMax: x.MAX,
-  }));
-  return quotas;
-}
-
-/**
- * Checks if the league is officially over based on the last quota's end date.
- * @returns True if the current date is past the final quota's end date.
- */
-export async function isLeagueOver() {
-  const allQuotas = await getQuotas();
-  if (allQuotas.length === 0) return false;
-  const lastQuota = allQuotas[allQuotas.length - 1];
-  
-  const offsetMs = await getSheetTimeZoneOffsetMs(CONFIG.LIVE_SHEET_ID);
-  const endDateTime = readSheetsDate(lastQuota.toDate, offsetMs);
-  
-  return Date.now() > endDateTime.getTime();
-}
-
-export const MATCHTYPE = "MATCHTYPE";
-
-/**
- * Gets all match results from the Matches sheet.
- * @returns Match records with results and metadata
- */
-export async function getMatches<S extends z.ZodRawShape>(
-  extras?: S,
-  quotas?: Awaited<ReturnType<typeof getQuotas>>,
-) {
-  const quotaTask = quotas ?? getQuotas();
-  const LAST_COLUMN = "L";
-  const table = await readTable("Matches!A:" + LAST_COLUMN);
-  const parsed = parseTable({
-    Timestamp: z.number(),
-    "Your Name": z.string(),
-    "Loser Name": z.string(),
-    Result: z.string(),
-    Notes: z.string().optional(),
-    "Script Handled": z.coerce.boolean(),
-    "Bot Messaged": z.coerce.boolean(),
-    ...extras,
-  }, table);
-  quotas = await quotaTask;
-  return {
-    ...parsed,
-    rows: parsed.rows.map((r) => ({
-      ...r,
-      [MATCHTYPE]: "match" as const,
-      WEEK: quotas.findLast((q) => q.fromDate <= r.Timestamp)?.week ?? 0,
-    })),
-  };
-}
-
-/**
- * Gets entropy data from the Entropy sheet.
- * @returns Entropy match records with timing and results
- */
-export async function getEntropy<S extends z.ZodRawShape>(
-  extras?: S,
-) {
-  const LAST_COLUMN = "L";
-  const table = await readTable("Entropy!A4:" + LAST_COLUMN, 4);
-  const parsed = parseTable({
-    WEEK: z.number(),
-    Timestamp: z.number(),
-    "PLAYER 1": z.string(),
-    "PLAYER 2": z.string(),
-    RESULT: z.string(),
-    "Bot Messaged": z.coerce.boolean(),
-    ...extras,
-  }, { ...table, rows: table.rows.filter((r) => r["PLAYER 2"]) });
-  return {
-    ...parsed,
-    rows: parsed.rows.map((r) => ({
-      ...r,
-      "Your Name": r["PLAYER 1"],
-      "Loser Name": r["PLAYER 2"],
-      "Script Handled": true,
-      [MATCHTYPE]: "entropy" as const,
-    })),
-  };
-}
-
-/**
- * Get all matches and entropy, sorted by timestamp
- */
-export async function getAllMatches<
-  SM extends z.ZodRawShape,
-  SE extends z.ZodRawShape,
->(
-  matchExtras?: SM,
-  entropyExtras?: SE,
-  quotas?: Awaited<ReturnType<typeof getQuotas>>,
-) {
-  const [matches, entropy] = await Promise.all([
-    getMatches(matchExtras, quotas),
-    getEntropy(entropyExtras),
-  ]);
-  const rows = [...matches.rows, ...entropy.rows].sort((a, b) =>
-    a.Timestamp - b.Timestamp
-  );
-  return {
-    rows,
-    headers: {
-      entropy: entropy.headers,
-      match: matches.headers,
-    },
-    headerColumns: {
-      entropy: entropy.headerColumns,
-      match: matches.headerColumns,
-    },
-    sheetName: {
-      match: "Matches",
-      entropy: "Entropy",
-    },
-  };
-}
-
-/**
- * Gets all pools from the Pools sheet.
- * @deprecated {@link getPoolChanges} now includes the pool ID with most entries and programmatic access to the Pools sheet is discouraged.
- * @returns Pool records with player associations and deck links
- */
-export async function getPools() {
-  const range = await sheetsRead(
-    sheets,
-    CONFIG.LIVE_SHEET_ID,
-    "Pools!C7:H",
-  );
-  return range.values?.map((row, i) => ({
-    rowNum: i + 7,
-    name: row[columnIndex("D", "C")] as string,
-    id: row[columnIndex("C", "C")] as string,
-    wins: +row[columnIndex("E", "C")] as number,
-    losses: +row[columnIndex("F", "C")] as number,
-    currentPoolLink: row[columnIndex("H", "C")] as string,
-    initialPoolLink: row[columnIndex("I", "C")] as string,
-    row,
-  })).filter((x) => x.id) ?? [];
-}
-
-/**
- * Gets the expected pool for a player, comparing expected vs actual pool contents.
- * If there's a mismatch, creates a new pool with the expected contents.
- * @param name - Player name
- * @param poolsSheet - Optional pre-fetched pools data
- * @param poolsChangesSheet - Optional pre-fetched pool changes data
- * @returns URL to the player's correct pool (existing or newly created)
- */
-export async function getExpectedPool(
-  name: string,
-  poolsSheet?: Awaited<ReturnType<typeof getPools>>,
-  poolsChangesSheet?: Awaited<ReturnType<typeof getPoolChanges>>,
-) {
-  poolsSheet ??= await getPools();
-  poolsChangesSheet ??= await getPoolChanges();
-  const changesForName = poolsChangesSheet.rows.filter((x) => x.Name === name);
-  const currentPoolId = poolsSheet.find((row) => row.name === name)
-    ?.currentPoolLink.split(".tech/")[1];
-  const expected = await rebuildPoolContents(
-    changesForName.map((x) => [x.Timestamp, x.Name, x.Type, x.Value]),
-  );
-  const actual = currentPoolId ? await fetchSealedDeck(currentPoolId) : null;
-  const expectedMap = Map.groupBy(
-    expected.flatMap((x) => new Array<string>(x.count).fill(x.name)),
-    (x) => x,
-  );
-  const actualMap = actual && Map.groupBy(
-    actual.sideboard.flatMap((x) => new Array<string>(x.count).fill(x.name)),
-    (x) => x,
-  );
-  let ok = true;
-  for (
-    const name of new Set([...expectedMap.keys(), ...actualMap?.keys() ?? []])
-  ) {
-    const exp = expectedMap.get(name)?.length ?? 0;
-    const act = actualMap?.get(name)?.length ?? 0;
-    if (exp !== act) {
-      console.log(name + ": Expected " + exp + " but got " + act);
-      ok = false;
-    }
-  }
-  const poolId = ok
-    ? currentPoolId
-    : (await makeSealedDeck({ sideboard: expected }));
-  return "https://sealeddeck.tech/" + poolId;
-}
-
-/**
- * Records a pack addition for a player, updating the pool snapshot.
- * @param name - Player name
- * @param pack - The SealedDeck pool object for the pack
- * @param comment - Comment explaining the addition
- * @param sheetId - The Google Sheets document ID
- */
-export async function recordPackAddition(
-  name: string,
-  pack: import("./sealeddeck.ts").SealedDeckPool,
-  comment: string,
-  sheetId = CONFIG.LIVE_SHEET_ID,
-) {
-  const poolChanges = await getPoolChanges(sheetId);
-  const playerChanges = poolChanges.rows.filter((c) => c.Name === name);
-  const currentPoolId = playerChanges.findLast((c) => c["Full Pool"])?.["Full Pool"];
-
-  const newPoolId = await makeSealedDeck(
-    { sideboard: pack.sideboard },
-    currentPoolId ?? undefined,
-  );
-
-  await addPoolChange(
-    name,
-    "add pack",
-    pack.poolId,
-    comment,
-    newPoolId,
-    sheetId,
-  );
 }

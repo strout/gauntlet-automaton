@@ -1,18 +1,8 @@
 import { Client, TextChannel } from "discord.js";
 import { CONFIG } from "./config.ts";
-import {
-  getAllMatches,
-  getPlayers,
-  getQuotas,
-  recordPackAddition,
-  getEntropyWeek,
-  setEntropyWeek,
-  addEntropyRow,
-  getCurrentWeek,
-  isLeagueOver,
-} from "./standings.ts";
+import { liveSheet } from "./standings.ts";
 import { sheets, sheetsWrite } from "./sheets.ts";
-import { waitForBoosterTutor, PackWithOrder } from "./pending.ts";
+import { waitForBoosterTutor } from "./pending.ts";
 
 /**
  * Scans for matches that haven't been announced yet, validates them,
@@ -22,9 +12,9 @@ export async function announceMatches(client: Client) {
   console.log("Checking for matches to announce...");
 
   try {
-    const players = await getPlayers();
-    const quotas = await getQuotas();
-    const matches = await getAllMatches();
+    const players = await liveSheet.getPlayers();
+    const quotas = await liveSheet.getQuotas();
+    const matches = await liveSheet.getAllMatches();
 
     const packGenChannel = await client.channels.fetch(
       CONFIG.PACKGEN_CHANNEL_ID,
@@ -133,8 +123,7 @@ export async function announceMatches(client: Client) {
 
       let message = "";
       if (loserInfo.Losses >= CONFIG.MAX_LOSSES) {
-        message =
-          `${loserMention} was eliminated by ${winnerMention}.`;
+        message = `${loserMention} was eliminated by ${winnerMention}.`;
       } else {
         message =
           `!cube SET ${loserMention} was defeated ${result} by ${winnerMention}.`;
@@ -162,19 +151,23 @@ export async function announceMatches(client: Client) {
       // Trigger pack generation and announcement
       try {
         const sentMessage = await packGenChannel.send(message);
-        
+
         // Fire-and-forget: wait for the resulting pack and record it
         (async () => {
           try {
-            const result = await waitForBoosterTutor(Promise.resolve(sentMessage));
+            const result = await waitForBoosterTutor(
+              Promise.resolve(sentMessage),
+            );
             if ("success" in result) {
-              await recordPackAddition(
+              await liveSheet.recordPackAddition(
                 loserName,
                 result.success,
                 `Loss against ${winnerName}`,
               );
             } else if ("error" in result) {
-              console.error(`Booster Tutor error for ${loserName}: ${result.error}`);
+              console.error(
+                `Booster Tutor error for ${loserName}: ${result.error}`,
+              );
             }
           } catch (e) {
             console.error(`Failed to record pack for ${loserName}:`, e);
@@ -200,7 +193,7 @@ async function markMatchHandled(
   // Range: Matches!R{rowNum}C{col}
   await sheetsWrite(
     sheets,
-    CONFIG.LIVE_SHEET_ID,
+    liveSheet.sheetId,
     `Matches!R${rowNum}C${col}`,
     [[status]],
     "RAW",
@@ -214,33 +207,41 @@ function escapeMarkdown(str: string) {
   );
 }
 
-
 /**
  * Processes entropy losses for players who haven't met the minimum match requirement
  * for the current entropy week.
  */
 export async function announceEntropy(client: Client) {
-  const currentWeek = await getCurrentWeek();
-  const entropyWeek = await getEntropyWeek();
-  const leagueOver = await isLeagueOver();
-  console.log(`Checking for entropy... (Current Week: ${currentWeek}, Entropy Week: ${entropyWeek}, League Over: ${leagueOver})`);
+  const currentWeek = await liveSheet.getCurrentWeek();
+  const entropyWeek = await liveSheet.getEntropyWeek();
+  const leagueOver = await liveSheet.isLeagueOver();
+  console.log(
+    `Checking for entropy... (Current Week: ${currentWeek}, Entropy Week: ${entropyWeek}, League Over: ${leagueOver})`,
+  );
   try {
     // currentWeek and entropyWeek are already fetched above
     // leagueOver is already fetched above
 
-
-    if (entropyWeek > currentWeek || (entropyWeek === currentWeek && !leagueOver)) {
-      console.log(`Waiting until week ${entropyWeek} ends (League Over: ${leagueOver}). Skipping.`);
+    if (
+      entropyWeek > currentWeek || (entropyWeek === currentWeek && !leagueOver)
+    ) {
+      console.log(
+        `Waiting until week ${entropyWeek} ends (League Over: ${leagueOver}). Skipping.`,
+      );
       return;
     }
 
-    const players = await getPlayers();
-    const quotas = await getQuotas();
+    const players = await liveSheet.getPlayers();
+    const quotas = await liveSheet.getQuotas();
     const currentQuota = quotas.find((q) => q.week === entropyWeek);
 
     if (!currentQuota) {
-      console.log(`No quota found for entropy week ${entropyWeek}. Advancing to ${entropyWeek + 1}...`);
-      await setEntropyWeek(entropyWeek + 1);
+      console.log(
+        `No quota found for entropy week ${entropyWeek}. Advancing to ${
+          entropyWeek + 1
+        }...`,
+      );
+      await liveSheet.setEntropyWeek(entropyWeek + 1);
       return;
     }
 
@@ -261,7 +262,10 @@ export async function announceEntropy(client: Client) {
       const minMatches = currentQuota.matchesMin;
 
       if (matchesPlayed < minMatches) {
-        const toAdd = Math.min(minMatches - matchesPlayed, CONFIG.MAX_LOSSES - losses);
+        const toAdd = Math.min(
+          minMatches - matchesPlayed,
+          CONFIG.MAX_LOSSES - losses,
+        );
         if (toAdd <= 0) continue;
 
         const discordId = player["Discord ID"];
@@ -274,28 +278,33 @@ export async function announceEntropy(client: Client) {
         if (losses + toAdd >= CONFIG.MAX_LOSSES) {
           // Elimination case
           for (let i = 0; i < toAdd; i++) {
-            await addEntropyRow(player.Identification, entropyWeek);
+            await liveSheet.addEntropyRow(player.Identification, entropyWeek);
           }
           await packGenChannel.send(`${mention} was eliminated by ENTROPY.`);
         } else {
           // Pack generation case
           for (let i = 0; i < toAdd; i++) {
-            await addEntropyRow(player.Identification, entropyWeek);
+            await liveSheet.addEntropyRow(player.Identification, entropyWeek);
             const sentMessage = await packGenChannel.send(
               `!cube SET ${mention} was defeated by ENTROPY.`,
             );
 
             try {
-              const result = await waitForBoosterTutor(Promise.resolve(sentMessage));
+              const result = await waitForBoosterTutor(
+                Promise.resolve(sentMessage),
+              );
               if ("success" in result) {
-                await recordPackAddition(
+                await liveSheet.recordPackAddition(
                   player.Identification,
                   result.success,
                   `Entropy loss (Week ${entropyWeek})`,
                 );
               }
             } catch (e) {
-              console.error(`Failed to record entropy pack for ${player.Identification}:`, e);
+              console.error(
+                `Failed to record entropy pack for ${player.Identification}:`,
+                e,
+              );
             }
             await new Promise((resolve) => setTimeout(resolve, 1000));
           }
@@ -303,8 +312,10 @@ export async function announceEntropy(client: Client) {
       }
     }
 
-    await setEntropyWeek(entropyWeek + 1);
-    console.log(`Entropy for week ${entropyWeek} processed. Next: ${entropyWeek + 1}`);
+    await liveSheet.setEntropyWeek(entropyWeek + 1);
+    console.log(
+      `Entropy for week ${entropyWeek} processed. Next: ${entropyWeek + 1}`,
+    );
   } catch (e) {
     console.error("Error in announceEntropy:", e);
   }

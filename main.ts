@@ -14,11 +14,9 @@ import { pendingHandler } from "./pending.ts";
 import { dispatch, Handler } from "./dispatch.ts";
 
 import {
-  addPoolChange,
-  getExpectedPool,
-  getPlayers,
+  getLeagueSheet,
   getPoolChanges,
-  getPools,
+  liveSheet,
   rebuildPoolContents,
   ROW,
   ROWNUM,
@@ -27,7 +25,7 @@ import {
 import { ScryfallCard } from "./scryfall.ts";
 import { handleGuildMemberAdd, manageRoles } from "./role_management.ts";
 import { setup } from "./leagues/set/set.ts";
-import { announceMatches, announceEntropy } from "./match_announcer.ts";
+import { announceEntropy, announceMatches } from "./match_announcer.ts";
 
 export { CONFIG };
 
@@ -74,7 +72,7 @@ const rebuildHandler: Handler<djs.Message> = async (message, handle) => {
     await message.reply(result.error);
   } else if (!result.ok) {
     await message.reply(
-      `Rebuilt pool for ${result.name} from pool change log.\n\nRebuilt pool: ${result.newLink}\n\nOld pool: ${result.oldLink}\n\n(Rebuilt pool has **not** been added to the spreadsheet; place it in Pools!G${result.rowNum}.)`,
+      `Rebuilt pool for ${result.name} from pool change log.\n\nRebuilt pool: ${result.newLink}\n\nOld pool: ${result.oldLink}\n\n(Rebuilt pool has **not** been added to the spreadsheet; set Pool Changes!F${result.rowNum} to the new pool ID.)`,
     );
   } else {
     // TODO why isn't this nerrowed
@@ -91,7 +89,7 @@ const populateHandler: Handler<djs.Message> = async (message, handle) => {
   ) return;
   handle.claim();
   await populatePools(
-    CONFIG.LIVE_SHEET_ID,
+    liveSheet.sheetId,
     (await (await message.client.guilds.fetch(CONFIG.GUILD_ID))
       .channels.fetch(CONFIG.STARTING_POOL_CHANNEL_ID))!,
   );
@@ -192,21 +190,27 @@ async function runMatchAnnouncer(client: djs.Client<true>) {
 }
 
 async function handleRebuild(input: string) {
-  const pools = await getPools();
-  const changes = await getPoolChanges();
-  for (const p of pools.filter((p) => (p.name + " ").startsWith(input + " "))) {
-    console.log(p.name);
-    const expected = await getExpectedPool(p.name, pools, changes);
-    if (expected !== p.currentPoolLink) {
+  const changes = await liveSheet.getPoolChanges();
+  const names = [...new Set(changes.rows.map((r) => r.Name))].filter((name) =>
+    (name + " ").startsWith(input + " ")
+  );
+  for (const name of names) {
+    console.log(name);
+    const currentPoolLink = liveSheet.getCurrentPoolLink(name, changes);
+    const expected = await liveSheet.getExpectedPool(name, changes);
+    const lastPoolChange = changes.rows.filter((c) => c.Name === name).findLast(
+      (c) => c["Full Pool"],
+    );
+    if (expected !== currentPoolLink) {
       return {
-        name: p.name,
-        rowNum: p.rowNum,
+        name,
+        rowNum: lastPoolChange?.[ROWNUM],
         ok: false,
-        oldLink: p.currentPoolLink,
+        oldLink: currentPoolLink,
         newLink: expected,
       };
     } else {
-      return { name: p.name, rowNum: p.rowNum, ok: true };
+      return { name, rowNum: lastPoolChange?.[ROWNUM], ok: true };
     }
   }
   return { ok: false, error: "No player found named " + input };
@@ -234,7 +238,7 @@ if (import.meta.main) {
     const guild = await djs_client.guilds.fetch(CONFIG.GUILD_ID);
     const channel = await guild.channels
       .fetch(CONFIG.STARTING_POOL_CHANNEL_ID);
-    await populatePools(CONFIG.LIVE_SHEET_ID, channel!);
+    await populatePools(liveSheet.sheetId, channel!);
   }
   if (command === "check") {
     await initSheets();
@@ -242,7 +246,7 @@ if (import.meta.main) {
   }
   if (command === "rebuild") {
     await initSheets();
-    const poolChanges = await getPoolChanges();
+    const poolChanges = await liveSheet.getPoolChanges();
     const client = makeClient();
     client.once(djs.Events.ClientReady, async (client) => {
       await fullRebuild(client, poolChanges);
@@ -253,13 +257,14 @@ if (import.meta.main) {
 }
 
 async function checkPools() {
-  const pools = await getPools();
-  const changes = await getPoolChanges();
-  for (const p of pools) {
-    console.log(p.name);
-    const expected = await getExpectedPool(p.name, pools, changes);
-    if (expected !== p.currentPoolLink) {
-      console.log(p.name, "expected", expected, "but got", p.currentPoolLink);
+  const changes = await liveSheet.getPoolChanges();
+  const names = [...new Set(changes.rows.map((r) => r.Name))];
+  for (const name of names) {
+    console.log(name);
+    const currentPoolLink = liveSheet.getCurrentPoolLink(name, changes);
+    const expected = await liveSheet.getExpectedPool(name, changes);
+    if (expected !== currentPoolLink) {
+      console.log(name, "expected", expected, "but got", currentPoolLink);
     }
   }
 }
@@ -373,8 +378,9 @@ export async function populatePools(
     throw new Error("only valid for text based channels.");
   }
   console.log("read pools");
-  const players = await getPlayers(sheetId);
-  const poolChanges = await getPoolChanges(sheetId);
+  const sheet = getLeagueSheet(sheetId);
+  const players = await sheet.getPlayers();
+  const poolChanges = await sheet.getPoolChanges();
   console.log("got players", players.rows.length);
   console.log("got pool changes", poolChanges.rows.length);
   let rowNum = 6;
@@ -426,13 +432,12 @@ export async function populatePools(
             console.log(name, sealeddeckLink);
             console.log("fixing...");
             const pool = await fetchSealedDeck(sealeddeckId);
-            await addPoolChange(
+            await sheet.addPoolChange(
               name,
               "starting pool",
               pool.poolId,
               msg.url,
               pool.poolId,
-              sheetId,
             );
             break batches;
           }
@@ -526,12 +531,19 @@ export const deckCheckHandler: Handler<djs.Message> = async (
       }
       await delay(1000);
     }
-    const currentPools = await getPools();
-    const currentPool = currentPools.find((x) => x.id === message.author.id);
-    const currentPoolContent = currentPool &&
-      await fetchSealedDeck(
-        currentPool.currentPoolLink.split("/").slice(-1)[0],
-      );
+    const [players, poolChanges] = await Promise.all([
+      liveSheet.getPlayers(),
+      liveSheet.getPoolChanges(),
+    ]);
+    const player = players.rows.find((p) =>
+      p["Discord ID"] === message.author.id
+    );
+    const currentPoolLink = player
+      ? liveSheet.getCurrentPoolLink(player.Identification, poolChanges)
+      : undefined;
+    const currentPoolContent = currentPoolLink
+      ? await fetchSealedDeck(currentPoolLink.split("/").slice(-1)[0])
+      : undefined;
     const cards = new Map<string, number>();
     for (
       const ent of [
@@ -549,11 +561,11 @@ export const deckCheckHandler: Handler<djs.Message> = async (
     for (const ent of [...pool.deck]) {
       cards.set(ent.name, (cards.get(ent.name) ?? 0) - ent.count);
     }
-    const extraCardsMain = currentPool &&
+    const extraCardsMain = currentPoolContent &&
       [...cards.entries()].filter((x) => x[1] < 0).map((x) =>
         Math.abs(x[1]) + " " + x[0]
       ).join(", ");
-    const extraCardsWithSb = currentPool &&
+    const extraCardsWithSb = currentPoolContent &&
       [...cardsWithSb.entries()].filter((x) => x[1] < 0).map((x) =>
         Math.abs(x[1]) + " " + x[0]
       ).join(", ");
@@ -605,7 +617,7 @@ async function fullRebuild(
       unsaved: Awaited<ReturnType<typeof getPoolChanges>>["rows"];
     }
   >();
-  const changes = await getPoolChanges();
+  const changes = await liveSheet.getPoolChanges();
   let differences: string =
     " Row | Name | Type | Value | Comment | Full Pool | Difference\n" +
     "-----|------|------|-------|---------|-----------|-----------\n";
@@ -642,7 +654,7 @@ async function fullRebuild(
         // save the new value to the sheet; put the old one in column G just in case
         await sheetsWrite(
           sheets,
-          CONFIG.LIVE_SHEET_ID,
+          liveSheet.sheetId,
           "Pool Changes!F" + change[ROWNUM] + ":G" + change[ROWNUM],
           [[
             expectedPoolId,
