@@ -177,6 +177,11 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
       comebackComment(pack),
     );
 
+    const poolLink = await sheet.getExpectedPool(
+      match["Loser Name"],
+      await sheet.getPoolChanges(),
+    );
+
     const heroScoreCol = players.headerColumns["Hero Score"];
     const newHeroScore = (loserInfo["Hero Score"] ?? 0) + pack.heroScoreDelta;
     if (pack.heroScoreDelta !== 0 && heroScoreCol !== undefined) {
@@ -194,13 +199,9 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
     }
 
     await interaction.editReply({
-      content: interaction.message.content.replace(
-        /\n\n_Generating your pack…_$/,
-        "",
-      ) +
-        `\n\n✅ **${pack.label}**. Hero score is now **${
-          formatHeroScore(newHeroScore)
-        }**. Check <#${CONFIG.PACKGEN_CHANNEL_ID}> for your cards.`,
+      content: `You picked **${pack.label}**.\n\nHero score is now **${
+        formatHeroScore(newHeroScore)
+      }**.\n\n**Your pool:** ${poolLink}`,
       components: [],
     });
   } catch (e) {
