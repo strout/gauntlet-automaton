@@ -35,7 +35,7 @@ export function buildMshOriginComponents(
     new djs.ActionRowBuilder<djs.StringSelectMenuBuilder>().addComponents(
       new djs.StringSelectMenuBuilder()
         .setCustomId(mshPoolSelectCustomId(discordId))
-        .setPlaceholder("Choose your path…")
+        .setPlaceholder("Choose your origin...")
         .addOptions(options)
         .setDisabled(disabled),
     ),
