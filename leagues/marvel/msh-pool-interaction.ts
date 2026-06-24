@@ -111,7 +111,7 @@ export const marvelMshPoolSelectHandler: Handler<djs.Interaction> = async (
     }
 
     const sentMessage = await packGenChannel.send(
-      packGenCommand(pack, discordId),
+      packGenCommand(pack, discordId, "origin pack"),
     );
 
     const result = await waitForBoosterTutor(Promise.resolve(sentMessage));

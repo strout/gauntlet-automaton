@@ -163,7 +163,7 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
     }
 
     const sentMessage = await packGenChannel.send(
-      packGenCommand(pack, loserInfo["Discord ID"]),
+      packGenCommand(pack, loserInfo["Discord ID"], "comeback pack"),
     );
 
     const result = await waitForBoosterTutor(Promise.resolve(sentMessage));

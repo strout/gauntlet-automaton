@@ -251,8 +251,9 @@ export function markRowPackChosen(
 export function packGenCommand(
   pack: ComebackPackDef,
   discordId: string,
+  comment?: string,
 ): string {
-  return `${pack.command} <@${discordId}>`;
+  return `${pack.command} <@${discordId}>${comment && " " + comment}`;
 }
 
 export function comebackComment(
