@@ -27,17 +27,17 @@ export const MSH_ORIGIN_PACK_IDS = [
 
 export const MSH_ORIGIN_BLURBS: Record<string, string> = {
   mkm:
-    "You were a master detective but you've turned in your gun and your badge. You aren't just going to stand by and wait for crimes to be committed. You begin with one MKM Pack and +3 Hero Score.",
+    "1. You were a master detective but you've turned in your gun and your badge. You aren't just going to stand by and wait for crimes to be committed. You begin with one **MKM Pack** and +3 Hero Score.",
   tla:
-    "The prophecy told of a child with special powers… You begin with one TLA Pack and +2 Hero Score.",
+    "2. The prophecy told of a child with special powers… You begin with one **TLA Pack** and +2 Hero Score.",
   ltr:
-    "You have been entrusted with an ancient ring that gives you untold powers … if you can resist its temptations. You begin with one LTR Pack and +1 Hero Score.",
+    "3. You have been entrusted with an ancient ring that gives you untold powers … if you can resist its temptations. You begin with one **LTR Pack** and +1 Hero Score.",
   tmt:
-    "You joined a gang as a runaway teen, where you were trained in the arts of stealth, disguise and deadly hand-to-hand combat. You begin with one TMT Pack and -1 Hero Score.",
+    "4. You joined a gang as a runaway teen, where you were trained in the arts of stealth, disguise and deadly hand-to-hand combat. You begin with one **TMT Pack** and -1 Hero Score.",
   otj:
-    "Accused of a crime you have no memory of committing, you were forced to flee your home and abandon your family to live outside the law. You begin with one OTJ Pack and -2 Hero Score.",
+    "5. Accused of a crime you have no memory of committing, you were forced to flee your home and abandon your family to live outside the law. You begin with one **OTJ Pack** and -2 Hero Score.",
   spm:
-    "They refused to fund your scientific research, saying it was unethical and dangerous. But they can't stop you from testing your formula on yourself! You begin with one SPM Pack and -3 Hero Score.",
+    "6. They refused to fund your scientific research, saying it was unethical and dangerous. But they can't stop you from testing your formula on yourself! You begin with one **SPM Pack** and -3 Hero Score.",
 };
 
 export function mshOriginPacks(): ComebackPackDef[] {
@@ -67,11 +67,7 @@ export function buildMshOriginMessage(): string {
     "",
   ];
   for (const pack of mshOriginPacks()) {
-    lines.push(
-      `**${pack.label}**`,
-      MSH_ORIGIN_BLURBS[pack.id] ?? pack.blurb,
-      "",
-    );
+    lines.push(MSH_ORIGIN_BLURBS[pack.id] ?? pack.blurb, "");
   }
   return lines.join("\n").trim();
 }
