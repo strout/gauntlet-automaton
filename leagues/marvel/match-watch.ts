@@ -2,7 +2,7 @@ import { delay } from "@std/async";
 import { Client, TextChannel, User } from "discord.js";
 import { CONFIG } from "../../config.ts";
 import { getMatchAnnouncer } from "../../match_announcer.ts";
-import { ROWNUM, upcomingSheet } from "../../standings.ts";
+import { liveSheet, ROWNUM } from "../../standings.ts";
 import {
   buildComebackMessage,
   DM_SENT_COLUMN,
@@ -22,13 +22,9 @@ import { buildComebackComponents } from "./comeback-interaction.ts";
 
 const POLL_MS = 30_000;
 
-/** Marvel upcoming league — comeback DMs instead of default cube SET packs. */
+/** Marvel live league — comeback DMs instead of default cube SET packs. */
 export async function watchMarvelMatches(client: Client): Promise<never> {
-  if (!upcomingSheet) {
-    console.warn("[marvel] UPCOMING_SHEET_ID not configured; match watch idle");
-    await new Promise(() => {});
-  }
-  const announcer = getMatchAnnouncer(upcomingSheet!, "marvel");
+  const announcer = getMatchAnnouncer(liveSheet, "marvel");
 
   while (true) {
     try {

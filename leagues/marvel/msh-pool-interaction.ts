@@ -2,7 +2,7 @@ import * as djs from "discord.js";
 import { CONFIG } from "../../config.ts";
 import { Handler } from "../../dispatch.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
-import { upcomingSheet } from "../../standings.ts";
+import { liveSheet } from "../../standings.ts";
 import {
   comebackPackById,
   formatHeroScoreDelta,
@@ -54,14 +54,6 @@ export const marvelMshPoolSelectHandler: Handler<djs.Interaction> = async (
   if (!discordId) return;
   handle.claim();
 
-  if (!upcomingSheet) {
-    await interaction.reply({
-      content: "Marvel league sheet is not configured.",
-      ephemeral: true,
-    });
-    return;
-  }
-
   if (interaction.user.id !== discordId) {
     await interaction.reply({
       content: "This menu is not for you.",
@@ -70,7 +62,7 @@ export const marvelMshPoolSelectHandler: Handler<djs.Interaction> = async (
     return;
   }
 
-  const sheet = upcomingSheet;
+  const sheet = liveSheet;
   const lookup = await lookupPlayerByDiscordId(sheet, discordId);
   if (!lookup) {
     await interaction.reply({
