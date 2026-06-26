@@ -116,7 +116,7 @@ function isDuplicateMatch(
 ): boolean {
   if (!currentQuota) return false;
   return matches.rows.some((m) => {
-    if (m["ROWNUM"] === rowNum) return false;
+    if (m["ROWNUM"] >= rowNum) return false;
     if (
       m.Timestamp < currentQuota.fromDate ||
       m.Timestamp > currentQuota.toDate
