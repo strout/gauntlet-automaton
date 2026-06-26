@@ -16,7 +16,8 @@ import {
   MSH_PACK,
   PACK_CHOSEN_COLUMN,
   packGenCommand,
-  parseOffersFromNotes,
+  PACKS_OFFERED_COLUMN,
+  parsePacksOffered,
   resolveOfferedPack,
 } from "./comeback.ts";
 
@@ -111,7 +112,7 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
     return;
   }
 
-  const parsedOffers = parseOffersFromNotes(match.Notes);
+  const parsedOffers = parsePacksOffered(match[PACKS_OFFERED_COLUMN]);
   if (!parsedOffers) {
     await interaction.reply({
       content:

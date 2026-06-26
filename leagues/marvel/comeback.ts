@@ -3,13 +3,17 @@ import { ROWNUM } from "../../standings.ts";
 import { choice } from "../../random.ts";
 import { z } from "zod";
 
+export const MATCH_ANNOUNCED_COLUMN = "Match Announced";
 export const DM_SENT_COLUMN = "DM Sent";
 export const PACK_CHOSEN_COLUMN = "Pack Chosen";
+export const PACKS_OFFERED_COLUMN = "Packs Offered";
 
-/** Matches sheet columns F–G for Marvel (replaces Script Handled / Bot Messaged). */
+/** Matches sheet bot columns F–I for Marvel. */
 export const marvelMatchBotColumns = {
+  [MATCH_ANNOUNCED_COLUMN]: z.coerce.boolean().optional(),
   [DM_SENT_COLUMN]: z.coerce.boolean().optional(),
   [PACK_CHOSEN_COLUMN]: z.union([z.coerce.boolean(), z.string()]).optional(),
+  [PACKS_OFFERED_COLUMN]: z.string().optional(),
 };
 
 type MarvelMatchRow = {
@@ -17,10 +21,13 @@ type MarvelMatchRow = {
   Timestamp: number;
   "Your Name": string;
   "Loser Name": string;
+  Result?: string;
   Notes?: string;
   MATCHTYPE: string;
+  [MATCH_ANNOUNCED_COLUMN]?: boolean;
   [DM_SENT_COLUMN]?: boolean;
   [PACK_CHOSEN_COLUMN]?: boolean | string;
+  [PACKS_OFFERED_COLUMN]?: string;
 };
 
 type MarvelMatches = {
@@ -137,35 +144,7 @@ export function rollComebackOffers(): ComebackOffers {
   return { heroPack, villainPack };
 }
 
-const OFFERS_SUFFIX_RE = /\[marvel-offers:([^,]+),([^,\]]+)(?:,(msh))?\]\s*$/;
-
-/** Persists rolled offers on the match row (Notes) for later interaction handling. */
-export function encodeOffersInNotes(
-  notes: string | undefined,
-  offers: ComebackOffers,
-  mshOffered: boolean,
-): string {
-  const base = notes?.replace(/\n?\[marvel-offers:[^\]]+\]\s*$/, "").trim() ??
-    "";
-  const suffix = mshOffered
-    ? `[marvel-offers:${offers.heroPack.id},${offers.villainPack.id},msh]`
-    : `[marvel-offers:${offers.heroPack.id},${offers.villainPack.id}]`;
-  return base ? `${base}\n${suffix}` : suffix;
-}
-
-export function parseOffersFromNotes(
-  notes?: string,
-): { offers: ComebackOffers; mshOffered: boolean } | undefined {
-  const match = notes?.match(OFFERS_SUFFIX_RE);
-  if (!match) return undefined;
-  const heroPack = comebackPackById(match[1]);
-  const villainPack = comebackPackById(match[2]);
-  if (!heroPack || !villainPack) return undefined;
-  return {
-    offers: { heroPack, villainPack },
-    mshOffered: match[3] === "msh",
-  };
-}
+const PACKS_OFFERED_RE = /^\[marvel-offers:([^,]+),([^,\]]+)(?:,(msh))?\]\s*$/;
 
 const ALL_COMEBACK_PACKS: readonly ComebackPackDef[] = [
   MSH_PACK,
@@ -175,6 +154,30 @@ const ALL_COMEBACK_PACKS: readonly ComebackPackDef[] = [
 
 export function comebackPackById(packId: string): ComebackPackDef | undefined {
   return ALL_COMEBACK_PACKS.find((p) => p.id === packId);
+}
+
+/** Persists rolled offers on the match row (Packs Offered column). */
+export function encodePacksOffered(
+  offers: ComebackOffers,
+  mshOffered: boolean,
+): string {
+  return mshOffered
+    ? `[marvel-offers:${offers.heroPack.id},${offers.villainPack.id},msh]`
+    : `[marvel-offers:${offers.heroPack.id},${offers.villainPack.id}]`;
+}
+
+export function parsePacksOffered(
+  packsOffered?: string,
+): { offers: ComebackOffers; mshOffered: boolean } | undefined {
+  const match = packsOffered?.match(PACKS_OFFERED_RE);
+  if (!match) return undefined;
+  const heroPack = comebackPackById(match[1]);
+  const villainPack = comebackPackById(match[2]);
+  if (!heroPack || !villainPack) return undefined;
+  return {
+    offers: { heroPack, villainPack },
+    mshOffered: match[3] === "msh",
+  };
 }
 
 export function resolveOfferedPack(
@@ -218,6 +221,16 @@ export function hasOpenComebackForPlayer(
       row[ROWNUM] !== excludeRowNum &&
       isComebackAwaitingChoice(row);
   });
+}
+
+export function markRowMatchAnnounced(
+  matches: MarvelMatches,
+  rowNum: number,
+): void {
+  const row = matches.rows.find((m) =>
+    m.MATCHTYPE === "match" && m[ROWNUM] === rowNum
+  ) as MarvelMatchRow | undefined;
+  if (row) row[MATCH_ANNOUNCED_COLUMN] = true;
 }
 
 export function markRowDmSent(
