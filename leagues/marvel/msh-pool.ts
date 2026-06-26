@@ -5,8 +5,6 @@ import {
   comebackMenuLabel,
   comebackPackById,
   ComebackPackDef,
-  HERO_SCORE_COLUMN,
-  marvelPlayerExtras,
 } from "./comeback.ts";
 
 export const MSH_POOL_CMD = "!mshpool";
@@ -113,30 +111,14 @@ export async function updatePoolChangeComment(
   );
 }
 
-export async function setHeroScore(
-  sheet: LeagueSheet,
-  rowNum: number,
-  heroScoreColumn: number,
-  score: number,
-) {
-  await sheetsWrite(
-    sheets,
-    sheet.sheetId,
-    `Player Database!R${rowNum}C${heroScoreColumn + 1}`,
-    [[score]],
-    "RAW",
-  );
-}
-
 export async function lookupPlayerByDiscordId(
   sheet: LeagueSheet,
   discordId: string,
 ) {
-  const players = await sheet.getPlayers(marvelPlayerExtras);
+  const players = await sheet.getPlayers();
   const player = players.rows.find((p) => p["Discord ID"] === discordId);
   if (!player) return undefined;
-  const heroScoreCol = players.headerColumns[HERO_SCORE_COLUMN];
-  return { players, player, heroScoreCol };
+  return { players, player };
 }
 
-export { comebackMenuLabel, marvelPlayerExtras, ROWNUM };
+export { comebackMenuLabel, ROWNUM };

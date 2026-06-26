@@ -9,17 +9,15 @@ import {
   comebackMenuDescription,
   comebackMenuLabel,
   ComebackOffers,
-  formatHeroScore,
+  formatHeroScoreDelta,
   isComebackAwaitingChoice,
   marvelMatchBotColumns,
   MarvelMatchRow,
-  marvelPlayerExtras,
   MSH_PACK,
   PACK_CHOSEN_COLUMN,
   packGenCommand,
   parseOffersFromNotes,
   resolveOfferedPack,
-  updateHeroScore,
 } from "./comeback.ts";
 
 export const MARVEL_COMEBACK_SELECT_ID = "marvel-comeback-select";
@@ -93,7 +91,7 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
   const announcer = getMatchAnnouncer(sheet, "marvel");
 
   const [players, matches] = await Promise.all([
-    sheet.getPlayers(marvelPlayerExtras),
+    sheet.getPlayers(),
     sheet.getAllMatches(undefined, undefined, undefined, marvelMatchBotColumns),
   ]);
 
@@ -182,26 +180,17 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
       await sheet.getPoolChanges(),
     );
 
-    const heroScoreCol = players.headerColumns["Hero Score"];
-    const newHeroScore = (loserInfo["Hero Score"] ?? 0) + pack.heroScoreDelta;
-    if (pack.heroScoreDelta !== 0 && heroScoreCol !== undefined) {
-      await updateHeroScore(
-        sheet,
-        loserInfo[ROWNUM],
-        heroScoreCol,
-        loserInfo["Hero Score"] ?? 0,
-        pack.heroScoreDelta,
-      );
-    }
-
     if (packChosenCol !== undefined) {
       await announcer.markMatchHandled(matchRowNum, packChosenCol, true);
     }
 
+    const scoreNote = pack.heroScoreDelta !== 0
+      ? `\n\n${formatHeroScoreDelta(pack.heroScoreDelta)}.`
+      : "";
+
     await interaction.editReply({
-      content: `You picked **${pack.label}**.\n\nHero score is now **${
-        formatHeroScore(newHeroScore)
-      }**.\n\n**Your pool:** ${poolLink}`,
+      content:
+        `You picked **${pack.label}**.${scoreNote}\n\n**Your pool:** ${poolLink}`,
       components: [],
     });
   } catch (e) {
