@@ -2,7 +2,7 @@ import * as djs from "discord.js";
 import { CONFIG } from "../../config.ts";
 import { Handler } from "../../dispatch.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
-import { upcomingSheet } from "../../standings.ts";
+import { liveSheet } from "../../standings.ts";
 import {
   buildMshOriginMessage,
   findPendingMshPool,
@@ -45,11 +45,6 @@ export const marvelMshPoolHandler: Handler<djs.Message> = async (
   if (!message.content.startsWith(MSH_POOL_CMD)) return;
   handle.claim();
 
-  if (!upcomingSheet) {
-    await message.reply("Marvel league sheet is not configured.");
-    return;
-  }
-
   if (!message.inGuild()) {
     await message.reply("Use this command in a server channel.");
     return;
@@ -89,7 +84,7 @@ export const marvelMshPoolHandler: Handler<djs.Message> = async (
     }
   }
 
-  const sheet = upcomingSheet;
+  const sheet = liveSheet;
   const lookup = await lookupPlayerByDiscordId(sheet, targetDiscordId);
   if (!lookup) {
     await message.reply(

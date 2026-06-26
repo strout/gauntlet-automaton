@@ -3,7 +3,7 @@ import { CONFIG } from "../../config.ts";
 import { Handler } from "../../dispatch.ts";
 import { getMatchAnnouncer } from "../../match_announcer.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
-import { ROWNUM, upcomingSheet } from "../../standings.ts";
+import { liveSheet, ROWNUM } from "../../standings.ts";
 import {
   comebackComment,
   comebackMenuDescription,
@@ -79,15 +79,7 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
   if (matchRowNum === undefined) return;
   handle.claim();
 
-  if (!upcomingSheet) {
-    await interaction.reply({
-      content: "Marvel league sheet is not configured.",
-      ephemeral: true,
-    });
-    return;
-  }
-
-  const sheet = upcomingSheet;
+  const sheet = liveSheet;
   const announcer = getMatchAnnouncer(sheet, "marvel");
 
   const [players, matches] = await Promise.all([
