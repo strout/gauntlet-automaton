@@ -1,11 +1,11 @@
-import { getMatchAnnouncer } from "../../match_announcer.ts";
-import { liveSheet } from "../../standings.ts";
-import { LeagueSetup } from "../setup.ts";
+import { getMatchAnnouncer } from "../../../match_announcer.ts";
+import { liveSheet } from "../../../standings.ts";
+import { LeagueSetup } from "../../../leagues/setup.ts";
 import { watchSetMatches } from "./match-watch.ts";
 
 const announcer = getMatchAnnouncer(liveSheet, "set");
 
-/** SET — currently live league (`!cube SET` loss packs + entropy). */
+/** SET — archived league (`!cube SET` loss packs + entropy). */
 export function setup(): Promise<LeagueSetup> {
   return Promise.resolve({
     name: "set",

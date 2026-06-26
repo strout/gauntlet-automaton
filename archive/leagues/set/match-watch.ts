@@ -1,9 +1,9 @@
 import { delay } from "@std/async";
 import { Client, TextChannel } from "discord.js";
-import { CONFIG } from "../../config.ts";
-import { MatchAnnouncer } from "../../match_announcer.ts";
-import { liveSheet } from "../../standings.ts";
-import { waitForBoosterTutor } from "../../pending.ts";
+import { CONFIG } from "../../../config.ts";
+import { MatchAnnouncer } from "../../../match_announcer.ts";
+import { liveSheet } from "../../../standings.ts";
+import { waitForBoosterTutor } from "../../../pending.ts";
 
 const POLL_MS = 30_000;
 
