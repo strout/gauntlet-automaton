@@ -8,14 +8,12 @@ import {
   DM_SENT_COLUMN,
   encodeOffersInNotes,
   hasOpenComebackForPlayer,
-  HERO_SCORE_COLUMN,
   isComebackAwaitingChoice,
   isComebackRowComplete,
   markRowDmSent,
   markRowPackChosen,
   marvelMatchBotColumns,
   MarvelMatchRow,
-  marvelPlayerExtras,
   mshAvailable,
   PACK_CHOSEN_COLUMN,
   rollComebackOffers,
@@ -60,7 +58,7 @@ async function processMarvelMatches(
   console.log("[marvel] Checking for matches to handle…");
 
   const [players, quotas, matches, poolChanges] = await Promise.all([
-    sheet.getPlayers(marvelPlayerExtras),
+    sheet.getPlayers(),
     sheet.getQuotas(),
     sheet.getAllMatches(undefined, undefined, undefined, marvelMatchBotColumns),
     sheet.getPoolChanges(),
@@ -163,19 +161,6 @@ async function processMarvelMatches(
       }
       await writeMatchColumn(announcer, rowNum, packChosenCol, true);
       markRowPackChosen(matches, rowNum, true);
-      continue;
-    }
-
-    const heroScoreCol = players.headerColumns[HERO_SCORE_COLUMN];
-    if (heroScoreCol === undefined) {
-      console.error("[marvel] Hero Score column missing from Player Database");
-      await writeMatchColumn(
-        announcer,
-        rowNum,
-        packChosenCol,
-        "Error: Hero Score column",
-      );
-      markRowPackChosen(matches, rowNum, "Error: Hero Score column");
       continue;
     }
 

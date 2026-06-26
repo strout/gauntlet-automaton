@@ -1,7 +1,6 @@
 import type { LeagueSheet } from "../../standings.ts";
 import { ROWNUM } from "../../standings.ts";
 import { choice } from "../../random.ts";
-import { sheets, sheetsWrite } from "../../sheets.ts";
 import { z } from "zod";
 
 export const DM_SENT_COLUMN = "DM Sent";
@@ -29,12 +28,6 @@ type MarvelMatches = {
 };
 
 export type { MarvelMatchRow };
-
-export const HERO_SCORE_COLUMN = "Hero Score";
-
-export const marvelPlayerExtras = {
-  [HERO_SCORE_COLUMN]: z.coerce.number().optional(),
-};
 
 export interface ComebackPackDef {
   readonly id: string;
@@ -297,11 +290,6 @@ export function formatHeroScoreDelta(delta: number): string {
   return `${delta > 0 ? "+" : ""}${delta} Hero Score`;
 }
 
-export function formatHeroScore(score: number): string {
-  if (score === 0) return "0";
-  return `${score > 0 ? "+" : ""}${score}`;
-}
-
 export function comebackMenuLabel(pack: ComebackPackDef): string {
   const suffix = pack.heroScoreDelta === 0
     ? " (±0)"
@@ -320,20 +308,4 @@ export function comebackMenuDescription(pack: ComebackPackDef): string {
   const suffix = `… · ${score}`;
   const budget = 100 - suffix.length;
   return `${hook.slice(0, Math.max(0, budget)).trimEnd()}${suffix}`;
-}
-
-export async function updateHeroScore(
-  sheet: LeagueSheet,
-  rowNum: number,
-  heroScoreColumn: number,
-  currentScore: number,
-  delta: number,
-) {
-  await sheetsWrite(
-    sheets,
-    sheet.sheetId,
-    `Player Database!R${rowNum}C${heroScoreColumn + 1}`,
-    [[currentScore + delta]],
-    "RAW",
-  );
 }

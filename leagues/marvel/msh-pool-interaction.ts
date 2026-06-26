@@ -3,7 +3,11 @@ import { CONFIG } from "../../config.ts";
 import { Handler } from "../../dispatch.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
 import { upcomingSheet } from "../../standings.ts";
-import { comebackPackById, packGenCommand } from "./comeback.ts";
+import {
+  comebackPackById,
+  formatHeroScoreDelta,
+  packGenCommand,
+} from "./comeback.ts";
 import {
   buildMshOriginMessage,
   comebackMenuLabel,
@@ -17,7 +21,6 @@ import {
   originMenuDescription,
   parseMshPoolDiscordId,
   ROWNUM,
-  setHeroScore,
   updatePoolChangeComment,
 } from "./msh-pool.ts";
 
@@ -77,7 +80,7 @@ export const marvelMshPoolSelectHandler: Handler<djs.Interaction> = async (
     return;
   }
 
-  const { player, heroScoreCol } = lookup;
+  const { player } = lookup;
   const poolChanges = await sheet.getPoolChanges();
   const pending = findPendingMshPool(poolChanges, player.Identification);
   if (!pending) {
@@ -125,15 +128,6 @@ export const marvelMshPoolSelectHandler: Handler<djs.Interaction> = async (
       originComment(pack),
     );
 
-    if (heroScoreCol !== undefined) {
-      await setHeroScore(
-        sheet,
-        player[ROWNUM],
-        heroScoreCol,
-        pack.heroScoreDelta,
-      );
-    }
-
     await updatePoolChangeComment(
       sheet,
       pending[ROWNUM],
@@ -147,9 +141,7 @@ export const marvelMshPoolSelectHandler: Handler<djs.Interaction> = async (
     );
 
     const deltaNote = pack.heroScoreDelta !== 0
-      ? ` Hero score is now **${
-        pack.heroScoreDelta > 0 ? "+" : ""
-      }${pack.heroScoreDelta}**.`
+      ? ` (${formatHeroScoreDelta(pack.heroScoreDelta)}).`
       : "";
 
     let poolLinkDmSent = false;
