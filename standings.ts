@@ -134,11 +134,42 @@ export class LeagueSheet {
     return { rows: parsedRows, headers, headerColumns };
   }
 
-  /** Gets the current week number from the spreadsheet. */
-  async getCurrentWeek() {
-    return z.tuple([z.tuple([z.coerce.number()])]).parse(
-      (await sheetsRead(sheets, this.sheetId, "Quotas!B2")).values,
-    )[0][0];
+  /** Gets the current week number. */
+  getCurrentWeek() {
+    return this.calculateCurrentWeek();
+  }
+
+  /**
+   * Calculates the current week based on the current time and quota ranges.
+   * Returns:
+   * - 0 if the league hasn't started or quotas are empty.
+   * - The week number if we are within a quota range.
+   * - The last week + 1 if the league is officially over.
+   */
+  async calculateCurrentWeek(): Promise<number> {
+    const quotas = await this.getQuotas();
+    if (quotas.length === 0) return 0;
+
+    const offsetMs = await getSheetTimeZoneOffsetMs(this.sheetId);
+    const now = Date.now();
+
+    for (const quota of quotas) {
+      const fromDate = readSheetsDate(quota.fromDate, offsetMs).getTime();
+      const toDate = readSheetsDate(quota.toDate, offsetMs).getTime();
+      if (now >= fromDate && now <= toDate) {
+        return quota.week;
+      }
+    }
+
+    const firstQuota = quotas[0];
+    const firstFromDate = readSheetsDate(firstQuota.fromDate, offsetMs)
+      .getTime();
+    if (now < firstFromDate) {
+      return 0;
+    }
+
+    // League is over: return last week + 1
+    return quotas[quotas.length - 1].week + 1;
   }
 
   /** Gets the entropy week from the Quotas sheet. */
