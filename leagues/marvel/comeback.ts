@@ -180,11 +180,20 @@ export function resolveOfferedPack(
   return undefined;
 }
 
+/** Bot error strings in Pack Chosen are retriable. */
+export function isPackChosenError(
+  packChosen: MarvelMatchRow[typeof PACK_CHOSEN_COLUMN],
+): boolean {
+  return typeof packChosen === "string" && packChosen.startsWith("Error:");
+}
+
 /** Row is fully handled (pack chosen, eliminated, rejected, etc.). */
 export function isComebackRowComplete(
   match: Pick<MarvelMatchRow, typeof PACK_CHOSEN_COLUMN>,
 ): boolean {
-  return Boolean(match[PACK_CHOSEN_COLUMN]);
+  const packChosen = match[PACK_CHOSEN_COLUMN];
+  if (isPackChosenError(packChosen)) return false;
+  return Boolean(packChosen);
 }
 
 /** DM sent but player has not picked a pack yet. */
@@ -194,7 +203,9 @@ export function isComebackAwaitingChoice(
     typeof DM_SENT_COLUMN | typeof PACK_CHOSEN_COLUMN
   >,
 ): boolean {
-  return Boolean(match[DM_SENT_COLUMN]) && !match[PACK_CHOSEN_COLUMN];
+  const packChosen = match[PACK_CHOSEN_COLUMN];
+  return Boolean(match[DM_SENT_COLUMN]) &&
+    (isPackChosenError(packChosen) || !packChosen);
 }
 
 /** Any other loss row for this player still waiting on a pack choice. */
