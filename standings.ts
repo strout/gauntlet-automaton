@@ -286,7 +286,7 @@ export class LeagueSheet {
   async getPlayers<
     S extends z.ZodRawShape = Record<string, never>,
   >(
-    extras?: S,
+    ...[extras]: S extends Record<string, never> ? [S?] : [S]
   ): Promise<Table<Player<S>>> {
     const LAST_COLUMN = "AI";
     const table = await this.readTable("Player Database!A:" + LAST_COLUMN, 1);
@@ -615,15 +615,13 @@ export async function getPoolChanges<S extends z.ZodRawShape>(
   return await getLeagueSheet(sheetId).getPoolChanges(sheetName, extras);
 }
 
-export async function getPlayers<
+export function getPlayers<
   S extends z.ZodRawShape = Record<string, never>,
 >(
   sheetId = CONFIG.LIVE_SHEET_ID,
-  ...[extras]: S extends Record<string, never> ? [S?] : [S]
+  ...extras: S extends Record<string, never> ? [S?] : [S]
 ): Promise<Table<Player<S>>> {
-  return await getLeagueSheet(sheetId).getPlayers(extras) as Promise<
-    Table<Player<S>>
-  >;
+  return getLeagueSheet(sheetId).getPlayers<S>(...extras);
 }
 
 export async function getQuotas(sheetId = CONFIG.LIVE_SHEET_ID) {
