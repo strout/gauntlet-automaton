@@ -24,15 +24,18 @@ import {
   rollComebackOffers,
 } from "./comeback.ts";
 import { buildComebackComponents } from "./comeback-interaction.ts";
+import { getEntropyAnnouncer } from "../../entropy.ts";
 
 const POLL_MS = 30_000;
 
 /** Marvel live league — comeback DMs instead of default cube SET packs. */
 export async function watchMarvelMatches(client: Client): Promise<never> {
   const announcer = getMatchAnnouncer(liveSheet, "marvel");
+  const entropy = getEntropyAnnouncer(liveSheet, "marvel");
 
   while (true) {
     try {
+      await entropy.process(client);
       await processMarvelMatches(client, announcer);
     } catch (e) {
       console.error("[marvel] match watch error:", e);
