@@ -9,6 +9,7 @@ export class EntropyAnnouncer {
   constructor(
     readonly sheet: LeagueSheet,
     readonly label: string,
+    /** Booster Tutor command (e.g. "cube SET"). */
     readonly command?: string,
   ) {}
 
@@ -84,14 +85,21 @@ export class EntropyAnnouncer {
           }
           const mention = `<@!${discordId}>`;
 
-          if (losses + toAdd >= CONFIG.MAX_LOSSES) {
+          if (losses + toAdd >= CONFIG.MAX_LOSSES || !this.command) {
             for (let i = 0; i < toAdd; i++) {
               await this.sheet.addEntropyRow(
                 player.Identification,
                 entropyWeek,
               );
             }
-            await packGenChannel.send(`${mention} was eliminated by ENTROPY.`);
+
+            const message = (losses + toAdd >= CONFIG.MAX_LOSSES)
+              ? `${mention} was eliminated by ENTROPY.`
+              : `${mention} was defeated by ENTROPY${
+                toAdd > 1 ? ` ${toAdd} times` : ""
+              }.`;
+
+            await packGenChannel.send(message);
           } else {
             for (let i = 0; i < toAdd; i++) {
               await this.sheet.addEntropyRow(
@@ -99,29 +107,26 @@ export class EntropyAnnouncer {
                 entropyWeek,
               );
 
-              const prefix = this.command ? `!${this.command} ` : "";
               const sentMessage = await packGenChannel.send(
-                `${prefix}${mention} was defeated by ENTROPY.`,
+                `!${this.command} ${mention} was defeated by ENTROPY.`,
               );
 
-              if (this.command) {
-                try {
-                  const packResult = await waitForBoosterTutor(
-                    Promise.resolve(sentMessage),
-                  );
-                  if ("success" in packResult) {
-                    await this.sheet.recordPackAddition(
-                      player.Identification,
-                      packResult.success,
-                      `Entropy loss (Week ${entropyWeek})`,
-                    );
-                  }
-                } catch (e) {
-                  console.error(
-                    `[entropy:${this.label}] Failed to record entropy pack for ${player.Identification}:`,
-                    e,
+              try {
+                const packResult = await waitForBoosterTutor(
+                  Promise.resolve(sentMessage),
+                );
+                if ("success" in packResult) {
+                  await this.sheet.recordPackAddition(
+                    player.Identification,
+                    packResult.success,
+                    `Entropy loss (Week ${entropyWeek})`,
                   );
                 }
+              } catch (e) {
+                console.error(
+                  `[entropy:${this.label}] Failed to record entropy pack for ${player.Identification}:`,
+                  e,
+                );
               }
               await delay(1000);
             }
@@ -147,6 +152,7 @@ const announcerCache = new Map<string, EntropyAnnouncer>();
 export function getEntropyAnnouncer(
   sheet: LeagueSheet,
   label: string,
+  /** Booster Tutor command (e.g. "cube SET"). */
   command?: string,
 ): EntropyAnnouncer {
   const key = label;
