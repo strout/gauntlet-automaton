@@ -23,6 +23,7 @@ import { z } from "zod";
 export const ROW = "ROW";
 export const ROWNUM = "ROWNUM";
 export const MATCHTYPE = "MATCHTYPE";
+export type MatchType = "match" | "entropy";
 
 const POOL_CHANGES_SHEET_NAME = "Pool Changes";
 
@@ -43,6 +44,37 @@ const playerShape = {
 export type Player<S extends z.ZodRawShape = Record<never, never>> = z.infer<
   z.ZodObject<typeof playerShape & S>
 >;
+
+const matchInputShape = {
+  Timestamp: z.number(),
+  "Your Name": z.string(),
+  "Loser Name": z.string(),
+  Result: z.string(),
+  Notes: z.string().optional(),
+  "Match Announced": z.coerce.boolean(),
+};
+
+export type Match<S extends z.ZodRawShape = Record<never, never>> =
+  & z.infer<
+    z.ZodObject<typeof matchInputShape & S>
+  >
+  & { [MATCHTYPE]: "match"; WEEK: number };
+
+const entropyInputShape = {
+  WEEK: z.number(),
+  Timestamp: z.number(),
+  "PLAYER 1": z.string(),
+  "PLAYER 2": z.string(),
+  RESULT: z.string(),
+};
+
+export type Entropy<S extends z.ZodRawShape = Record<never, never>> =
+  & z.infer<
+    z.ZodObject<typeof entropyInputShape & S>
+  >
+  & Omit<Match<S>, typeof MATCHTYPE>
+  & { [MATCHTYPE]: "entropy" };
+
 export type Table<T> = {
   rows: (T & { [ROW]: unknown[]; [ROWNUM]: number })[];
   headers: string[];
@@ -342,12 +374,7 @@ export class LeagueSheet {
     const LAST_COLUMN = "L";
     const table = await this.readTable("Matches!A:" + LAST_COLUMN);
     const parsed = parseTable({
-      Timestamp: z.number(),
-      "Your Name": z.string(),
-      "Loser Name": z.string(),
-      Result: z.string(),
-      Notes: z.string().optional(),
-      "Match Announced": z.coerce.boolean(),
+      ...matchInputShape,
       ...extras,
     }, table);
     const resolvedQuotas = await quotaTask;
@@ -368,11 +395,7 @@ export class LeagueSheet {
     const LAST_COLUMN = "L";
     const table = await this.readTable("Entropy!A4:" + LAST_COLUMN, 4);
     const parsed = parseTable({
-      WEEK: z.number(),
-      Timestamp: z.number(),
-      "PLAYER 1": z.string(),
-      "PLAYER 2": z.string(),
-      RESULT: z.string(),
+      ...entropyInputShape,
       ...extras,
     }, { ...table, rows: table.rows.filter((r) => r["PLAYER 2"]) });
     return {
@@ -382,6 +405,7 @@ export class LeagueSheet {
         "Your Name": r["PLAYER 1"],
         "Loser Name": r["PLAYER 2"],
         "Match Announced": true,
+        "Result": r["RESULT"],
         [MATCHTYPE]: "entropy" as const,
       })),
     };

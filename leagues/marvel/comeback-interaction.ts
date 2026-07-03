@@ -177,9 +177,12 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
       await sheet.getPoolChanges(),
     );
 
-    if (packChosenCol !== undefined) {
-      await announcer.markMatchHandled(matchRowNum, packChosenCol, true);
-    }
+    await announcer.markMatchHandled(
+      matches,
+      match,
+      PACK_CHOSEN_COLUMN,
+      true,
+    );
 
     const scoreNote = pack.heroScoreDelta !== 0
       ? `\n\n${formatHeroScoreDelta(pack.heroScoreDelta)}.`

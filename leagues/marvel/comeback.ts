@@ -1,4 +1,4 @@
-import type { LeagueSheet } from "../../standings.ts";
+import type { Entropy, LeagueSheet, Match, Table } from "../../standings.ts";
 import { ROWNUM } from "../../standings.ts";
 import { choice } from "../../random.ts";
 import { z } from "zod";
@@ -15,19 +15,9 @@ export const marvelMatchBotColumns = {
   [PACKS_OFFERED_COLUMN]: z.string().optional(),
 };
 
-type MarvelMatchRow = {
-  [ROWNUM]: number;
-  Timestamp: number;
-  "Your Name": string;
-  "Loser Name": string;
-  Result?: string;
-  Notes?: string;
-  MATCHTYPE: string;
-  [MATCH_ANNOUNCED_COLUMN]?: boolean;
-  [DM_SENT_COLUMN]?: boolean;
-  [PACK_CHOSEN_COLUMN]?: boolean | string;
-  [PACKS_OFFERED_COLUMN]?: string;
-};
+type MarvelMatchRow = Table<
+  Match<typeof marvelMatchBotColumns> | Entropy<typeof marvelMatchBotColumns>
+>["rows"][number];
 
 type MarvelMatches = {
   readonly rows: readonly MarvelMatchRow[];

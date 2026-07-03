@@ -44,14 +44,7 @@ export async function watchMarvelMatches(client: Client): Promise<never> {
   }
 }
 
-async function writeMatchColumn(
-  announcer: ReturnType<typeof getMatchAnnouncer>,
-  rowNum: number,
-  columnIndex: number,
-  value: string | boolean,
-) {
-  await announcer.markMatchHandled(rowNum, columnIndex, value);
-}
+// Removed writeMatchColumn wrapper
 
 interface MatchHandlingContext {
   readonly match: MarvelMatchRow;
@@ -151,10 +144,10 @@ async function resolveMatchHandlingContext(
   );
 
   if (!winnerInfo || !loserInfo) {
-    await writeMatchColumn(
-      ctx.announcer,
-      rowNum,
-      ctx.packChosenCol,
+    await ctx.announcer.markMatchHandled(
+      ctx.matches,
+      match,
+      PACK_CHOSEN_COLUMN,
       "Error: Missing Player Info",
     );
     markRowPackChosen(ctx.matches, rowNum, "Error: Missing Player Info");
@@ -164,10 +157,10 @@ async function resolveMatchHandlingContext(
   const winnerId = winnerInfo["Discord ID"];
   const loserId = loserInfo["Discord ID"];
   if (!winnerId || !loserId) {
-    await writeMatchColumn(
-      ctx.announcer,
-      rowNum,
-      ctx.packChosenCol,
+    await ctx.announcer.markMatchHandled(
+      ctx.matches,
+      match,
+      PACK_CHOSEN_COLUMN,
       "Error: Missing Discord ID",
     );
     markRowPackChosen(ctx.matches, rowNum, "Error: Missing Discord ID");
@@ -187,10 +180,10 @@ async function resolveMatchHandlingContext(
       currentQuota,
     )
   ) {
-    await writeMatchColumn(
-      ctx.announcer,
-      rowNum,
-      ctx.packChosenCol,
+    await ctx.announcer.markMatchHandled(
+      ctx.matches,
+      match,
+      PACK_CHOSEN_COLUMN,
       "Rejected: Duplicate",
     );
     markRowPackChosen(ctx.matches, rowNum, "Rejected: Duplicate");
@@ -241,10 +234,10 @@ async function announcePendingMatches(
       );
     }
 
-    await writeMatchColumn(
-      ctx.announcer,
-      handling.rowNum,
-      ctx.matchAnnouncedCol,
+    await ctx.announcer.markMatchHandled(
+      ctx.matches,
+      handling.match,
+      MATCH_ANNOUNCED_COLUMN,
       true,
     );
     markRowMatchAnnounced(ctx.matches, handling.rowNum);
@@ -266,10 +259,10 @@ async function processComebackFlow(
     if (!handling) continue;
 
     if (handling.eliminated) {
-      await writeMatchColumn(
-        ctx.announcer,
-        handling.rowNum,
-        ctx.packChosenCol,
+      await ctx.announcer.markMatchHandled(
+        ctx.matches,
+        handling.match,
+        PACK_CHOSEN_COLUMN,
         true,
       );
       markRowPackChosen(ctx.matches, handling.rowNum, true);
@@ -297,10 +290,10 @@ async function processComebackFlow(
     const offers = storedOffers?.offers ?? rollComebackOffers();
 
     if (!storedOffers) {
-      await writeMatchColumn(
-        ctx.announcer,
-        handling.rowNum,
-        ctx.packsOfferedCol,
+      await ctx.announcer.markMatchHandled(
+        ctx.matches,
+        handling.match,
+        PACKS_OFFERED_COLUMN,
         encodePacksOffered(offers, offeredMsh),
       );
     }
@@ -314,10 +307,10 @@ async function processComebackFlow(
     );
 
     if (dmSent) {
-      await writeMatchColumn(
-        ctx.announcer,
-        handling.rowNum,
-        ctx.dmSentCol,
+      await ctx.announcer.markMatchHandled(
+        ctx.matches,
+        handling.match,
+        DM_SENT_COLUMN,
         true,
       );
       markRowDmSent(ctx.matches, handling.rowNum);
