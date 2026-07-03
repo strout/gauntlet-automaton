@@ -118,15 +118,16 @@ async function resolveMatchHandlingContext(
   const winnerName = match["Your Name"];
   const loserName = match["Loser Name"];
   const rowNum = match[ROWNUM];
+  const isEntropy = match[MATCHTYPE] === "entropy";
 
-  const winnerInfo = ctx.players.rows.find((p) =>
-    p.Identification === winnerName
-  );
   const loserInfo = ctx.players.rows.find((p) =>
     p.Identification === loserName
   );
+  const winnerInfo = isEntropy
+    ? undefined
+    : ctx.players.rows.find((p) => p.Identification === winnerName);
 
-  if (!winnerInfo || !loserInfo) {
+  if (!loserInfo || (!isEntropy && !winnerInfo)) {
     await ctx.announcer.markMatchHandled(
       ctx.matches,
       match,
@@ -137,9 +138,9 @@ async function resolveMatchHandlingContext(
     return undefined;
   }
 
-  const winnerId = winnerInfo["Discord ID"];
+  const winnerId = winnerInfo?.["Discord ID"];
   const loserId = loserInfo["Discord ID"];
-  if (!winnerId || !loserId) {
+  if (!loserId || (!isEntropy && !winnerId)) {
     await ctx.announcer.markMatchHandled(
       ctx.matches,
       match,
@@ -174,13 +175,15 @@ async function resolveMatchHandlingContext(
   return {
     match,
     rowNum,
-    winnerMention: `<@${winnerId}>`,
+    winnerMention: isEntropy ? "ENTROPY" : `<@${winnerId}>`,
     loserMention: `<@${loserId}>`,
     loserId,
     winnerName,
     loserName,
-    winnerStreak: winnerInfo.Streak,
-    winnerMatchesPlayed: winnerInfo.Wins + winnerInfo.Losses,
+    winnerStreak: winnerInfo?.Streak,
+    winnerMatchesPlayed: winnerInfo
+      ? winnerInfo.Wins + winnerInfo.Losses
+      : 0,
     loserMatchesPlayed: loserInfo.Wins + loserInfo.Losses,
     eliminated: loserInfo.Losses >= CONFIG.MAX_LOSSES,
     currentQuota,
