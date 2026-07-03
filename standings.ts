@@ -373,7 +373,6 @@ export class LeagueSheet {
       "PLAYER 1": z.string(),
       "PLAYER 2": z.string(),
       RESULT: z.string(),
-      "Bot Messaged": z.coerce.boolean(),
       ...extras,
     }, { ...table, rows: table.rows.filter((r) => r["PLAYER 2"]) });
     return {
@@ -382,7 +381,7 @@ export class LeagueSheet {
         ...r,
         "Your Name": r["PLAYER 1"],
         "Loser Name": r["PLAYER 2"],
-        "Script Handled": true,
+        "Match Announced": true,
         [MATCHTYPE]: "entropy" as const,
       })),
     };
