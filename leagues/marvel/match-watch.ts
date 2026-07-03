@@ -80,30 +80,12 @@ async function loadMatchSheetContext(
     sheet.getPoolChanges(),
   ]);
 
-  const matchAnnouncedCol = matches.headerColumns.match[MATCH_ANNOUNCED_COLUMN];
-  const dmSentCol = matches.headerColumns.match[DM_SENT_COLUMN];
-  const packChosenCol = matches.headerColumns.match[PACK_CHOSEN_COLUMN];
-  const packsOfferedCol = matches.headerColumns.match[PACKS_OFFERED_COLUMN];
-
-  if (
-    matchAnnouncedCol === undefined || dmSentCol === undefined ||
-    packChosenCol === undefined || packsOfferedCol === undefined
-  ) {
-    throw new Error(
-      "Matches sheet missing Match Announced, DM Sent, Pack Chosen, or Packs Offered columns",
-    );
-  }
-
   return {
     announcer,
     players,
     quotas,
     matches,
     poolChanges,
-    matchAnnouncedCol,
-    dmSentCol,
-    packChosenCol,
-    packsOfferedCol,
   };
 }
 
