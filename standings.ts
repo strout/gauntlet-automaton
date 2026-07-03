@@ -23,6 +23,7 @@ import { z } from "zod";
 export const ROW = "ROW";
 export const ROWNUM = "ROWNUM";
 export const MATCHTYPE = "MATCHTYPE";
+export type MatchType = "match" | "entropy";
 
 const POOL_CHANGES_SHEET_NAME = "Pool Changes";
 
@@ -43,6 +44,37 @@ const playerShape = {
 export type Player<S extends z.ZodRawShape = Record<never, never>> = z.infer<
   z.ZodObject<typeof playerShape & S>
 >;
+
+const matchInputShape = {
+  Timestamp: z.number(),
+  "Your Name": z.string(),
+  "Loser Name": z.string(),
+  Result: z.string(),
+  Notes: z.string().optional(),
+  "Match Announced": z.coerce.boolean(),
+};
+
+export type Match<S extends z.ZodRawShape = Record<never, never>> =
+  & z.infer<
+    z.ZodObject<typeof matchInputShape & S>
+  >
+  & { [MATCHTYPE]: "match"; WEEK: number };
+
+const entropyInputShape = {
+  WEEK: z.number(),
+  Timestamp: z.number(),
+  "PLAYER 1": z.string(),
+  "PLAYER 2": z.string(),
+  RESULT: z.string(),
+};
+
+export type Entropy<S extends z.ZodRawShape = Record<never, never>> =
+  & z.infer<
+    z.ZodObject<typeof entropyInputShape & S>
+  >
+  & Omit<Match<S>, typeof MATCHTYPE>
+  & { [MATCHTYPE]: "entropy" };
+
 export type Table<T> = {
   rows: (T & { [ROW]: unknown[]; [ROWNUM]: number })[];
   headers: string[];
@@ -134,11 +166,42 @@ export class LeagueSheet {
     return { rows: parsedRows, headers, headerColumns };
   }
 
-  /** Gets the current week number from the spreadsheet. */
-  async getCurrentWeek() {
-    return z.tuple([z.tuple([z.coerce.number()])]).parse(
-      (await sheetsRead(sheets, this.sheetId, "Quotas!B2")).values,
-    )[0][0];
+  /** Gets the current week number. */
+  getCurrentWeek() {
+    return this.calculateCurrentWeek();
+  }
+
+  /**
+   * Calculates the current week based on the current time and quota ranges.
+   * Returns:
+   * - 0 if the league hasn't started or quotas are empty.
+   * - The week number if we are within a quota range.
+   * - The last week + 1 if the league is officially over.
+   */
+  async calculateCurrentWeek(): Promise<number> {
+    const quotas = await this.getQuotas();
+    if (quotas.length === 0) return 0;
+
+    const offsetMs = await getSheetTimeZoneOffsetMs(this.sheetId);
+    const now = Date.now();
+
+    for (const quota of quotas) {
+      const fromDate = readSheetsDate(quota.fromDate, offsetMs).getTime();
+      const toDate = readSheetsDate(quota.toDate, offsetMs).getTime();
+      if (now >= fromDate && now <= toDate) {
+        return quota.week;
+      }
+    }
+
+    const firstQuota = quotas[0];
+    const firstFromDate = readSheetsDate(firstQuota.fromDate, offsetMs)
+      .getTime();
+    if (now < firstFromDate) {
+      return 0;
+    }
+
+    // League is over: return last week + 1
+    return quotas[quotas.length - 1].week + 1;
   }
 
   /** Gets the entropy week from the Quotas sheet. */
@@ -255,7 +318,7 @@ export class LeagueSheet {
   async getPlayers<
     S extends z.ZodRawShape = Record<string, never>,
   >(
-    extras?: S,
+    ...[extras]: S extends Record<string, never> ? [S?] : [S]
   ): Promise<Table<Player<S>>> {
     const LAST_COLUMN = "AI";
     const table = await this.readTable("Player Database!A:" + LAST_COLUMN, 1);
@@ -306,21 +369,12 @@ export class LeagueSheet {
   async getMatches<S extends z.ZodRawShape>(
     extras?: S,
     quotasOverride?: QuotaInfo[],
-    botColumns: z.ZodRawShape = {
-      "Script Handled": z.coerce.boolean(),
-      "Bot Messaged": z.coerce.boolean(),
-    },
   ) {
     const quotaTask = quotasOverride ?? this.getQuotas();
     const LAST_COLUMN = "L";
     const table = await this.readTable("Matches!A:" + LAST_COLUMN);
     const parsed = parseTable({
-      Timestamp: z.number(),
-      "Your Name": z.string(),
-      "Loser Name": z.string(),
-      Result: z.string(),
-      Notes: z.string().optional(),
-      ...botColumns,
+      ...matchInputShape,
       ...extras,
     }, table);
     const resolvedQuotas = await quotaTask;
@@ -341,12 +395,7 @@ export class LeagueSheet {
     const LAST_COLUMN = "L";
     const table = await this.readTable("Entropy!A4:" + LAST_COLUMN, 4);
     const parsed = parseTable({
-      WEEK: z.number(),
-      Timestamp: z.number(),
-      "PLAYER 1": z.string(),
-      "PLAYER 2": z.string(),
-      RESULT: z.string(),
-      "Bot Messaged": z.coerce.boolean(),
+      ...entropyInputShape,
       ...extras,
     }, { ...table, rows: table.rows.filter((r) => r["PLAYER 2"]) });
     return {
@@ -355,7 +404,8 @@ export class LeagueSheet {
         ...r,
         "Your Name": r["PLAYER 1"],
         "Loser Name": r["PLAYER 2"],
-        "Script Handled": true,
+        "Match Announced": true,
+        "Result": r["RESULT"],
         [MATCHTYPE]: "entropy" as const,
       })),
     };
@@ -369,10 +419,9 @@ export class LeagueSheet {
     matchExtras?: SM,
     entropyExtras?: SE,
     quotasOverride?: QuotaInfo[],
-    matchBotColumns?: z.ZodRawShape,
   ) {
     const [matches, entropy] = await Promise.all([
-      this.getMatches(matchExtras, quotasOverride, matchBotColumns),
+      this.getMatches(matchExtras, quotasOverride),
       this.getEntropy(entropyExtras),
     ]);
     const rows = [...matches.rows, ...entropy.rows].sort((a, b) =>
@@ -584,15 +633,13 @@ export async function getPoolChanges<S extends z.ZodRawShape>(
   return await getLeagueSheet(sheetId).getPoolChanges(sheetName, extras);
 }
 
-export async function getPlayers<
+export function getPlayers<
   S extends z.ZodRawShape = Record<string, never>,
 >(
   sheetId = CONFIG.LIVE_SHEET_ID,
-  ...[extras]: S extends Record<string, never> ? [S?] : [S]
+  ...extras: S extends Record<string, never> ? [S?] : [S]
 ): Promise<Table<Player<S>>> {
-  return await getLeagueSheet(sheetId).getPlayers(extras) as Promise<
-    Table<Player<S>>
-  >;
+  return getLeagueSheet(sheetId).getPlayers<S>(...extras);
 }
 
 export async function getQuotas(sheetId = CONFIG.LIVE_SHEET_ID) {

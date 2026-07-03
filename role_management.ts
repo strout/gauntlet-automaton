@@ -3,13 +3,7 @@ import { delay } from "@std/async";
 import * as djs from "discord.js";
 import { columnIndex, env, sheets, sheetsRead, sheetsWrite } from "./sheets.ts";
 import { mutex } from "./mutex.ts";
-import {
-  liveSheet,
-  parseTable,
-  readTable,
-  ROW,
-  ROWNUM,
-} from "./standings.ts";
+import { liveSheet, parseTable, readTable, ROW, ROWNUM } from "./standings.ts";
 import { z } from "zod";
 
 type Role = { id: djs.Snowflake; name: string };

@@ -1,4 +1,4 @@
-import type { LeagueSheet } from "../../standings.ts";
+import type { Entropy, LeagueSheet, Match, Table } from "../../standings.ts";
 import { ROWNUM } from "../../standings.ts";
 import { choice } from "../../random.ts";
 import { z } from "zod";
@@ -10,25 +10,14 @@ export const PACKS_OFFERED_COLUMN = "Packs Offered";
 
 /** Matches sheet bot columns F–I for Marvel. */
 export const marvelMatchBotColumns = {
-  [MATCH_ANNOUNCED_COLUMN]: z.coerce.boolean().optional(),
-  [DM_SENT_COLUMN]: z.coerce.boolean().optional(),
-  [PACK_CHOSEN_COLUMN]: z.union([z.coerce.boolean(), z.string()]).optional(),
-  [PACKS_OFFERED_COLUMN]: z.string().optional(),
+  [DM_SENT_COLUMN]: z.coerce.boolean().nullish(),
+  [PACK_CHOSEN_COLUMN]: z.union([z.coerce.boolean(), z.string()]).nullish(),
+  [PACKS_OFFERED_COLUMN]: z.string().nullish(),
 };
 
-type MarvelMatchRow = {
-  [ROWNUM]: number;
-  Timestamp: number;
-  "Your Name": string;
-  "Loser Name": string;
-  Result?: string;
-  Notes?: string;
-  MATCHTYPE: string;
-  [MATCH_ANNOUNCED_COLUMN]?: boolean;
-  [DM_SENT_COLUMN]?: boolean;
-  [PACK_CHOSEN_COLUMN]?: boolean | string;
-  [PACKS_OFFERED_COLUMN]?: string;
-};
+type MarvelMatchRow = Table<
+  Match<typeof marvelMatchBotColumns> | Entropy<typeof marvelMatchBotColumns>
+>["rows"][number];
 
 type MarvelMatches = {
   readonly rows: readonly MarvelMatchRow[];
@@ -214,9 +203,7 @@ export function hasOpenComebackForPlayer(
   loserName: string,
   excludeRowNum: number,
 ): boolean {
-  return matches.rows.some((m) => {
-    if (m.MATCHTYPE !== "match") return false;
-    const row = m as MarvelMatchRow;
+  return matches.rows.some((row) => {
     return row["Loser Name"] === loserName &&
       row[ROWNUM] !== excludeRowNum &&
       isComebackAwaitingChoice(row);
@@ -224,34 +211,22 @@ export function hasOpenComebackForPlayer(
 }
 
 export function markRowMatchAnnounced(
-  matches: MarvelMatches,
-  rowNum: number,
+  match: MarvelMatchRow,
 ): void {
-  const row = matches.rows.find((m) =>
-    m.MATCHTYPE === "match" && m[ROWNUM] === rowNum
-  ) as MarvelMatchRow | undefined;
-  if (row) row[MATCH_ANNOUNCED_COLUMN] = true;
+  match[MATCH_ANNOUNCED_COLUMN] = true;
 }
 
 export function markRowDmSent(
-  matches: MarvelMatches,
-  rowNum: number,
+  match: MarvelMatchRow,
 ): void {
-  const row = matches.rows.find((m) =>
-    m.MATCHTYPE === "match" && m[ROWNUM] === rowNum
-  ) as MarvelMatchRow | undefined;
-  if (row) row[DM_SENT_COLUMN] = true;
+  match[DM_SENT_COLUMN] = true;
 }
 
 export function markRowPackChosen(
-  matches: MarvelMatches,
-  rowNum: number,
+  match: MarvelMatchRow,
   value: boolean | string = true,
 ): void {
-  const row = matches.rows.find((m) =>
-    m.MATCHTYPE === "match" && m[ROWNUM] === rowNum
-  ) as MarvelMatchRow | undefined;
-  if (row) row[PACK_CHOSEN_COLUMN] = value;
+  match[PACK_CHOSEN_COLUMN] = value;
 }
 
 export function packGenCommand(

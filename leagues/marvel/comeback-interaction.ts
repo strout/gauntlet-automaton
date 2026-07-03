@@ -3,7 +3,7 @@ import { CONFIG } from "../../config.ts";
 import { Handler } from "../../dispatch.ts";
 import { getMatchAnnouncer } from "../../match_announcer.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
-import { liveSheet, ROWNUM } from "../../standings.ts";
+import { liveSheet, MatchType, ROWNUM } from "../../standings.ts";
 import {
   comebackComment,
   comebackMenuDescription,
@@ -23,8 +23,11 @@ import {
 
 export const MARVEL_COMEBACK_SELECT_ID = "marvel-comeback-select";
 
-export function comebackSelectCustomId(matchRowNum: number): string {
-  return `${MARVEL_COMEBACK_SELECT_ID}:${matchRowNum}`;
+export function comebackSelectCustomId(
+  matchRowNum: number,
+  matchType: MatchType,
+): string {
+  return `${MARVEL_COMEBACK_SELECT_ID}:${matchRowNum}:${matchType}`;
 }
 
 function parseMatchRowNum(customId: string): number | undefined {
@@ -33,8 +36,14 @@ function parseMatchRowNum(customId: string): number | undefined {
   return Number.isFinite(rowNum) ? rowNum : undefined;
 }
 
+function parseMatchType(customId: string): MatchType | undefined {
+  if (!customId.startsWith(`${MARVEL_COMEBACK_SELECT_ID}:`)) return undefined;
+  return customId.split(":")[2] as MatchType | undefined ?? "match";
+}
+
 export function buildComebackComponents(
   matchRowNum: number,
+  matchType: MatchType,
   offers: ComebackOffers,
   mshAvailable: boolean,
   disabled = false,
@@ -63,7 +72,7 @@ export function buildComebackComponents(
   return [
     new djs.ActionRowBuilder<djs.StringSelectMenuBuilder>().addComponents(
       new djs.StringSelectMenuBuilder()
-        .setCustomId(comebackSelectCustomId(matchRowNum))
+        .setCustomId(comebackSelectCustomId(matchRowNum, matchType))
         .setPlaceholder("What is your next step?")
         .addOptions(options)
         .setDisabled(disabled),
@@ -77,7 +86,8 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
 ) => {
   if (!interaction.isStringSelectMenu()) return;
   const matchRowNum = parseMatchRowNum(interaction.customId);
-  if (matchRowNum === undefined) return;
+  const matchType = parseMatchType(interaction.customId);
+  if (matchRowNum === undefined || !matchType) return;
   handle.claim();
 
   const sheet = liveSheet;
@@ -85,13 +95,16 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
 
   const [players, matches] = await Promise.all([
     sheet.getPlayers(),
-    sheet.getAllMatches(undefined, undefined, undefined, marvelMatchBotColumns),
+    sheet.getAllMatches(
+      marvelMatchBotColumns,
+      marvelMatchBotColumns,
+      undefined,
+    ),
   ]);
 
   const match = matches.rows.find((m) =>
-    m.MATCHTYPE === "match" && m[ROWNUM] === matchRowNum
+    m.MATCHTYPE === matchType && m[ROWNUM] === matchRowNum
   ) as MarvelMatchRow | undefined;
-  const packChosenCol = matches.headerColumns.match[PACK_CHOSEN_COLUMN];
 
   if (!match || !isComebackAwaitingChoice(match)) {
     await interaction.reply({
@@ -139,6 +152,7 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
     content: interaction.message.content + "\n\n_Generating your pack…_",
     components: buildComebackComponents(
       matchRowNum,
+      matchType,
       parsedOffers.offers,
       parsedOffers.mshOffered,
       true,
@@ -173,9 +187,12 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
       await sheet.getPoolChanges(),
     );
 
-    if (packChosenCol !== undefined) {
-      await announcer.markMatchHandled(matchRowNum, packChosenCol, true);
-    }
+    await announcer.markMatchHandled(
+      matches,
+      match,
+      PACK_CHOSEN_COLUMN,
+      true,
+    );
 
     const scoreNote = pack.heroScoreDelta !== 0
       ? `\n\n${formatHeroScoreDelta(pack.heroScoreDelta)}.`

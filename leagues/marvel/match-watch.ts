@@ -2,7 +2,7 @@ import { delay } from "@std/async";
 import { Client, TextChannel, User } from "discord.js";
 import { CONFIG } from "../../config.ts";
 import { getMatchAnnouncer } from "../../match_announcer.ts";
-import { liveSheet, ROWNUM } from "../../standings.ts";
+import { liveSheet, MATCHTYPE, MatchType, ROWNUM } from "../../standings.ts";
 import {
   buildComebackMessage,
   ComebackOffers,
@@ -24,15 +24,18 @@ import {
   rollComebackOffers,
 } from "./comeback.ts";
 import { buildComebackComponents } from "./comeback-interaction.ts";
+import { getEntropyAnnouncer } from "../../entropy.ts";
 
 const POLL_MS = 30_000;
 
 /** Marvel live league — comeback DMs instead of default cube SET packs. */
 export async function watchMarvelMatches(client: Client): Promise<never> {
   const announcer = getMatchAnnouncer(liveSheet, "marvel");
+  const entropy = getEntropyAnnouncer(liveSheet, "marvel");
 
   while (true) {
     try {
+      await entropy.process(client);
       await processMarvelMatches(client, announcer);
     } catch (e) {
       console.error("[marvel] match watch error:", e);
@@ -41,14 +44,7 @@ export async function watchMarvelMatches(client: Client): Promise<never> {
   }
 }
 
-async function writeMatchColumn(
-  announcer: ReturnType<typeof getMatchAnnouncer>,
-  rowNum: number,
-  columnIndex: number,
-  value: string | boolean,
-) {
-  await announcer.markMatchHandled(rowNum, columnIndex, value);
-}
+// Removed writeMatchColumn wrapper
 
 interface MatchHandlingContext {
   readonly match: MarvelMatchRow;
@@ -76,23 +72,13 @@ async function loadMatchSheetContext(
   const [players, quotas, matches, poolChanges] = await Promise.all([
     sheet.getPlayers(),
     sheet.getQuotas(),
-    sheet.getAllMatches(undefined, undefined, undefined, marvelMatchBotColumns),
+    sheet.getAllMatches(
+      marvelMatchBotColumns,
+      marvelMatchBotColumns,
+      undefined,
+    ),
     sheet.getPoolChanges(),
   ]);
-
-  const matchAnnouncedCol = matches.headerColumns.match[MATCH_ANNOUNCED_COLUMN];
-  const dmSentCol = matches.headerColumns.match[DM_SENT_COLUMN];
-  const packChosenCol = matches.headerColumns.match[PACK_CHOSEN_COLUMN];
-  const packsOfferedCol = matches.headerColumns.match[PACKS_OFFERED_COLUMN];
-
-  if (
-    matchAnnouncedCol === undefined || dmSentCol === undefined ||
-    packChosenCol === undefined || packsOfferedCol === undefined
-  ) {
-    throw new Error(
-      "Matches sheet missing Match Announced, DM Sent, Pack Chosen, or Packs Offered columns",
-    );
-  }
 
   return {
     announcer,
@@ -100,30 +86,27 @@ async function loadMatchSheetContext(
     quotas,
     matches,
     poolChanges,
-    matchAnnouncedCol,
-    dmSentCol,
-    packChosenCol,
-    packsOfferedCol,
   };
 }
 
 function isDuplicateMatch(
   matches: MatchSheetContext["matches"],
-  rowNum: number,
-  winnerName: string,
-  loserName: string,
+  match: typeof matches["rows"][number],
   currentQuota: MatchSheetContext["quotas"][number] | undefined,
 ): boolean {
+  if (match[MATCHTYPE] !== "match") return false;
   if (!currentQuota) return false;
   return matches.rows.some((m) => {
-    if (m["ROWNUM"] >= rowNum) return false;
+    if (m[ROWNUM] >= match[ROWNUM]) return false;
     if (
       m.Timestamp < currentQuota.fromDate ||
       m.Timestamp > currentQuota.toDate
     ) return false;
     return (
-      (m["Your Name"] === winnerName && m["Loser Name"] === loserName) ||
-      (m["Your Name"] === loserName && m["Loser Name"] === winnerName)
+      (m["Your Name"] === match["Your Name"] &&
+        m["Loser Name"] === match["Loser Name"]) ||
+      (m["Your Name"] === match["Loser Name"] &&
+        m["Loser Name"] === match["Your Name"])
     );
   });
 }
@@ -144,26 +127,26 @@ async function resolveMatchHandlingContext(
   );
 
   if (!winnerInfo || !loserInfo) {
-    await writeMatchColumn(
-      ctx.announcer,
-      rowNum,
-      ctx.packChosenCol,
+    await ctx.announcer.markMatchHandled(
+      ctx.matches,
+      match,
+      PACK_CHOSEN_COLUMN,
       "Error: Missing Player Info",
     );
-    markRowPackChosen(ctx.matches, rowNum, "Error: Missing Player Info");
+    markRowPackChosen(match, "Error: Missing Player Info");
     return undefined;
   }
 
   const winnerId = winnerInfo["Discord ID"];
   const loserId = loserInfo["Discord ID"];
   if (!winnerId || !loserId) {
-    await writeMatchColumn(
-      ctx.announcer,
-      rowNum,
-      ctx.packChosenCol,
+    await ctx.announcer.markMatchHandled(
+      ctx.matches,
+      match,
+      PACK_CHOSEN_COLUMN,
       "Error: Missing Discord ID",
     );
-    markRowPackChosen(ctx.matches, rowNum, "Error: Missing Discord ID");
+    markRowPackChosen(match, "Error: Missing Discord ID");
     return undefined;
   }
 
@@ -174,19 +157,17 @@ async function resolveMatchHandlingContext(
   if (
     isDuplicateMatch(
       ctx.matches,
-      rowNum,
-      winnerName,
-      loserName,
+      match,
       currentQuota,
     )
   ) {
-    await writeMatchColumn(
-      ctx.announcer,
-      rowNum,
-      ctx.packChosenCol,
+    await ctx.announcer.markMatchHandled(
+      ctx.matches,
+      match,
+      PACK_CHOSEN_COLUMN,
       "Rejected: Duplicate",
     );
-    markRowPackChosen(ctx.matches, rowNum, "Rejected: Duplicate");
+    markRowPackChosen(match, "Rejected: Duplicate");
     return undefined;
   }
 
@@ -234,13 +215,13 @@ async function announcePendingMatches(
       );
     }
 
-    await writeMatchColumn(
-      ctx.announcer,
-      handling.rowNum,
-      ctx.matchAnnouncedCol,
+    await ctx.announcer.markMatchHandled(
+      ctx.matches,
+      handling.match,
+      MATCH_ANNOUNCED_COLUMN,
       true,
     );
-    markRowMatchAnnounced(ctx.matches, handling.rowNum);
+    markRowMatchAnnounced(handling.match);
   }
 }
 
@@ -249,7 +230,6 @@ async function processComebackFlow(
   ctx: MatchSheetContext,
 ) {
   for (const raw of ctx.matches.rows) {
-    if (raw.MATCHTYPE !== "match") continue;
     const match = raw as MarvelMatchRow;
     if (isComebackRowComplete(match)) continue;
     if (isComebackAwaitingChoice(match)) continue;
@@ -259,13 +239,13 @@ async function processComebackFlow(
     if (!handling) continue;
 
     if (handling.eliminated) {
-      await writeMatchColumn(
-        ctx.announcer,
-        handling.rowNum,
-        ctx.packChosenCol,
+      await ctx.announcer.markMatchHandled(
+        ctx.matches,
+        handling.match,
+        PACK_CHOSEN_COLUMN,
         true,
       );
-      markRowPackChosen(ctx.matches, handling.rowNum, true);
+      markRowPackChosen(handling.match, true);
       continue;
     }
 
@@ -290,10 +270,10 @@ async function processComebackFlow(
     const offers = storedOffers?.offers ?? rollComebackOffers();
 
     if (!storedOffers) {
-      await writeMatchColumn(
-        ctx.announcer,
-        handling.rowNum,
-        ctx.packsOfferedCol,
+      await ctx.announcer.markMatchHandled(
+        ctx.matches,
+        handling.match,
+        PACKS_OFFERED_COLUMN,
         encodePacksOffered(offers, offeredMsh),
       );
     }
@@ -301,19 +281,20 @@ async function processComebackFlow(
     const dmSent = await sendComebackDm(
       await client.users.fetch(handling.loserId),
       handling.rowNum,
+      handling.match[MATCHTYPE],
       handling.winnerName,
       offeredMsh,
       offers,
     );
 
     if (dmSent) {
-      await writeMatchColumn(
-        ctx.announcer,
-        handling.rowNum,
-        ctx.dmSentCol,
+      await ctx.announcer.markMatchHandled(
+        ctx.matches,
+        handling.match,
+        DM_SENT_COLUMN,
         true,
       );
-      markRowDmSent(ctx.matches, handling.rowNum);
+      markRowDmSent(handling.match);
     }
   }
 }
@@ -399,6 +380,7 @@ function escapeMarkdown(str: string): string {
 async function sendComebackDm(
   user: User,
   matchRowNum: number,
+  matchType: MatchType,
   winnerName: string,
   mshOffered: boolean,
   offers: ComebackOffers,
@@ -407,7 +389,12 @@ async function sendComebackDm(
     const dm = await user.createDM();
     await dm.send({
       content: buildComebackMessage(winnerName, mshOffered, offers),
-      components: buildComebackComponents(matchRowNum, offers, mshOffered),
+      components: buildComebackComponents(
+        matchRowNum,
+        matchType,
+        offers,
+        mshOffered,
+      ),
     });
     return true;
   } catch (e) {
