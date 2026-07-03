@@ -203,9 +203,7 @@ export function hasOpenComebackForPlayer(
   loserName: string,
   excludeRowNum: number,
 ): boolean {
-  return matches.rows.some((m) => {
-    if (m.MATCHTYPE !== "match") return false;
-    const row = m as MarvelMatchRow;
+  return matches.rows.some((row) => {
     return row["Loser Name"] === loserName &&
       row[ROWNUM] !== excludeRowNum &&
       isComebackAwaitingChoice(row);
@@ -213,34 +211,22 @@ export function hasOpenComebackForPlayer(
 }
 
 export function markRowMatchAnnounced(
-  matches: MarvelMatches,
-  rowNum: number,
+  match: MarvelMatchRow,
 ): void {
-  const row = matches.rows.find((m) =>
-    m.MATCHTYPE === "match" && m[ROWNUM] === rowNum
-  ) as MarvelMatchRow | undefined;
-  if (row) row[MATCH_ANNOUNCED_COLUMN] = true;
+  match[MATCH_ANNOUNCED_COLUMN] = true;
 }
 
 export function markRowDmSent(
-  matches: MarvelMatches,
-  rowNum: number,
+  match: MarvelMatchRow,
 ): void {
-  const row = matches.rows.find((m) =>
-    m.MATCHTYPE === "match" && m[ROWNUM] === rowNum
-  ) as MarvelMatchRow | undefined;
-  if (row) row[DM_SENT_COLUMN] = true;
+  match[DM_SENT_COLUMN] = true;
 }
 
 export function markRowPackChosen(
-  matches: MarvelMatches,
-  rowNum: number,
+  match: MarvelMatchRow,
   value: boolean | string = true,
 ): void {
-  const row = matches.rows.find((m) =>
-    m.MATCHTYPE === "match" && m[ROWNUM] === rowNum
-  ) as MarvelMatchRow | undefined;
-  if (row) row[PACK_CHOSEN_COLUMN] = value;
+  match[PACK_CHOSEN_COLUMN] = value;
 }
 
 export function packGenCommand(

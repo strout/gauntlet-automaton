@@ -2,7 +2,7 @@ import { delay } from "@std/async";
 import { Client, TextChannel, User } from "discord.js";
 import { CONFIG } from "../../config.ts";
 import { getMatchAnnouncer } from "../../match_announcer.ts";
-import { liveSheet, ROWNUM } from "../../standings.ts";
+import { liveSheet, MATCHTYPE, MatchType, ROWNUM } from "../../standings.ts";
 import {
   buildComebackMessage,
   ComebackOffers,
@@ -109,21 +109,22 @@ async function loadMatchSheetContext(
 
 function isDuplicateMatch(
   matches: MatchSheetContext["matches"],
-  rowNum: number,
-  winnerName: string,
-  loserName: string,
+  match: typeof matches["rows"][number],
   currentQuota: MatchSheetContext["quotas"][number] | undefined,
 ): boolean {
+  if (match[MATCHTYPE] !== "match") return false;
   if (!currentQuota) return false;
   return matches.rows.some((m) => {
-    if (m["ROWNUM"] >= rowNum) return false;
+    if (m[ROWNUM] >= match[ROWNUM]) return false;
     if (
       m.Timestamp < currentQuota.fromDate ||
       m.Timestamp > currentQuota.toDate
     ) return false;
     return (
-      (m["Your Name"] === winnerName && m["Loser Name"] === loserName) ||
-      (m["Your Name"] === loserName && m["Loser Name"] === winnerName)
+      (m["Your Name"] === match["Your Name"] &&
+        m["Loser Name"] === match["Loser Name"]) ||
+      (m["Your Name"] === match["Loser Name"] &&
+        m["Loser Name"] === match["Your Name"])
     );
   });
 }
@@ -150,7 +151,7 @@ async function resolveMatchHandlingContext(
       PACK_CHOSEN_COLUMN,
       "Error: Missing Player Info",
     );
-    markRowPackChosen(ctx.matches, rowNum, "Error: Missing Player Info");
+    markRowPackChosen(match, "Error: Missing Player Info");
     return undefined;
   }
 
@@ -163,7 +164,7 @@ async function resolveMatchHandlingContext(
       PACK_CHOSEN_COLUMN,
       "Error: Missing Discord ID",
     );
-    markRowPackChosen(ctx.matches, rowNum, "Error: Missing Discord ID");
+    markRowPackChosen(match, "Error: Missing Discord ID");
     return undefined;
   }
 
@@ -174,9 +175,7 @@ async function resolveMatchHandlingContext(
   if (
     isDuplicateMatch(
       ctx.matches,
-      rowNum,
-      winnerName,
-      loserName,
+      match,
       currentQuota,
     )
   ) {
@@ -186,7 +185,7 @@ async function resolveMatchHandlingContext(
       PACK_CHOSEN_COLUMN,
       "Rejected: Duplicate",
     );
-    markRowPackChosen(ctx.matches, rowNum, "Rejected: Duplicate");
+    markRowPackChosen(match, "Rejected: Duplicate");
     return undefined;
   }
 
@@ -240,7 +239,7 @@ async function announcePendingMatches(
       MATCH_ANNOUNCED_COLUMN,
       true,
     );
-    markRowMatchAnnounced(ctx.matches, handling.rowNum);
+    markRowMatchAnnounced(handling.match);
   }
 }
 
@@ -249,7 +248,6 @@ async function processComebackFlow(
   ctx: MatchSheetContext,
 ) {
   for (const raw of ctx.matches.rows) {
-    if (raw.MATCHTYPE !== "match") continue;
     const match = raw as MarvelMatchRow;
     if (isComebackRowComplete(match)) continue;
     if (isComebackAwaitingChoice(match)) continue;
@@ -265,7 +263,7 @@ async function processComebackFlow(
         PACK_CHOSEN_COLUMN,
         true,
       );
-      markRowPackChosen(ctx.matches, handling.rowNum, true);
+      markRowPackChosen(handling.match, true);
       continue;
     }
 
@@ -301,6 +299,7 @@ async function processComebackFlow(
     const dmSent = await sendComebackDm(
       await client.users.fetch(handling.loserId),
       handling.rowNum,
+      handling.match[MATCHTYPE],
       handling.winnerName,
       offeredMsh,
       offers,
@@ -313,7 +312,7 @@ async function processComebackFlow(
         DM_SENT_COLUMN,
         true,
       );
-      markRowDmSent(ctx.matches, handling.rowNum);
+      markRowDmSent(handling.match);
     }
   }
 }
@@ -399,6 +398,7 @@ function escapeMarkdown(str: string): string {
 async function sendComebackDm(
   user: User,
   matchRowNum: number,
+  matchType: MatchType,
   winnerName: string,
   mshOffered: boolean,
   offers: ComebackOffers,
@@ -407,7 +407,12 @@ async function sendComebackDm(
     const dm = await user.createDM();
     await dm.send({
       content: buildComebackMessage(winnerName, mshOffered, offers),
-      components: buildComebackComponents(matchRowNum, offers, mshOffered),
+      components: buildComebackComponents(
+        matchRowNum,
+        matchType,
+        offers,
+        mshOffered,
+      ),
     });
     return true;
   } catch (e) {
