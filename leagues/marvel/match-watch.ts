@@ -79,7 +79,11 @@ async function loadMatchSheetContext(
   const [players, quotas, matches, poolChanges] = await Promise.all([
     sheet.getPlayers(),
     sheet.getQuotas(),
-    sheet.getAllMatches(marvelMatchBotColumns, undefined, undefined),
+    sheet.getAllMatches(
+      marvelMatchBotColumns,
+      marvelMatchBotColumns,
+      undefined,
+    ),
     sheet.getPoolChanges(),
   ]);
 

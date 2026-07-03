@@ -85,7 +85,11 @@ export const marvelComebackSelectHandler: Handler<djs.Interaction> = async (
 
   const [players, matches] = await Promise.all([
     sheet.getPlayers(),
-    sheet.getAllMatches(marvelMatchBotColumns, undefined, undefined),
+    sheet.getAllMatches(
+      marvelMatchBotColumns,
+      marvelMatchBotColumns,
+      undefined,
+    ),
   ]);
 
   const match = matches.rows.find((m) =>
