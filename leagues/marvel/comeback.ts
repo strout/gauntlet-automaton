@@ -10,7 +10,6 @@ export const PACKS_OFFERED_COLUMN = "Packs Offered";
 
 /** Matches sheet bot columns F–I for Marvel. */
 export const marvelMatchBotColumns = {
-  [MATCH_ANNOUNCED_COLUMN]: z.coerce.boolean().optional(),
   [DM_SENT_COLUMN]: z.coerce.boolean().optional(),
   [PACK_CHOSEN_COLUMN]: z.union([z.coerce.boolean(), z.string()]).optional(),
   [PACKS_OFFERED_COLUMN]: z.string().optional(),
