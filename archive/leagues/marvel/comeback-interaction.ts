@@ -1,9 +1,9 @@
 import * as djs from "discord.js";
-import { CONFIG } from "../../config.ts";
-import { Handler } from "../../dispatch.ts";
-import { getMatchAnnouncer } from "../../match_announcer.ts";
-import { waitForBoosterTutor } from "../../pending.ts";
-import { liveSheet, MatchType, ROWNUM } from "../../standings.ts";
+import { CONFIG } from "../../../config.ts";
+import { Handler } from "../../../dispatch.ts";
+import { getMatchAnnouncer } from "../../../match_announcer.ts";
+import { waitForBoosterTutor } from "../../../pending.ts";
+import { liveSheet, MatchType, ROWNUM } from "../../../standings.ts";
 import {
   comebackComment,
   comebackMenuDescription,
