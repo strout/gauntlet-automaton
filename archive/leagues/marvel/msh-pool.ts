@@ -1,6 +1,6 @@
-import type { LeagueSheet } from "../../standings.ts";
-import { ROWNUM } from "../../standings.ts";
-import { sheets, sheetsWrite } from "../../sheets.ts";
+import type { LeagueSheet } from "../../../standings.ts";
+import { ROWNUM } from "../../../standings.ts";
+import { sheets, sheetsWrite } from "../../../sheets.ts";
 import {
   comebackMenuLabel,
   comebackPackById,

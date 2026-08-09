@@ -1,6 +1,6 @@
-import type { Entropy, LeagueSheet, Match, Table } from "../../standings.ts";
-import { ROWNUM } from "../../standings.ts";
-import { choice } from "../../random.ts";
+import type { Entropy, LeagueSheet, Match, Table } from "../../../standings.ts";
+import { ROWNUM } from "../../../standings.ts";
+import { choice } from "../../../random.ts";
 import { z } from "zod";
 
 export const MATCH_ANNOUNCED_COLUMN = "Match Announced";

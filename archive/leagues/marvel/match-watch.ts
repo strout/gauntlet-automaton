@@ -1,8 +1,8 @@
 import { delay } from "@std/async";
 import { Client, TextChannel, User } from "discord.js";
-import { CONFIG } from "../../config.ts";
-import { getMatchAnnouncer } from "../../match_announcer.ts";
-import { liveSheet, MATCHTYPE, MatchType, ROWNUM } from "../../standings.ts";
+import { CONFIG } from "../../../config.ts";
+import { getMatchAnnouncer } from "../../../match_announcer.ts";
+import { liveSheet, MATCHTYPE, MatchType, ROWNUM } from "../../../standings.ts";
 import {
   buildComebackMessage,
   ComebackOffers,
@@ -24,7 +24,7 @@ import {
   rollComebackOffers,
 } from "./comeback.ts";
 import { buildComebackComponents } from "./comeback-interaction.ts";
-import { getEntropyAnnouncer } from "../../entropy.ts";
+import { getEntropyAnnouncer } from "../../../entropy.ts";
 
 const POLL_MS = 30_000;
 
