@@ -336,7 +336,11 @@ export class LeagueSheet {
   /** Gets quota information for different weeks. */
   async getQuotas() {
     if (this.#quotas) return this.#quotas;
-    const table = await this.readTable("Quotas!A7:E11", 3);
+    const table = await this.readTable("Quotas!A7:E14", 3);
+    const filtered = {
+      ...table,
+      rows: table.rows.filter((r) => typeof r.WEEK === "number"),
+    };
     const parsed = parseTable({
       WEEK: z.number(),
       FROM: z.union([z.number(), z.literal("Registration")]),
