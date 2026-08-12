@@ -1,17 +1,22 @@
-import { liveSheet, upcomingSheet } from "../../standings.ts";
+import { getMatchAnnouncer } from "../../match_announcer.ts";
 import { LeagueSetup } from "../setup.ts";
+import { hobbitSheet } from "./constants.ts";
 import { watchHobbitMatches } from "./match-watch.ts";
+import { hobbitPoolHandler } from "./pool-command.ts";
+
+const sheet = hobbitSheet();
+const announcer = getMatchAnnouncer(sheet, "hobbit");
 
 /**
- * The Hobbit — upcoming live league stub.
- * Replace watch / handlers as pack and match rules are defined.
+ * The Hobbit — starting pools (`!hobpool`) and loss packs (`!cube HOBX`).
  */
 export function setup(): Promise<LeagueSetup> {
   return Promise.resolve({
     name: "hobbit",
-    sheet: upcomingSheet ?? liveSheet,
+    sheet,
+    announcer,
     watch: watchHobbitMatches,
-    messageHandlers: [],
+    messageHandlers: [hobbitPoolHandler],
     interactionHandlers: [],
   });
 }
