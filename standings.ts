@@ -336,7 +336,9 @@ export class LeagueSheet {
   /** Gets quota information for different weeks. */
   async getQuotas() {
     if (this.#quotas) return this.#quotas;
-    const table = await this.readTable("Quotas!A7:E14", 3);
+    // Header at row 7; data rows 8–11 cover a 3-week league (+ spare).
+    const table = await this.readTable("Quotas!A7:E11", 7);
+    // Skip leftover notes / blank rows under the quota block.
     const filtered = {
       ...table,
       rows: table.rows.filter((r) => typeof r.WEEK === "number"),
@@ -347,7 +349,7 @@ export class LeagueSheet {
       TO: z.number(),
       MIN: z.number(),
       MAX: z.number(),
-    }, table);
+    }, filtered);
     this.#quotas = parsed.rows.filter((x) => x.WEEK > 0).map((x) => ({
       week: x.WEEK,
       fromDate: x.FROM === "Registration" ? 0 : x.FROM,
