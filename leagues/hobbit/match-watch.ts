@@ -1,16 +1,29 @@
 import { delay } from "@std/async";
-import { Client, TextChannel } from "discord.js";
+import { Client, TextChannel, EmbedBuilder, AttachmentBuilder } from "discord.js";
 import { CONFIG } from "../../config.ts";
 import { getEntropyAnnouncer } from "../../entropy.ts";
 import { getMatchAnnouncer } from "../../match_announcer.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
 import { MATCHTYPE, ROWNUM } from "../../standings.ts";
+import { z } from "zod";
 import {
+  COMPANY_REWARD_PROCESSED_COLUMN,
   HOBBIT_COMEBACK_PACK_CMD,
   HOBBIT_CUBE,
   hobbitSheet,
   MATCH_ANNOUNCED_COLUMN,
 } from "./constants.ts";
+import {
+  COMPANY_REWARDS,
+  distributeCompanyReward,
+  getCompanySpace,
+  hasReachedWin11,
+  WIN11_REWARD,
+} from "./company-rewards.ts";
+import { Player } from "../../standings.ts";
+import { ScryfallCard, tileCardImages } from "../../scryfall.ts";
+import { formatPool, SealedDeckPool } from "../../sealeddeck.ts";
+import { Buffer } from "node:buffer";
 
 const POLL_MS = 30_000;
 
@@ -44,9 +57,9 @@ export async function announceHobbitMatches(
   try {
     const sheet = announcer.sheet;
     const [players, quotas, matchTable] = await Promise.all([
-      sheet.getPlayers(),
+      sheet.getPlayers({ Company: z.string() }),
       sheet.getQuotas(),
-      sheet.getMatches(),
+      sheet.getMatches({ "Company Reward Processed": z.coerce.boolean() }),
     ]);
 
     // Shape expected by MatchAnnouncer without requiring an Entropy sheet yet.
@@ -74,8 +87,78 @@ export async function announceHobbitMatches(
       return;
     }
 
+    const poolChanges = await sheet.getPoolChanges();
+
     for (const match of matches.rows) {
       if (match[MATCHTYPE] !== "match") continue;
+
+      // --- Company Reward Processing ---
+      // Processed independently of announcement to prevent reward loss on crash.
+      try {
+        if (!match[COMPANY_REWARD_PROCESSED_COLUMN]) {
+          const winnerName = match["Your Name"];
+          const winnerInfo = players.rows.find((p) =>
+            p.Identification === winnerName
+          );
+
+          if (winnerInfo?.["Company"]) {
+            const company = winnerInfo["Company"];
+            const companyMembers = players.rows.filter((p) =>
+              p["Company"] === company
+            );
+            const currentSpace = getCompanySpace(companyMembers);
+
+            // Check milestone rewards
+            for (const reward of COMPANY_REWARDS) {
+              if (currentSpace >= reward.space) {
+                const result = await distributeCompanyReward(
+                  sheet,
+                  poolChanges,
+                  companyMembers,
+                  reward,
+                );
+                if (result?.isNew) {
+                  await announceCompanyReward(
+                    packGenChannel,
+                    company,
+                    reward.name,
+                    companyMembers,
+                    result,
+                  );
+                }
+              }
+            }
+
+            // Check Win 11 reward
+            if (hasReachedWin11(companyMembers)) {
+              const result11 = await distributeCompanyReward(
+                sheet,
+                poolChanges,
+                companyMembers,
+                WIN11_REWARD,
+              );
+              if (result11?.isNew) {
+                await announceCompanyReward(
+                  packGenChannel,
+                  company,
+                  WIN11_REWARD.name,
+                  companyMembers,
+                  result11,
+                );
+              }
+            }
+          }
+          await sheet.updateMatchCell(
+            match[ROWNUM],
+            COMPANY_REWARD_PROCESSED_COLUMN,
+            true,
+          );
+        }
+      } catch (err) {
+        console.error("[hobbit] Company reward error:", err);
+      }
+
+      // --- Match Announcement ---
       if (match[MATCH_ANNOUNCED_COLUMN]) continue;
 
       const winnerName = match["Your Name"];
@@ -247,4 +330,33 @@ function escapeMarkdown(str: string): string {
     /([^a-zA-Z0-9 ])/g,
     (x) => (x.charCodeAt(0) > 127 ? x : "\\" + x),
   );
+}
+
+/**
+ * Announces a company reward in the pack generation channel.
+ */
+async function announceCompanyReward(
+  channel: TextChannel,
+  companyName: string,
+  locationName: string,
+  members: Player[],
+  result: { cards: ScryfallCard[]; pool: SealedDeckPool; isNew: boolean },
+) {
+  const mentions = members
+    .map((m) => `<@${m["Discord ID"]}>`)
+    .join(" ");
+
+  const packText = formatPool(result.pool);
+  const imageBlob = await tileCardImages(result.cards);
+  const attachment = new AttachmentBuilder(Buffer.from(await imageBlob.arrayBuffer()), { name: "reward.png" });
+
+  const embed = new EmbedBuilder()
+    .setTitle(`${companyName} has reached ${locationName}!`)
+    .setDescription(`${mentions}\n\n${packText}`)
+    .setImage(`attachment://${attachment.name}`);
+
+  await channel.send({
+    embeds: [embed],
+    files: [attachment],
+  });
 }

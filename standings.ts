@@ -132,6 +132,7 @@ export function getLeagueSheet(sheetId: string): LeagueSheet {
 /** Spreadsheet operations for a single league season. */
 export class LeagueSheet {
   #quotas: QuotaInfo[] | undefined;
+  #matchHeaders: any | null = null;
 
   constructor(readonly sheetId: string) {}
 
@@ -395,6 +396,33 @@ export class LeagueSheet {
     };
   }
 
+  /** Converts a 0-indexed column number to A1 notation (e.g., 0 -> A, 26 -> AA). */
+  indexToColumnLetter(index: number): string {
+    let letter = "";
+    while (index >= 0) {
+      letter = String.fromCharCode((index % 26) + 65) + letter;
+      index = Math.floor(index / 26) - 1;
+    }
+    return letter;
+  }
+
+  async updateMatchCell(rowNum: number, colName: string, value: any) {
+    if (!this.#matchHeaders) {
+      this.#matchHeaders = await this.readTable("Matches!A1:Z1", 1);
+    }
+    const colIdx = this.#matchHeaders.headerColumns[colName];
+    if (colIdx === undefined) throw new Error(`Column ${colName} not found`);
+
+    const colLetter = this.indexToColumnLetter(colIdx);
+    await sheetsWrite(
+      sheets,
+      this.sheetId,
+      `Matches!${colLetter}${rowNum}`,
+      [[value]],
+      "RAW",
+    );
+  }
+
   async getEntropy<S extends z.ZodRawShape>(
     extras?: S,
   ) {
@@ -529,8 +557,9 @@ export class LeagueSheet {
     name: string,
     pack: import("./sealeddeck.ts").SealedDeckPool,
     comment: string,
+    poolChangesOverride?: Awaited<ReturnType<this["getPoolChanges"]>>,
   ) {
-    const poolChanges = await this.getPoolChanges();
+    const poolChanges = poolChangesOverride ?? await this.getPoolChanges();
     const playerChanges = poolChanges.rows.filter((c) => c.Name === name);
     const currentPoolId = playerChanges.findLast((c) => c["Full Pool"])
       ?.["Full Pool"];
