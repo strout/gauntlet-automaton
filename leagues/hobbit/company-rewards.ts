@@ -11,35 +11,35 @@ export const COMPANY_REWARDS = [
     space: 1,
     name: "The Shire",
     query:
-      "game:arena date<2026-07-02 in:paper -s:hob -s:fra -s:pm -s:msh -s:tmt r<r (t:dwarf or o:dwarf or t:halfling or o:halfling or t:food)",
+      "game:arena date<2026-07-02 in:paper -s:hob -s:fra -s:spm -s:msh -s:tmt r<r (t:dwarf or o:dwarf or t:halfling or o:halfling or t:food)",
     count: 3,
   },
   {
     space: 3,
     name: "Rivendell",
     query:
-      "game:arena in:paper date<2026-07-02 -s:hob -s:fra -s:pm -s:msh -s:tmt r<r (((t:elf or o:elf) and id:ug) or (t:equipment and mv<3 and -t:creature and -fo:token) or t:rune)",
+      "game:arena in:paper date<2026-07-02 -s:hob -s:fra -s:spm -s:msh -s:tmt r<r (((t:elf or o:elf) and id:ug) or (t:equipment and mv<3 and -t:creature and -fo:token) or t:rune)",
     count: 3,
   },
   {
     space: 5,
     name: "The Misty Mountains",
     query:
-      'game:arena in:paper date<2026-07-02 -s:hob -s:fra -s:pm -s:msh -s:tmt r<r (t:goblin or o:goblin or o:"ring tempts")',
+      'game:arena in:paper date<2026-07-02 -s:hob -s:fra -s:spm -s:msh -s:tmt r<r (t:goblin or o:goblin or o:"ring tempts")',
     count: 3,
   },
   {
     space: 7,
     name: "Mirkwood",
     query:
-      "game:arena in:paper date<2026-07-02 -s:hob -s:fra -s:pm -s:msh -s:tmt r<r -t:legend (t:spider or t:bear or t:wolf or (t:elf c:b)) -t:battle",
+      "game:arena in:paper date<2026-07-02 -s:hob -s:fra -s:spm -s:msh -s:tmt r<r -t:legend (t:spider or t:bear or t:wolf or (t:elf c:b)) -t:battle",
     count: 3,
   },
   {
     space: 9,
     name: "The Dale",
     query:
-      "game:arena in:paper date<2026-07-02 -s:hob -s:fra -s:pm -s:msh -s:tmt r<r ((t:human -t:legend id:ub) or t:archer)",
+      "game:arena in:paper date<2026-07-02 -s:hob -s:fra -s:spm -s:msh -s:tmt r<r ((t:human -t:legend id:ub) or t:archer)",
     count: 3,
   },
 ];
@@ -47,7 +47,7 @@ export const COMPANY_REWARDS = [
 export const WIN11_REWARD = {
   name: "The Lonely Mountain",
   query:
-    "game:arena in:paper date<2026-07-02 -s:hob -s:fra -t:battle r:u t:dragon",
+    "game:arena in:paper date<2026-07-02 -s:hob -s:fra -t:battle r>u t:dragon",
   count: 1,
 };
 
