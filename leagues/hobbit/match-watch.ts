@@ -1,5 +1,10 @@
 import { delay } from "@std/async";
-import { Client, TextChannel, EmbedBuilder, AttachmentBuilder } from "discord.js";
+import {
+  AttachmentBuilder,
+  Client,
+  EmbedBuilder,
+  TextChannel,
+} from "discord.js";
 import { CONFIG } from "../../config.ts";
 import { getEntropyAnnouncer } from "../../entropy.ts";
 import { getMatchAnnouncer } from "../../match_announcer.ts";
@@ -87,7 +92,7 @@ export async function announceHobbitMatches(
       return;
     }
 
-    const poolChanges = await sheet.getPoolChanges();
+    let poolChanges = await sheet.getPoolChanges();
 
     for (const match of matches.rows) {
       if (match[MATCHTYPE] !== "match") continue;
@@ -126,6 +131,9 @@ export async function announceHobbitMatches(
                     result,
                   );
                 }
+                if (result) {
+                  poolChanges = await sheet.getPoolChanges();
+                }
               }
             }
 
@@ -145,6 +153,9 @@ export async function announceHobbitMatches(
                   companyMembers,
                   result11,
                 );
+              }
+              if (result11) {
+                poolChanges = await sheet.getPoolChanges();
               }
             }
           }
@@ -284,29 +295,29 @@ export async function announceHobbitMatches(
         const sentMessage = await packGenChannel.send(message);
 
         if (!eliminated) {
-          (async () => {
-            try {
-              const packResult = await waitForBoosterTutor(
-                Promise.resolve(sentMessage),
+          try {
+            const packResult = await waitForBoosterTutor(
+              Promise.resolve(sentMessage),
+            );
+            if ("success" in packResult) {
+              await sheet.recordPackAddition(
+                loserName,
+                packResult.success,
+                `Loss against ${winnerName}`,
+                poolChanges,
               );
-              if ("success" in packResult) {
-                await sheet.recordPackAddition(
-                  loserName,
-                  packResult.success,
-                  `Loss against ${winnerName}`,
-                );
-              } else if ("error" in packResult) {
-                console.error(
-                  `[hobbit] Booster Tutor error for ${loserName}: ${packResult.error}`,
-                );
-              }
-            } catch (e) {
+            } else if ("error" in packResult) {
               console.error(
-                `[hobbit] Failed to record pack for ${loserName}:`,
-                e,
+                `[hobbit] Booster Tutor error for ${loserName}: ${packResult.error}`,
               );
             }
-          })();
+          } catch (e) {
+            console.error(
+              `[hobbit] Failed to record pack for ${loserName}:`,
+              e,
+            );
+          }
+          poolChanges = await sheet.getPoolChanges();
         }
       } catch (err) {
         console.error("[hobbit] Failed to send pack generation command:", err);
@@ -348,7 +359,10 @@ async function announceCompanyReward(
 
   const packText = formatPool(result.pool);
   const imageBlob = await tileCardImages(result.cards);
-  const attachment = new AttachmentBuilder(Buffer.from(await imageBlob.arrayBuffer()), { name: "reward.png" });
+  const attachment = new AttachmentBuilder(
+    Buffer.from(await imageBlob.arrayBuffer()),
+    { name: "reward.png" },
+  );
 
   const embed = new EmbedBuilder()
     .setTitle(`${companyName} has reached ${locationName}!`)

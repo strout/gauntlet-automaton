@@ -146,21 +146,19 @@ export async function distributeCompanyReward(
     isNew = true;
   }
 
-  await Promise.all(
-    missingReward.map(async (member) => {
-      await sheet.recordPackAddition(
-        member.Identification,
-        sharedPack,
-        `Company Reward: ${reward.name}`,
-        poolChanges,
-      );
-      // Update local cache to prevent double-claiming in same poll
-      poolChanges.rows.push({
-        Name: member.Identification,
-        Comment: `Company Reward: ${reward.name}`,
-      } as any);
-    }),
-  );
+  for (const member of missingReward) {
+    await sheet.recordPackAddition(
+      member.Identification,
+      sharedPack,
+      `Company Reward: ${reward.name}`,
+      poolChanges,
+    );
+    // Update local cache to prevent double-claiming in same poll
+    poolChanges.rows.push({
+      Name: member.Identification,
+      Comment: `Company Reward: ${reward.name}`,
+    } as any);
+  }
 
   return { cards: rewardCards, pool: sharedPack, isNew };
 }
