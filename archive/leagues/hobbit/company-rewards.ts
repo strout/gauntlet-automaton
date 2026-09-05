@@ -1,10 +1,10 @@
-import { fetchRandomCardForQuery, fetchCardsByIdentifier, type ScryfallCard } from "../../scryfall.ts";
-import { getPoolChanges, LeagueSheet, type Player } from "../../standings.ts";
+import { fetchRandomCardForQuery, fetchCardsByIdentifier, type ScryfallCard } from "../../../scryfall.ts";
+import { getPoolChanges, LeagueSheet, type Player } from "../../../standings.ts";
 import {
   fetchSealedDeck,
   makeSealedDeck,
   SealedDeckPool,
-} from "../../sealeddeck.ts";
+} from "../../../sealeddeck.ts";
 
 export const COMPANY_REWARDS = [
   {
