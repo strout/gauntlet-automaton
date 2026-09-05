@@ -297,6 +297,41 @@ export class LeagueSheet {
     );
   }
 
+  /**
+   * Marks an existing Pool Changes row as unused in place (keeps Value for audit).
+   * Type → "unused pack"; Comment updated; Full Pool optionally rewritten.
+   */
+  async invalidatePoolChange(
+    rowNum: number,
+    comment: string,
+    fullPoolId?: string,
+    sheetName = POOL_CHANGES_SHEET_NAME,
+  ) {
+    await sheetsWrite(
+      sheets,
+      this.sheetId,
+      `${sheetName}!C${rowNum}`,
+      [["unused pack"]],
+      "RAW",
+    );
+    await sheetsWrite(
+      sheets,
+      this.sheetId,
+      `${sheetName}!E${rowNum}`,
+      [[comment]],
+      "RAW",
+    );
+    if (fullPoolId !== undefined) {
+      await sheetsWrite(
+        sheets,
+        this.sheetId,
+        `${sheetName}!F${rowNum}`,
+        [[fullPoolId]],
+        "RAW",
+      );
+    }
+  }
+
   async getPoolChanges<S extends z.ZodRawShape>(
     sheetName = POOL_CHANGES_SHEET_NAME,
     extras?: z.ZodObject<S>,
@@ -418,6 +453,26 @@ export class LeagueSheet {
       sheets,
       this.sheetId,
       `Matches!${colLetter}${rowNum}`,
+      [[value]],
+      "RAW",
+    );
+  }
+
+  /** Writes a single cell in Player Database by header name. */
+  async updatePlayerCell(
+    rowNum: number,
+    colName: string,
+    value: string | boolean | number,
+    headerColumns: Partial<Record<string, number>>,
+  ) {
+    const colIdx = headerColumns[colName];
+    if (colIdx === undefined) {
+      throw new Error(`Column ${colName} not found in Player Database`);
+    }
+    await sheetsWrite(
+      sheets,
+      this.sheetId,
+      `Player Database!R${rowNum}C${colIdx + 1}`,
       [[value]],
       "RAW",
     );

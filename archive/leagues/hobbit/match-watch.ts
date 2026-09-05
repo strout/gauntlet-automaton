@@ -5,11 +5,11 @@ import {
   EmbedBuilder,
   TextChannel,
 } from "discord.js";
-import { CONFIG } from "../../config.ts";
-import { getEntropyAnnouncer } from "../../entropy.ts";
-import { getMatchAnnouncer } from "../../match_announcer.ts";
-import { waitForBoosterTutor } from "../../pending.ts";
-import { MATCHTYPE, ROWNUM } from "../../standings.ts";
+import { CONFIG } from "../../../config.ts";
+import { getEntropyAnnouncer } from "../../../entropy.ts";
+import { getMatchAnnouncer } from "../../../match_announcer.ts";
+import { waitForBoosterTutor } from "../../../pending.ts";
+import { MATCHTYPE, ROWNUM } from "../../../standings.ts";
 import { z } from "zod";
 import {
   COMPANY_REWARD_PROCESSED_COLUMN,
@@ -25,9 +25,9 @@ import {
   hasReachedWin11,
   WIN11_REWARD,
 } from "./company-rewards.ts";
-import { Player } from "../../standings.ts";
-import { ScryfallCard, tileCardImages } from "../../scryfall.ts";
-import { formatPool, SealedDeckPool } from "../../sealeddeck.ts";
+import { Player } from "../../../standings.ts";
+import { ScryfallCard, tileCardImages } from "../../../scryfall.ts";
+import { formatPool, SealedDeckPool } from "../../../sealeddeck.ts";
 import { Buffer } from "node:buffer";
 
 const POLL_MS = 30_000;

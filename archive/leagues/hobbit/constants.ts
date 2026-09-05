@@ -1,4 +1,4 @@
-import { type LeagueSheet, liveSheet, upcomingSheet } from "../../standings.ts";
+import { type LeagueSheet, liveSheet, upcomingSheet } from "../../../standings.ts";
 
 /** Cube code for The Hobbit on Booster Tutor. */
 export const HOBBIT_CUBE = "HOBX";

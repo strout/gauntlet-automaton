@@ -4,14 +4,36 @@ import { LeagueSheet } from "./standings.ts";
 import { delay } from "@std/async";
 import { waitForBoosterTutor } from "./pending.ts";
 
+/** Player fields used when resolving a per-player entropy pack command. */
+export interface EntropyPackPlayer {
+  readonly Identification: string;
+  readonly Wins: number;
+  readonly Losses: number;
+  readonly "Discord ID": string;
+}
+
+/**
+ * Booster Tutor command without the leading `!`
+ * (e.g. `"cube SET"` or `"fin"`), or a function of the player.
+ */
+export type EntropyPackCommand =
+  | string
+  | ((player: EntropyPackPlayer) => string);
+
 /** Per-league helper for processing entropy losses. */
 export class EntropyAnnouncer {
   constructor(
     readonly sheet: LeagueSheet,
     readonly label: string,
-    /** Booster Tutor command (e.g. "cube SET"). */
-    readonly command?: string,
+    /** Booster Tutor command (e.g. "cube SET"), or per-player resolver. */
+    readonly command?: EntropyPackCommand,
   ) {}
+
+  #resolveCommand(player: EntropyPackPlayer): string | undefined {
+    if (!this.command) return undefined;
+    if (typeof this.command === "function") return this.command(player);
+    return this.command;
+  }
 
   /**
    * Processes entropy losses for the league.
@@ -84,8 +106,14 @@ export class EntropyAnnouncer {
             continue;
           }
           const mention = `<@!${discordId}>`;
+          const packCommand = this.#resolveCommand({
+            Identification: player.Identification,
+            Wins: player.Wins,
+            Losses: player.Losses,
+            "Discord ID": player["Discord ID"],
+          });
 
-          if (losses + toAdd >= CONFIG.MAX_LOSSES || !this.command) {
+          if (losses + toAdd >= CONFIG.MAX_LOSSES || !packCommand) {
             for (let i = 0; i < toAdd; i++) {
               await this.sheet.addEntropyRow(
                 player.Identification,
@@ -108,7 +136,7 @@ export class EntropyAnnouncer {
               );
 
               const sentMessage = await packGenChannel.send(
-                `!${this.command} ${mention} was defeated by ENTROPY.`,
+                `!${packCommand} ${mention} was defeated by ENTROPY.`,
               );
 
               try {
@@ -119,7 +147,7 @@ export class EntropyAnnouncer {
                   await this.sheet.recordPackAddition(
                     player.Identification,
                     packResult.success,
-                    `Entropy loss (Week ${entropyWeek})`,
+                    `Entropy loss (Week ${entropyWeek}) [${packCommand}]`,
                   );
                 }
               } catch (e) {
@@ -152,8 +180,8 @@ const announcerCache = new Map<string, EntropyAnnouncer>();
 export function getEntropyAnnouncer(
   sheet: LeagueSheet,
   label: string,
-  /** Booster Tutor command (e.g. "cube SET"). */
-  command?: string,
+  /** Booster Tutor command (e.g. "cube SET"), or per-player resolver. */
+  command?: EntropyPackCommand,
 ): EntropyAnnouncer {
   const key = label;
   let announcer = announcerCache.get(key);
