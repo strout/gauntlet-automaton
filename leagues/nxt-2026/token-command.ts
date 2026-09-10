@@ -173,12 +173,12 @@ function isAllowedTokenChannel(message: djs.Message): boolean {
   return TOKEN_COMMAND_CHANNELS.has(message.channelId);
 }
 
-/** `!usemaptoken` — invalidate last pack, roll a random NXT set pack. */
+/** `!map` — invalidate last pack, roll a random NXT set pack. */
 export const nxtUseMapTokenHandler: Handler<djs.Message> = async (
   message,
   handle,
 ) => {
-  if (message.content.trim().toLowerCase() !== "!usemaptoken") return;
+  if (message.content.trim().toLowerCase() !== "!map") return;
   handle.claim();
   if (!isAllowedTokenChannel(message)) {
     await message.reply("Use this command in the pack-gen channel.");
@@ -187,17 +187,17 @@ export const nxtUseMapTokenHandler: Handler<djs.Message> = async (
   try {
     await handleTokenReroll(message, "map");
   } catch (e) {
-    console.error("[nxt-2026] !usemaptoken failed:", e);
+    console.error("[nxt-2026] !map failed:", e);
     await message.reply("Something went wrong using your Map Token.");
   }
 };
 
-/** `!usecluetoken` — invalidate last pack, roll another pack of the same set. */
+/** `!clue` — invalidate last pack, roll another pack of the same set. */
 export const nxtUseClueTokenHandler: Handler<djs.Message> = async (
   message,
   handle,
 ) => {
-  if (message.content.trim().toLowerCase() !== "!usecluetoken") return;
+  if (message.content.trim().toLowerCase() !== "!clue") return;
   handle.claim();
   if (!isAllowedTokenChannel(message)) {
     await message.reply("Use this command in the pack-gen channel.");
@@ -206,7 +206,7 @@ export const nxtUseClueTokenHandler: Handler<djs.Message> = async (
   try {
     await handleTokenReroll(message, "clue");
   } catch (e) {
-    console.error("[nxt-2026] !usecluetoken failed:", e);
+    console.error("[nxt-2026] !clue failed:", e);
     await message.reply("Something went wrong using your Clue Token.");
   }
 };
