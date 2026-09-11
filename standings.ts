@@ -45,13 +45,18 @@ export type Player<S extends z.ZodRawShape = Record<never, never>> = z.infer<
   z.ZodObject<typeof playerShape & S>
 >;
 
-const matchInputShape = {
+/** Columns shared by Matches and Dragon Matches tabs. */
+const matchCoreShape = {
   Timestamp: z.number(),
   "Your Name": z.string(),
   "Loser Name": z.string(),
   Result: z.string(),
-  Notes: z.string().optional(),
   "Match Announced": z.coerce.boolean(),
+};
+
+const matchInputShape = {
+  ...matchCoreShape,
+  Notes: z.string().optional(),
 };
 
 export type Match<S extends z.ZodRawShape = Record<never, never>> =
@@ -421,12 +426,45 @@ export class LeagueSheet {
     extras?: S,
     quotasOverride?: QuotaInfo[],
   ) {
+    return await this.#parseMatchesSheet(
+      sheetName,
+      matchInputShape,
+      extras,
+      quotasOverride,
+    );
+  }
+
+  /**
+   * Reads a match report tab that has the core match columns but not Notes
+   * (e.g. Dragon Matches).
+   */
+  async getCoreMatchesFromSheet(
+    sheetName: string,
+    quotasOverride?: QuotaInfo[],
+  ) {
+    return await this.#parseMatchesSheet(
+      sheetName,
+      matchCoreShape,
+      undefined,
+      quotasOverride,
+    );
+  }
+
+  async #parseMatchesSheet<
+    C extends z.ZodRawShape,
+    S extends z.ZodRawShape | undefined,
+  >(
+    sheetName: string,
+    columns: C,
+    extras: S,
+    quotasOverride?: QuotaInfo[],
+  ) {
     const quotaTask = quotasOverride ?? this.getQuotas();
     const LAST_COLUMN = "L";
     const table = await this.readTable(`${sheetName}!A:` + LAST_COLUMN);
     const parsed = parseTable({
-      ...matchInputShape,
-      ...extras,
+      ...columns,
+      ...(extras ?? {}),
     }, table);
     const resolvedQuotas = await quotaTask;
     return {
@@ -434,8 +472,10 @@ export class LeagueSheet {
       rows: parsed.rows.map((r) => ({
         ...r,
         [MATCHTYPE]: "match" as const,
-        WEEK: resolvedQuotas.findLast((q) => q.fromDate <= r.Timestamp)?.week ??
-          0,
+        WEEK:
+          resolvedQuotas.findLast((q) =>
+            q.fromDate <= (r as { Timestamp: number }).Timestamp
+          )?.week ?? 0,
       })),
     };
   }

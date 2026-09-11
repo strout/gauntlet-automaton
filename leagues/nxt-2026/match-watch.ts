@@ -272,7 +272,7 @@ export async function announceDragonMatches(
     const [players, dragons, matchTable] = await Promise.all([
       sheet.getPlayers(),
       loadDragonDatabase(sheet),
-      sheet.getMatchesFromSheet(DRAGON_MATCHES_SHEET),
+      sheet.getCoreMatchesFromSheet(DRAGON_MATCHES_SHEET),
     ]);
 
     const matches = {
