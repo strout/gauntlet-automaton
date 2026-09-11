@@ -11,6 +11,7 @@ export interface Config {
   readonly OWNER_ID: string;
   readonly GUILD_ID: string;
   readonly PACKGEN_CHANNEL_ID: string;
+  readonly DRAGON_GAUNTLET_CHANNEL_ID: string;
   readonly STARTING_POOL_CHANNEL_ID: string;
   readonly GENERAL_CHAT_CHANNEL_ID: string;
   readonly BOT_BUNKER_CHANNEL_ID: string;

@@ -412,9 +412,18 @@ export class LeagueSheet {
     extras?: S,
     quotasOverride?: QuotaInfo[],
   ) {
+    return await this.getMatchesFromSheet("Matches", extras, quotasOverride);
+  }
+
+  /** Reads a Matches-shaped table from an arbitrary sheet tab. */
+  async getMatchesFromSheet<S extends z.ZodRawShape>(
+    sheetName: string,
+    extras?: S,
+    quotasOverride?: QuotaInfo[],
+  ) {
     const quotaTask = quotasOverride ?? this.getQuotas();
     const LAST_COLUMN = "L";
-    const table = await this.readTable("Matches!A:" + LAST_COLUMN);
+    const table = await this.readTable(`${sheetName}!A:` + LAST_COLUMN);
     const parsed = parseTable({
       ...matchInputShape,
       ...extras,

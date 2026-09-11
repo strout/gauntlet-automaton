@@ -6,6 +6,7 @@
   "OWNER_ID": "some user id",
   "GUILD_ID": "some guild id",
   "PACKGEN_CHANNEL_ID": "some channel id",
+  "DRAGON_GAUNTLET_CHANNEL_ID": "some channel id",
   "STARTING_POOL_CHANNEL_ID": "some channel id",
   "GENERAL_CHAT_CHANNEL_ID": "some channel id",
   "BOT_BUNKER_CHANNEL_ID": "some channel id",

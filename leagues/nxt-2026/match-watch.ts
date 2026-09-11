@@ -1,10 +1,16 @@
 import { delay } from "@std/async";
 import { Client, TextChannel } from "discord.js";
+import { z } from "zod";
 import { CONFIG } from "../../config.ts";
 import { getEntropyAnnouncer } from "../../entropy.ts";
 import { getMatchAnnouncer } from "../../match_announcer.ts";
 import { waitForBoosterTutor } from "../../pending.ts";
-import { MATCHTYPE, ROWNUM } from "../../standings.ts";
+import {
+  type LeagueSheet,
+  MATCHTYPE,
+  parseTable,
+  ROWNUM,
+} from "../../standings.ts";
 import {
   comebackPackCommand,
   MATCH_ANNOUNCED_COLUMN,
@@ -12,8 +18,10 @@ import {
 } from "./constants.ts";
 
 const POLL_MS = 30_000;
+const DRAGON_MATCHES_SHEET = "Dragon Matches";
+const DRAGON_DATABASE_SHEET = "Dragon Database";
 
-/** Poll NXT matches and entropy; win-tiered comeback packs for losers. */
+/** Poll NXT matches, dragon gauntlet matches, and entropy. */
 export async function watchNxtMatches(client: Client): Promise<never> {
   const sheet = nxtSheet();
   const announcer = getMatchAnnouncer(sheet, "nxt-2026");
@@ -27,6 +35,7 @@ export async function watchNxtMatches(client: Client): Promise<never> {
     try {
       await entropy.process(client);
       await announceNxtMatches(client, announcer);
+      await announceDragonMatches(client, announcer);
     } catch (err) {
       console.error("[nxt-2026] match watch error:", err);
     }
@@ -246,6 +255,193 @@ export async function announceNxtMatches(
   } catch (e) {
     console.error("[nxt-2026] Error in announceNxtMatches:", e);
   }
+}
+
+/**
+ * Dragon Gauntlet matches from the Dragon Matches tab — announce only, no packs.
+ * Winner in Player Database = Knight win; otherwise Dragon win.
+ */
+export async function announceDragonMatches(
+  client: Client,
+  announcer: ReturnType<typeof getMatchAnnouncer>,
+) {
+  console.log("[nxt-2026] Checking for dragon matches to announce…");
+
+  try {
+    const sheet = announcer.sheet;
+    const [players, dragons, matchTable] = await Promise.all([
+      sheet.getPlayers(),
+      loadDragonDatabase(sheet),
+      sheet.getMatchesFromSheet(DRAGON_MATCHES_SHEET),
+    ]);
+
+    const matches = {
+      rows: matchTable.rows,
+      headers: {
+        match: matchTable.headers,
+        entropy: [] as string[],
+      },
+      headerColumns: {
+        match: matchTable.headerColumns,
+        entropy: {} as Record<string, number>,
+      },
+      sheetName: {
+        match: DRAGON_MATCHES_SHEET,
+        entropy: "Entropy" as const,
+      },
+    };
+
+    const channel = await client.channels.fetch(
+      CONFIG.DRAGON_GAUNTLET_CHANNEL_ID,
+    ) as TextChannel;
+    if (!channel) {
+      console.error("[nxt-2026] Could not find dragon gauntlet channel");
+      return;
+    }
+
+    const knights = players.rows as unknown as readonly NamedDiscordRow[];
+
+    for (const match of matches.rows) {
+      if (match[MATCHTYPE] !== "match") continue;
+      if (match[MATCH_ANNOUNCED_COLUMN]) continue;
+
+      const winnerName = match["Your Name"];
+      const loserName = match["Loser Name"];
+
+      const winnerKnight = findNamedRow(knights, winnerName);
+      const loserKnight = findNamedRow(knights, loserName);
+
+      // Knights are out after one Dragon Matches loss — skip further reports.
+      const eliminatedKnight = [winnerKnight, loserKnight].find((knight) =>
+        knight !== undefined &&
+        knightAlreadyLost(matches.rows, knights, knight, match[ROWNUM])
+      );
+      if (eliminatedKnight) {
+        const mention = resolveMention(
+          eliminatedKnight.Identification,
+          eliminatedKnight["Discord ID"],
+        );
+        await channel.send(
+          `Match report rejected (Row ${
+            match[ROWNUM]
+          }):\n* Knight ${mention} has already been eliminated from the Dragon Gauntlet.`,
+        );
+        await announcer.markMatchHandled(
+          matches,
+          match,
+          MATCH_ANNOUNCED_COLUMN,
+          "Rejected: Knight already eliminated",
+        );
+        continue;
+      }
+
+      const winnerMention = resolveMention(
+        winnerName,
+        winnerKnight?.["Discord ID"] ??
+          findNamedRow(dragons, winnerName)?.["Discord ID"],
+      );
+      const loserMention = resolveMention(
+        loserName,
+        loserKnight?.["Discord ID"] ??
+          findNamedRow(dragons, loserName)?.["Discord ID"],
+      );
+
+      // Knight = in Player Database; Dragon = not.
+      const knightWon = winnerKnight !== undefined;
+      const message = knightWon
+        ? `Knight ${winnerMention} has emerged victorious over Dragon ${loserMention}, and can continue on in the gauntlet.`
+        : `Dragon ${winnerMention} has burnt Knight ${loserMention} to a crisp. Their gauntlet has come to an end.`;
+
+      try {
+        await channel.send(message);
+      } catch (err) {
+        console.error(
+          "[nxt-2026] Failed to send dragon match announcement:",
+          err,
+        );
+        continue;
+      }
+
+      await announcer.markMatchHandled(
+        matches,
+        match,
+        MATCH_ANNOUNCED_COLUMN,
+        true,
+      );
+    }
+  } catch (e) {
+    console.error("[nxt-2026] Error in announceDragonMatches:", e);
+  }
+}
+
+/** Prefer known Discord ID; fall back to a bare snowflake in the name cell. */
+function resolveMention(
+  name: string,
+  discordId: string | undefined,
+): string {
+  if (discordId) return `<@!${discordId}>`;
+  if (/^\d{15,20}$/.test(name.trim())) return `<@!${name.trim()}>`;
+  return `**${name}**`;
+}
+
+type NamedDiscordRow = {
+  readonly Identification: string;
+  readonly Name: string;
+  readonly "Discord ID": string;
+};
+
+async function loadDragonDatabase(
+  sheet: LeagueSheet,
+): Promise<readonly NamedDiscordRow[]> {
+  const table = await sheet.readTable(`${DRAGON_DATABASE_SHEET}!A:D`, 1);
+  const filtered = {
+    ...table,
+    rows: table.rows.filter((x) =>
+      typeof x.Identification === "string" && x.Identification.length > 4
+    ),
+  };
+  const parsed = parseTable({
+    Identification: z.string(),
+    Name: z.string(),
+    "Arena ID": z.string(),
+    "Discord ID": z.coerce.string(),
+  }, filtered);
+  return parsed.rows;
+}
+
+function findNamedRow(
+  rows: readonly NamedDiscordRow[],
+  name: string,
+): NamedDiscordRow | undefined {
+  return rows.find((p) => namesMatchRow(p, name));
+}
+
+function namesMatchRow(row: NamedDiscordRow, name: string): boolean {
+  return (
+    row.Identification === name ||
+    row.Name === name ||
+    row["Discord ID"] === name
+  );
+}
+
+/** True if this knight appears as Loser Name on an earlier Dragon Matches row. */
+function knightAlreadyLost(
+  rows: readonly {
+    [ROWNUM]: number;
+    [MATCHTYPE]: string;
+    "Loser Name": string;
+  }[],
+  players: readonly NamedDiscordRow[],
+  knight: NamedDiscordRow,
+  beforeRow: number,
+): boolean {
+  return rows.some((prior) => {
+    if (prior[MATCHTYPE] !== "match") return false;
+    if (prior[ROWNUM] >= beforeRow) return false;
+    if (!namesMatchRow(knight, prior["Loser Name"])) return false;
+    // Confirm the prior loser was a knight (in Player Database).
+    return findNamedRow(players, prior["Loser Name"]) !== undefined;
+  });
 }
 
 function escapeMarkdown(str: string): string {
