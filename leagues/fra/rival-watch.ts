@@ -11,13 +11,12 @@ const ANNOUNCED_COLUMN = "Announced";
 
 /** Column indexes on the FRA registration tab (0-based). */
 const FRA_COL = {
-  fullName: 1, // B
   arenaId: 4, // E
   discordId: 9, // J
 } as const;
 
 type Registrant = {
-  readonly identification: string;
+  readonly arenaId: string;
   readonly discordId: string;
 };
 
@@ -40,12 +39,11 @@ export async function watchFraRivals(client: Client): Promise<never> {
  * FRA tab and tag both rivals in GENERAL_CHAT_CHANNEL_ID.
  *
  * Rival Pairings (registration spreadsheet):
- * - Column B / C: Identification (`Full Name - ArenaId`)
+ * - Column B / C: Identification (`Full Name - ArenaId`); we match on ArenaId
  * - Announced: set true after a successful announce
  *
  * FRA registration tab:
- * - B Full Name, E Arena Player ID#, J Discord ID
- * - Identification = `${Full Name} - ${Arena Player ID#}`
+ * - E Arena Player ID#, J Discord ID
  */
 export async function announceRivalPairings(client: Client): Promise<void> {
   const channelId = CONFIG.GENERAL_CHAT_CHANNEL_ID;
@@ -83,19 +81,30 @@ export async function announceRivalPairings(client: Client): Promise<void> {
     }
 
     const raw = row[ROW];
-    const name1 = cellString(raw[1]); // column B
-    const name2 = cellString(raw[2]); // column C
-    if (!name1 || !name2) continue;
+    const id1 = cellString(raw[1]); // column B
+    const id2 = cellString(raw[2]); // column C
+    if (!id1 || !id2) continue;
 
-    const player1 = findRegistrant(registrants, name1);
-    const player2 = findRegistrant(registrants, name2);
+    const arena1 = arenaIdFromIdentification(id1);
+    const arena2 = arenaIdFromIdentification(id2);
+    if (!arena1 || !arena2) {
+      console.warn(
+        `[fra] [Row ${
+          row[ROWNUM]
+        }] Could not parse Arena ID from: ${id1} / ${id2}`,
+      );
+      continue;
+    }
+
+    const player1 = findRegistrant(registrants, arena1);
+    const player2 = findRegistrant(registrants, arena2);
 
     if (!player1 || !player2) {
       console.warn(
         `[fra] [Row ${row[ROWNUM]}] Missing FRA registration for rivals: ` +
-          `${name1} / ${name2}` +
-          `${!player1 ? ` (missing: ${name1})` : ""}` +
-          `${!player2 ? ` (missing: ${name2})` : ""}`,
+          `${arena1} / ${arena2}` +
+          `${!player1 ? ` (missing: ${arena1})` : ""}` +
+          `${!player2 ? ` (missing: ${arena2})` : ""}`,
       );
       continue;
     }
@@ -104,7 +113,7 @@ export async function announceRivalPairings(client: Client): Promise<void> {
       console.warn(
         `[fra] [Row ${
           row[ROWNUM]
-        }] Missing Discord ID for rivals: ${name1} / ${name2}`,
+        }] Missing Discord ID for rivals: ${arena1} / ${arena2}`,
       );
       continue;
     }
@@ -129,7 +138,7 @@ export async function announceRivalPairings(client: Client): Promise<void> {
       "USER_ENTERED",
     );
     console.log(
-      `[fra] Announced rivals row ${row[ROWNUM]}: ${name1} ↔ ${name2}`,
+      `[fra] Announced rivals row ${row[ROWNUM]}: ${arena1} ↔ ${arena2}`,
     );
   }
 }
@@ -144,12 +153,11 @@ async function loadFraRegistrants(): Promise<readonly Registrant[]> {
   const registrants: Registrant[] = [];
   for (const row of table.rows) {
     const raw = row[ROW];
-    const fullName = cellString(raw[FRA_COL.fullName]);
     const arenaId = cellString(raw[FRA_COL.arenaId]);
     const discordId = cellString(raw[FRA_COL.discordId]);
-    if (!fullName || !arenaId) continue;
+    if (!arenaId) continue;
     registrants.push({
-      identification: `${fullName} - ${arenaId}`,
+      arenaId,
       discordId: discordId ?? "",
     });
   }
@@ -157,7 +165,7 @@ async function loadFraRegistrants(): Promise<readonly Registrant[]> {
 }
 
 const RIVAL_ANNOUNCEMENTS: readonly string[] = [
-  "XXXX and YYYY, rivals from rival multiverses, will prove who is superior once and for all in Reality Fracture League.",
+  "XXXX and YYYY, rivals from opposing multiverses, will prove who is superior once and for all in Reality Fracture League.",
   "The battle we’ve all been waiting for, XXXX vs. YYYY winner-takes-all in Reality Fracture League!",
   "Time to bury their ancient grudge: XXXX takes on YYYY to settle the score in Reality Fracture League.",
   "XXXX and YYYY are entering Reality Fracture League together, but only one can emerge triumphant.",
@@ -179,13 +187,22 @@ function cellString(value: unknown): string | null {
   return null;
 }
 
+/** `Jordan M - JMTron#46639` → `JMTron#46639`; bare Arena IDs pass through. */
+function arenaIdFromIdentification(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const sep = trimmed.lastIndexOf(" - ");
+  if (sep >= 0) {
+    const arenaId = trimmed.slice(sep + 3).trim();
+    return arenaId || null;
+  }
+  return trimmed;
+}
+
 function findRegistrant(
   registrants: readonly Registrant[],
-  identification: string,
+  arenaId: string,
 ): Registrant | undefined {
-  const needle = identification.trim();
-  return registrants.find((p) =>
-    p.identification === needle ||
-    p.discordId === needle
-  );
+  const needle = arenaId.trim().toLowerCase();
+  return registrants.find((p) => p.arenaId.toLowerCase() === needle);
 }
