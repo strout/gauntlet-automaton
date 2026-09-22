@@ -17,7 +17,7 @@
   "WAIVE_ENTROPY": [],
   "LEAGUE_COMMITTEE_ROLE_ID": "some role id",
   "LIVE_SHEET_ID": "some sheet id",
-  "UPCOMING_SHEET_ID": "optional sheet id for the next league",
+  "UPCOMING_SHEET_ID": "optional sheet id for Reality Fracture (fra)",
   "ARCHIVE_SHEET_IDS": ["optional past league sheet ids"],
   "LEAGUE_ROLES": [
     {

@@ -1,13 +1,13 @@
-import { type LeagueSheet, liveSheet, upcomingSheet } from "../../standings.ts";
+import { type LeagueSheet, liveSheet } from "../../standings.ts";
 
 export const MATCH_ANNOUNCED_COLUMN = "Match Announced";
 
 export const HAS_MAP_TOKEN_COLUMN = "Has Map Token";
 export const HAS_CLUE_TOKEN_COLUMN = "Has Clue Token";
 
-/** Prefer upcoming sheet while NXT is not yet the live league. */
+/** NXT is the live league — always use LIVE_SHEET_ID. */
 export function nxtSheet(): LeagueSheet {
-  return upcomingSheet ?? liveSheet;
+  return liveSheet;
 }
 
 /** Starting pool: one pack from each set in the NXT pool mix. */
