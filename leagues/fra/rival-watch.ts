@@ -170,6 +170,7 @@ const RIVAL_ANNOUNCEMENTS: readonly string[] = [
   "Time to bury their ancient grudge: XXXX takes on YYYY to settle the score in Reality Fracture League.",
   "XXXX and YYYY are entering Reality Fracture League together, but only one can emerge triumphant.",
   "There can be only one! XXXX vs YYYY. Reality Fracture League.",
+  "Is that XXXX? Or is it their evil döppelganger, YYYY? We will settle the question of who is the imposter in Reality Fracture League!",
 ];
 
 function formatRivalAnnouncement(player1Id: string, player2Id: string): string {
