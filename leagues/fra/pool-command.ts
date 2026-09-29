@@ -10,7 +10,7 @@ import {
   type EchoedRarity,
   type FraQueryKey,
 } from "./cards.ts";
-import { fraSheet } from "./constants.ts";
+import { resolveFraSheet } from "./constants.ts";
 import { isLeagueCommittee, resolveDiscordId } from "./discord-utils.ts";
 import {
   readMirroredCards,
@@ -182,19 +182,21 @@ export const fraPoolHandler: Handler<djs.Message> = async (
     return;
   }
 
-  const sheet = fraSheet();
-  const loaded = await Promise.all([sheet.getPlayers(), getRivalPairs()])
+  const loaded = await resolveFraSheet()
+    .then((sheet) =>
+      Promise.all([sheet, sheet.getPlayers(), getRivalPairs(sheet)])
+    )
     .catch((e) => {
       console.error("[fra] !frapool failed to read sheets:", e);
       return undefined;
     });
   if (!loaded) {
     await message.reply(
-      "Couldn't read the Player Database or Rival Pairings. Check logs.",
+      "Couldn't read the FRA spreadsheet (Player Database / Rival Pairings). Check logs.",
     );
     return;
   }
-  const [players, rivalPairs] = loaded;
+  const [sheet, players, rivalPairs] = loaded;
   const player1 = players.rows.find((p) => p["Discord ID"] === id1);
   const player2 = players.rows.find((p) => p["Discord ID"] === id2);
   if (!player1 || !player2) {

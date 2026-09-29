@@ -1,5 +1,4 @@
-import { CONFIG } from "../../config.ts";
-import { readTable, ROW } from "../../standings.ts";
+import { type LeagueSheet, ROW } from "../../standings.ts";
 
 export const RIVAL_PAIRINGS_TAB = "Rival Pairings";
 
@@ -33,13 +32,14 @@ export interface RivalPair {
   readonly player2: string;
 }
 
-/** Reads all rival pairs (columns B / C) from the registration sheet. */
-export async function getRivalPairs(): Promise<readonly RivalPair[]> {
-  const table = await readTable(
-    `${RIVAL_PAIRINGS_TAB}!A:Z`,
-    1,
-    CONFIG.REGISTRATION_SHEET_ID,
-  );
+/**
+ * Reads all rival pairs (columns B / C) from the FRA league sheet's Rival
+ * Pairings tab.
+ */
+export async function getRivalPairs(
+  sheet: LeagueSheet,
+): Promise<readonly RivalPair[]> {
+  const table = await sheet.readTable(`${RIVAL_PAIRINGS_TAB}!A:Z`, 1);
   const pairs: RivalPair[] = [];
   for (const row of table.rows) {
     const player1 = cellString(row[ROW][1]);
