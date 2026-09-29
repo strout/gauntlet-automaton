@@ -187,6 +187,28 @@ export function sheetsAppend(
 }
 
 /**
+ * Lists the tab titles in a spreadsheet.
+ *
+ * @param sheets - Authenticated Sheets client instance
+ * @param spreadsheetId - The Google Sheets document ID
+ * @returns Promise that resolves to the tab titles
+ */
+export function sheetsTabTitles(
+  sheets: Sheets,
+  spreadsheetId: string,
+): Promise<string[]> {
+  return withSmartRetry(async () => {
+    const res = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: "sheets.properties.title",
+    });
+    return (res.data.sheets ?? []).flatMap((s) =>
+      s.properties?.title ? [s.properties.title] : []
+    );
+  });
+}
+
+/**
  * Global Sheets client instance. Must be initialized with `initSheets()` before use.
  * Will throw an error if accessed before initialization.
  */
