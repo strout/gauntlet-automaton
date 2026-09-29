@@ -1,17 +1,12 @@
-import { CONFIG } from "../../config.ts";
-import {
-  getLeagueSheet,
-  type LeagueSheet,
-  upcomingSheet,
-} from "../../standings.ts";
+import { type LeagueSheet, liveSheet, upcomingSheet } from "../../standings.ts";
 
 export const MATCH_ANNOUNCED_COLUMN = "Match Announced";
 
 /**
- * Reality Fracture spreadsheet when available; otherwise the registration
- * workbook so FRA scaffolding can run before a standings sheet exists.
+ * FRA's league spreadsheet: UPCOMING_SHEET_ID while NXT is live, then
+ * LIVE_SHEET_ID once FRA takes over. If a later league is added as upcoming
+ * while FRA is live, pin this to `liveSheet`.
  */
 export function fraSheet(): LeagueSheet {
-  if (upcomingSheet) return upcomingSheet;
-  return getLeagueSheet(CONFIG.REGISTRATION_SHEET_ID);
+  return upcomingSheet ?? liveSheet;
 }

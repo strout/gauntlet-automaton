@@ -2,6 +2,8 @@ import { Client } from "discord.js";
 import { getMatchAnnouncer } from "../../match_announcer.ts";
 import { LeagueSetup } from "../setup.ts";
 import { fraSheet } from "./constants.ts";
+import { fracturePackHandler } from "./fracture-pack.ts";
+import { fraPoolHandler } from "./pool-command.ts";
 import { watchFraRivals } from "./rival-watch.ts";
 
 /**
@@ -24,7 +26,7 @@ export function setup(): Promise<LeagueSetup> {
     sheet,
     announcer,
     watch: watchFra,
-    messageHandlers: [],
+    messageHandlers: [fraPoolHandler, fracturePackHandler],
     interactionHandlers: [],
   });
 }

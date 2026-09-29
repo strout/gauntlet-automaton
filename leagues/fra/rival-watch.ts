@@ -3,9 +3,13 @@ import { Client, TextChannel } from "discord.js";
 import { CONFIG } from "../../config.ts";
 import { sheets, sheetsWrite } from "../../sheets.ts";
 import { readTable, ROW, ROWNUM } from "../../standings.ts";
+import {
+  arenaIdFromIdentification,
+  cellString,
+  RIVAL_PAIRINGS_TAB,
+} from "./rivals.ts";
 
 const POLL_MS = 60_000;
-const RIVAL_PAIRINGS_TAB = "Rival Pairings";
 const FRA_REGISTRATION_TAB = "FRA";
 const ANNOUNCED_COLUMN = "Announced";
 
@@ -180,24 +184,6 @@ function formatRivalAnnouncement(player1Id: string, player2Id: string): string {
   return template
     .replaceAll("XXXX", `<@!${player1Id}>`)
     .replaceAll("YYYY", `<@!${player2Id}>`);
-}
-
-function cellString(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (typeof value === "number") return String(value);
-  return null;
-}
-
-/** `Jordan M - JMTron#46639` → `JMTron#46639`; bare Arena IDs pass through. */
-function arenaIdFromIdentification(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const sep = trimmed.lastIndexOf(" - ");
-  if (sep >= 0) {
-    const arenaId = trimmed.slice(sep + 3).trim();
-    return arenaId || null;
-  }
-  return trimmed;
 }
 
 function findRegistrant(

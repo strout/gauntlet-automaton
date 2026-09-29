@@ -23,7 +23,7 @@ import {
   upcomingSheet,
 } from "./standings.ts";
 
-import { ScryfallCard } from "./scryfall.ts";
+import { ScryfallCard, scryfallFetch } from "./scryfall.ts";
 import { handleGuildMemberAdd, manageRoles } from "./role_management.ts";
 import { setupLeagues } from "./leagues/index.ts";
 
@@ -520,11 +520,14 @@ export const deckCheckHandler: Handler<djs.Message> = async (
     let warned = false;
     for (let i = 0; i < cardIds.size; i += 75) {
       const ents = [...cardIds.entries()].slice(i, i + 75);
-      const resp = await fetch("https://api.scryfall.com/cards/collection", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifiers: ents.map((x) => x[1]) }),
-      });
+      const resp = await scryfallFetch(
+        "https://api.scryfall.com/cards/collection",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ identifiers: ents.map((x) => x[1]) }),
+        },
+      );
       if (!resp.ok) {
         console.error(
           "fetching scryfall collection",
