@@ -1,11 +1,12 @@
 import { withRetry } from "./retry.ts";
+import { scryfallFetch } from "./scryfall.ts";
 
 /**
  * Map of split card names to their canonical names and sets.
  * SealedDeck GET returns the first half, but POST sometimes requires the full name to disambiguate.
  */
 export const splitCardNames = new Map<string, { name: string; set: string }>(
-  (await (await fetch(
+  (await (await scryfallFetch(
     "https://api.scryfall.com/cards/search?q=game:arena+is:split",
   )).json()).data.flatMap((
     x: { name: string; set: string },

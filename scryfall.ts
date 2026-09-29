@@ -1,3 +1,4 @@
+import { delay } from "@std/async";
 import { withRetry } from "./retry.ts";
 import { Image } from "@matmen/imagescript";
 
@@ -132,20 +133,72 @@ class ScryfallRateLimitError extends Error {
 }
 
 /**
+ * Scryfall hard limits (https://scryfall.com/docs/api/rate-limits): 500ms
+ * between search/named/random/collection calls, 100ms for everything else.
+ * A 429 locks the client out for 30s, so we stay slightly under both.
+ */
+const SLOW_ENDPOINT =
+  /^https:\/\/api\.scryfall\.com\/cards\/(search|named|random|collection)\b/;
+const SLOW_ENDPOINT_SPACING_MS = 550;
+const DEFAULT_SPACING_MS = 110;
+
+let scryfallQueue: Promise<void> = Promise.resolve();
+let lastScryfallRequest = 0;
+
+function waitForScryfallSlot(url: string): Promise<void> {
+  const spacing = SLOW_ENDPOINT.test(url)
+    ? SLOW_ENDPOINT_SPACING_MS
+    : DEFAULT_SPACING_MS;
+  const turn = scryfallQueue.then(async () => {
+    const wait = lastScryfallRequest + spacing - Date.now();
+    if (wait > 0) await delay(wait);
+    lastScryfallRequest = Date.now();
+  });
+  scryfallQueue = turn;
+  return turn;
+}
+
+/**
+ * `fetch` for `api.scryfall.com`, queued so every caller in the process
+ * shares one rate limit. Not needed for `*.scryfall.io` image/bulk files.
+ */
+export async function scryfallFetch(
+  url: string,
+  init?: RequestInit,
+): Promise<Response> {
+  await waitForScryfallSlot(url);
+  return await fetch(url, init);
+}
+
+/** Requests currently in flight, so concurrent callers share one fetch. */
+const inFlightRequests = new Map<string, Promise<unknown>>();
+
+/**
  * Makes a cached request to the Scryfall API
  */
-async function cachedScryfallRequest<T>(
+function cachedScryfallRequest<T>(
   url: string,
   ttl: number = DEFAULT_CACHE_TTL,
 ): Promise<Readonly<T>> {
   const cached = scryfallCache.get(url);
   if (cached && Date.now() - cached.timestamp < ttl) {
-    return cached.data as T;
+    return Promise.resolve(cached.data as T);
   }
 
+  const inFlight = inFlightRequests.get(url);
+  if (inFlight) return inFlight as Promise<T>;
+
+  const request = uncachedScryfallRequest<T>(url).finally(() => {
+    inFlightRequests.delete(url);
+  });
+  inFlightRequests.set(url, request);
+  return request;
+}
+
+async function uncachedScryfallRequest<T>(url: string): Promise<Readonly<T>> {
   return await withRetry(
     async (disableRetry) => {
-      const response = await fetch(url);
+      const response = await scryfallFetch(url);
 
       if (!response.ok) {
         // Check for Retry-After header on rate limit
@@ -288,7 +341,7 @@ export async function fetchRandomCardForQuery(
 
   return await withRetry(
     async (disableRetry) => {
-      const response = await fetch(url);
+      const response = await scryfallFetch(url);
 
       if (response.status === 404) {
         return null;
@@ -372,7 +425,7 @@ export async function fetchCardsByIdentifier(
 
     await withRetry(
       async () => {
-        const response = await fetch(
+        const response = await scryfallFetch(
           "https://api.scryfall.com/cards/collection",
           {
             method: "POST",
