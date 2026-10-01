@@ -20,11 +20,42 @@ export function arenaIdFromIdentification(value: string): string | null {
   return trimmed;
 }
 
-/** True when two Identification strings refer to the same Arena account. */
-export function sameArenaId(a: string, b: string): boolean {
-  const idA = arenaIdFromIdentification(a);
-  const idB = arenaIdFromIdentification(b);
-  return !!idA && !!idB && idA.toLowerCase() === idB.toLowerCase();
+/** True when two Identification strings refer to the same player. */
+export type SamePlayer = (a: string, b: string) => boolean;
+
+function normalizeIdentification(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * Builds a player matcher for Identification strings (`Full Name - ArenaId`).
+ *
+ * Identical Identifications (ignoring case and spacing) always match.
+ * Otherwise two Identifications match on Arena ID, so name spelling can differ
+ * between sheets — unless that Arena ID is shared by several players on
+ * `roster` (a shared Arena account), where only the full Identification can
+ * tell them apart.
+ *
+ * @param roster - Identification of every player (the Player Database)
+ */
+export function playerMatcher(roster: readonly string[]): SamePlayer {
+  const playersPerArenaId = new Map<string, number>();
+  for (const identification of new Set(roster.map(normalizeIdentification))) {
+    const arenaId = arenaIdFromIdentification(identification);
+    if (!arenaId) continue;
+    playersPerArenaId.set(arenaId, (playersPerArenaId.get(arenaId) ?? 0) + 1);
+  }
+
+  return (a, b) => {
+    const normA = normalizeIdentification(a);
+    const normB = normalizeIdentification(b);
+    if (!normA || !normB) return false;
+    if (normA === normB) return true;
+    const arenaId = arenaIdFromIdentification(normA);
+    return !!arenaId &&
+      arenaId === arenaIdFromIdentification(normB) &&
+      (playersPerArenaId.get(arenaId) ?? 0) <= 1;
+  };
 }
 
 export interface RivalPair {
@@ -52,15 +83,17 @@ export async function getRivalPairs(
 /**
  * Finds the rival Identification (as written on Rival Pairings) for a player.
  *
- * @param identification - Player Database Identification or bare Arena ID
+ * @param identification - Player Database Identification
+ * @param samePlayer - Matcher from `playerMatcher`
  */
 export function findRival(
   pairs: readonly RivalPair[],
   identification: string,
+  samePlayer: SamePlayer,
 ): string | undefined {
   for (const pair of pairs) {
-    if (sameArenaId(pair.player1, identification)) return pair.player2;
-    if (sameArenaId(pair.player2, identification)) return pair.player1;
+    if (samePlayer(pair.player1, identification)) return pair.player2;
+    if (samePlayer(pair.player2, identification)) return pair.player1;
   }
   return undefined;
 }

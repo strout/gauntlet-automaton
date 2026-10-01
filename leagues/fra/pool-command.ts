@@ -18,7 +18,7 @@ import {
   storeMirroredPairs,
 } from "./mirrored-cards.ts";
 import { imageAttachment, poolAccentColor } from "./posting.ts";
-import { findRival, getRivalPairs, sameArenaId } from "./rivals.ts";
+import { findRival, getRivalPairs, playerMatcher } from "./rivals.ts";
 import {
   fraRollLock,
   rareOrMythicSlot,
@@ -211,9 +211,10 @@ export const fraPoolHandler: Handler<djs.Message> = async (
   }
   const name1 = player1.Identification;
   const name2 = player2.Identification;
+  const samePlayer = playerMatcher(players.rows.map((p) => p.Identification));
 
-  const listedRival = findRival(rivalPairs, name1);
-  if (!listedRival || !sameArenaId(listedRival, name2)) {
+  const listedRival = findRival(rivalPairs, name1, samePlayer);
+  if (!listedRival || !samePlayer(listedRival, name2)) {
     await message.reply(
       `**${name1}** and **${name2}** aren't rivals on Rival Pairings.`,
     );
@@ -229,10 +230,10 @@ export const fraPoolHandler: Handler<djs.Message> = async (
     ]);
     const alreadyRolled = [name1, name2].filter((name) =>
       poolChanges.rows.some((c) =>
-        c.Type === "starting pool" && sameArenaId(c.Name, name)
+        c.Type === "starting pool" && samePlayer(c.Name, name)
       ) ||
       mirroredRows.some((r) =>
-        r.packNumber === STARTING_POOL_PACK_NUMBER && sameArenaId(r.owner, name)
+        r.packNumber === STARTING_POOL_PACK_NUMBER && samePlayer(r.owner, name)
       )
     );
     if (alreadyRolled.length > 0) {

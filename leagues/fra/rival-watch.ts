@@ -6,6 +6,7 @@ import { readTable, ROW, ROWNUM } from "../../standings.ts";
 import {
   arenaIdFromIdentification,
   cellString,
+  playerMatcher,
   RIVAL_PAIRINGS_TAB,
 } from "./rivals.ts";
 
@@ -15,12 +16,14 @@ const ANNOUNCED_COLUMN = "Announced";
 
 /** Column indexes on the FRA registration tab (0-based). */
 const FRA_COL = {
+  fullName: 1, // B
   arenaId: 4, // E
   discordId: 9, // J
 } as const;
 
 type Registrant = {
-  readonly arenaId: string;
+  /** `Full Name - ArenaId`, or the bare Arena ID if the name is blank. */
+  readonly identification: string;
   readonly discordId: string;
 };
 
@@ -43,11 +46,12 @@ export async function watchFraRivals(client: Client): Promise<never> {
  * FRA tab and tag both rivals in GENERAL_CHAT_CHANNEL_ID.
  *
  * Rival Pairings (registration spreadsheet):
- * - Column B / C: Identification (`Full Name - ArenaId`); we match on ArenaId
+ * - Column B / C: Identification (`Full Name - ArenaId`); matched with
+ *   `playerMatcher`, so shared Arena accounts are told apart by name
  * - Announced: set true after a successful announce
  *
  * FRA registration tab:
- * - E Arena Player ID#, J Discord ID
+ * - B Full Name, E Arena Player ID#, J Discord ID
  */
 export async function announceRivalPairings(client: Client): Promise<void> {
   const channelId = CONFIG.GENERAL_CHAT_CHANNEL_ID;
@@ -78,6 +82,10 @@ export async function announceRivalPairings(client: Client): Promise<void> {
     return;
   }
 
+  const samePlayer = playerMatcher(registrants.map((r) => r.identification));
+  const findRegistrant = (identification: string) =>
+    registrants.find((r) => samePlayer(r.identification, identification));
+
   for (const row of pairTable.rows) {
     const announced = row[ANNOUNCED_COLUMN];
     if (announced === true || announced === "TRUE" || announced === 1) {
@@ -100,8 +108,8 @@ export async function announceRivalPairings(client: Client): Promise<void> {
       continue;
     }
 
-    const player1 = findRegistrant(registrants, arena1);
-    const player2 = findRegistrant(registrants, arena2);
+    const player1 = findRegistrant(id1);
+    const player2 = findRegistrant(id2);
 
     if (!player1 || !player2) {
       console.warn(
@@ -157,11 +165,12 @@ async function loadFraRegistrants(): Promise<readonly Registrant[]> {
   const registrants: Registrant[] = [];
   for (const row of table.rows) {
     const raw = row[ROW];
+    const fullName = cellString(raw[FRA_COL.fullName]);
     const arenaId = cellString(raw[FRA_COL.arenaId]);
     const discordId = cellString(raw[FRA_COL.discordId]);
     if (!arenaId) continue;
     registrants.push({
-      arenaId,
+      identification: fullName ? `${fullName} - ${arenaId}` : arenaId,
       discordId: discordId ?? "",
     });
   }
@@ -184,12 +193,4 @@ function formatRivalAnnouncement(player1Id: string, player2Id: string): string {
   return template
     .replaceAll("XXXX", `<@!${player1Id}>`)
     .replaceAll("YYYY", `<@!${player2Id}>`);
-}
-
-function findRegistrant(
-  registrants: readonly Registrant[],
-  arenaId: string,
-): Registrant | undefined {
-  const needle = arenaId.trim().toLowerCase();
-  return registrants.find((p) => p.arenaId.toLowerCase() === needle);
 }
