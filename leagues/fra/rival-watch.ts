@@ -3,6 +3,7 @@ import { Client, TextChannel } from "discord.js";
 import { CONFIG } from "../../config.ts";
 import { sheets, sheetsWrite } from "../../sheets.ts";
 import { readTable, ROW, ROWNUM } from "../../standings.ts";
+import { resolveFraSheet } from "./constants.ts";
 import {
   arenaIdFromIdentification,
   cellString,
@@ -28,7 +29,8 @@ type Registrant = {
 };
 
 /**
- * Poll registration Rival Pairings and announce new pairs in general chat.
+ * Poll the FRA league sheet's Rival Pairings and announce new pairs in
+ * general chat.
  */
 export async function watchFraRivals(client: Client): Promise<never> {
   while (true) {
@@ -45,7 +47,8 @@ export async function watchFraRivals(client: Client): Promise<never> {
  * Unannounced Rival Pairings rows: resolve Discord IDs from the registration
  * FRA tab and tag both rivals in GENERAL_CHAT_CHANNEL_ID.
  *
- * Rival Pairings (registration spreadsheet):
+ * Rival Pairings (FRA league spreadsheet, see `resolveFraSheet`; the same tab
+ * `!frapool` and `!fracture` use):
  * - Column B / C: Identification (`Full Name - ArenaId`); matched with
  *   `playerMatcher`, so shared Arena accounts are told apart by name
  * - Announced: set true after a successful announce
@@ -58,12 +61,9 @@ export async function announceRivalPairings(client: Client): Promise<void> {
 
   console.log("[fra] Checking Rival Pairings…");
 
+  const sheet = await resolveFraSheet();
   const [pairTable, registrants] = await Promise.all([
-    readTable(
-      `${RIVAL_PAIRINGS_TAB}!A:Z`,
-      1,
-      CONFIG.REGISTRATION_SHEET_ID,
-    ),
+    sheet.readTable(`${RIVAL_PAIRINGS_TAB}!A:Z`, 1),
     loadFraRegistrants(),
   ]);
 
@@ -144,7 +144,7 @@ export async function announceRivalPairings(client: Client): Promise<void> {
 
     await sheetsWrite(
       sheets,
-      CONFIG.REGISTRATION_SHEET_ID,
+      sheet.sheetId,
       `${RIVAL_PAIRINGS_TAB}!R${row[ROWNUM]}C${announcedCol + 1}`,
       [[true]],
       "USER_ENTERED",

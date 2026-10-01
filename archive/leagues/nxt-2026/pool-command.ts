@@ -1,7 +1,7 @@
 import * as djs from "discord.js";
-import { CONFIG } from "../../config.ts";
-import { Handler } from "../../dispatch.ts";
-import { waitForBoosterTutor } from "../../pending.ts";
+import { CONFIG } from "../../../config.ts";
+import { Handler } from "../../../dispatch.ts";
+import { waitForBoosterTutor } from "../../../pending.ts";
 import { NXT_STARTING_POOL_CMD, nxtSheet } from "./constants.ts";
 
 const POOL_COMMAND_CHANNELS = new Set([

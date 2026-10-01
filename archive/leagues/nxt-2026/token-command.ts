@@ -1,9 +1,9 @@
 import * as djs from "discord.js";
-import { CONFIG } from "../../config.ts";
-import { Handler } from "../../dispatch.ts";
-import { waitForBoosterTutor } from "../../pending.ts";
-import { choice } from "../../random.ts";
-import { ROWNUM } from "../../standings.ts";
+import { CONFIG } from "../../../config.ts";
+import { Handler } from "../../../dispatch.ts";
+import { waitForBoosterTutor } from "../../../pending.ts";
+import { choice } from "../../../random.ts";
+import { ROWNUM } from "../../../standings.ts";
 import { z } from "zod";
 import {
   HAS_CLUE_TOKEN_COLUMN,

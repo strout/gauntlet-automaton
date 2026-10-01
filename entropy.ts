@@ -20,6 +20,15 @@ export type EntropyPackCommand =
   | string
   | ((player: EntropyPackPlayer) => string);
 
+export interface EntropyOptions {
+  /**
+   * Wait for Booster Tutor's reply and record the pack on Pool Changes
+   * (default true). Set false when the command is handled by this bot and
+   * records its own pack (e.g. FRA's `!fracture`).
+   */
+  readonly recordBoosterTutorPack?: boolean;
+}
+
 /** Per-league helper for processing entropy losses. */
 export class EntropyAnnouncer {
   constructor(
@@ -27,6 +36,7 @@ export class EntropyAnnouncer {
     readonly label: string,
     /** Booster Tutor command (e.g. "cube SET"), or per-player resolver. */
     readonly command?: EntropyPackCommand,
+    readonly options: EntropyOptions = {},
   ) {}
 
   #resolveCommand(player: EntropyPackPlayer): string | undefined {
@@ -139,6 +149,11 @@ export class EntropyAnnouncer {
                 `!${packCommand} ${mention} was defeated by ENTROPY.`,
               );
 
+              if (this.options.recordBoosterTutorPack === false) {
+                await delay(1000);
+                continue;
+              }
+
               try {
                 const packResult = await waitForBoosterTutor(
                   Promise.resolve(sentMessage),
@@ -182,11 +197,12 @@ export function getEntropyAnnouncer(
   label: string,
   /** Booster Tutor command (e.g. "cube SET"), or per-player resolver. */
   command?: EntropyPackCommand,
+  options?: EntropyOptions,
 ): EntropyAnnouncer {
   const key = label;
   let announcer = announcerCache.get(key);
   if (!announcer) {
-    announcer = new EntropyAnnouncer(sheet, label, command);
+    announcer = new EntropyAnnouncer(sheet, label, command, options);
     announcerCache.set(key, announcer);
   }
   return announcer;

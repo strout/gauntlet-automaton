@@ -1,5 +1,5 @@
-import { getMatchAnnouncer } from "../../match_announcer.ts";
-import { LeagueSetup } from "../setup.ts";
+import { getMatchAnnouncer } from "../../../match_announcer.ts";
+import { LeagueSetup } from "../../../leagues/setup.ts";
 import { nxtSheet } from "./constants.ts";
 import { watchNxtMatches } from "./match-watch.ts";
 import { nxtPoolHandler } from "./pool-command.ts";
