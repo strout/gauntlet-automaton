@@ -19,7 +19,7 @@ import {
   storeMirroredPairs,
 } from "./mirrored-cards.ts";
 import { imageAttachment, poolAccentColor } from "./posting.ts";
-import { findRival, getRivalPairs, sameArenaId } from "./rivals.ts";
+import { findRival, getRivalPairs, playerMatcher } from "./rivals.ts";
 import {
   findEchoedCardByName,
   fraRollLock,
@@ -152,7 +152,12 @@ export const fracturePackHandler: Handler<djs.Message> = async (
     return;
   }
 
-  const rivalFromPairings = findRival(rivalPairs, player.Identification);
+  const samePlayer = playerMatcher(players.rows.map((p) => p.Identification));
+  const rivalFromPairings = findRival(
+    rivalPairs,
+    player.Identification,
+    samePlayer,
+  );
   if (!rivalFromPairings) {
     await message.reply(
       `No rival found for **${player.Identification}** on Rival Pairings.`,
@@ -160,7 +165,7 @@ export const fracturePackHandler: Handler<djs.Message> = async (
     return;
   }
   const rival =
-    players.rows.find((p) => sameArenaId(p.Identification, rivalFromPairings))
+    players.rows.find((p) => samePlayer(p.Identification, rivalFromPairings))
       ?.Identification ?? rivalFromPairings;
 
   const packGen = await message.client.channels.fetch(
@@ -175,11 +180,16 @@ export const fracturePackHandler: Handler<djs.Message> = async (
 
   try {
     const mirroredRows = await readMirroredCards(sheet);
-    const packNumber = nextPackNumber(mirroredRows, player.Identification);
+    const packNumber = nextPackNumber(
+      mirroredRows,
+      player.Identification,
+      samePlayer,
+    );
     const pending = pendingMirroredCards(
       mirroredRows,
       player.Identification,
       packNumber,
+      samePlayer,
     );
 
     const counts: CardCounts = new Map();

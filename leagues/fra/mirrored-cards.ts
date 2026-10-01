@@ -3,7 +3,7 @@ import { sheets, sheetsAppend, sheetsWrite } from "../../sheets.ts";
 import { type LeagueSheet, parseTable, ROWNUM } from "../../standings.ts";
 import type { EchoedRarity } from "./cards.ts";
 import { MIRRORED_CARDS_TAB } from "./constants.ts";
-import { sameArenaId } from "./rivals.ts";
+import type { SamePlayer } from "./rivals.ts";
 
 /**
  * Mirrored Cards tab layout (header row 1, columns A–J):
@@ -73,11 +73,12 @@ export const STARTING_POOL_PACK_NUMBER = 0;
 export function nextPackNumber(
   rows: readonly MirroredCardRow[],
   owner: string,
+  samePlayer: SamePlayer,
 ): number {
   let highest = 0;
   for (const row of rows) {
     if (!row.delivered || row.packNumber < 1) continue;
-    if (!sameArenaId(row.owner, owner)) continue;
+    if (!samePlayer(row.owner, owner)) continue;
     highest = Math.max(highest, row.packNumber);
   }
   return highest + 1;
@@ -88,12 +89,13 @@ export function pendingMirroredCards(
   rows: readonly MirroredCardRow[],
   owner: string,
   packNumber: number,
+  samePlayer: SamePlayer,
 ): readonly MirroredCardRow[] {
   return rows
     .filter((r) =>
       !r.delivered &&
       r.packNumber === packNumber &&
-      sameArenaId(r.owner, owner)
+      samePlayer(r.owner, owner)
     )
     .sort((a, b) => a.slot - b.slot);
 }
