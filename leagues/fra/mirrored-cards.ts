@@ -171,6 +171,22 @@ export async function storeMirroredPairs(
 }
 
 /** Marks pending rows delivered in the given pool. */
+/** Reverts rows to pending, so they're dealt again in the owner's next pack. */
+export async function markMirroredUndelivered(
+  sheet: LeagueSheet,
+  rows: readonly MirroredCardRow[],
+): Promise<void> {
+  for (const row of rows) {
+    await sheetsWrite(
+      sheets,
+      sheet.sheetId,
+      `${MIRRORED_CARDS_TAB}!I${row.rowNum}:J${row.rowNum}`,
+      [[false, ""]],
+      "USER_ENTERED",
+    );
+  }
+}
+
 export async function markMirroredDelivered(
   sheet: LeagueSheet,
   rows: readonly MirroredCardRow[],
