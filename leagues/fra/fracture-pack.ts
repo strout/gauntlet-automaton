@@ -73,8 +73,10 @@ function rollMirroredRarity(slot: number): EchoedRarity {
   return "uncommon";
 }
 
+/** Each mirrored slot comes from a different echoed pair. */
 async function rollMirroredPairs(counts: CardCounts): Promise<RolledPair[]> {
   const rivalCounts: CardCounts = new Map();
+  const usedPairs = new Set<string>();
   const pairs: RolledPair[] = [];
   for (let slot = 1; slot <= MIRRORED_SLOTS; slot++) {
     pairs.push(
@@ -84,6 +86,7 @@ async function rollMirroredPairs(counts: CardCounts): Promise<RolledPair[]> {
         counts,
         rivalCounts,
         1,
+        usedPairs,
       ),
     );
   }

@@ -65,9 +65,13 @@ export async function rollSlots(
   return cards;
 }
 
+/** Same key for a pair whichever half the owner holds. */
+const pairKey = (a: string, b: string): string => [a, b].sort().join("|");
+
 /**
  * Rolls an echoed card of `rarity` for the owner; its partner goes to the
- * rival. Each side may hold at most `maxCopies` of a name.
+ * rival. Each side may hold at most `maxCopies` of a name. Pairs in
+ * `usedPairs` (either half) are excluded, and the rolled pair is added to it.
  */
 export async function rollMirroredPair(
   slot: number,
@@ -75,6 +79,7 @@ export async function rollMirroredPair(
   ownerCounts: CardCounts,
   rivalCounts: CardCounts,
   maxCopies: number,
+  usedPairs?: Set<string>,
 ): Promise<RolledPair> {
   const candidates: [ScryfallCard, ScryfallCard][] = [];
   for (const card of await fraCardsFor(ECHOED_QUERY_BY_RARITY[rarity])) {
@@ -82,6 +87,7 @@ export async function rollMirroredPair(
     if (!partner) continue;
     if (copiesOf(ownerCounts, card.name) >= maxCopies) continue;
     if (copiesOf(rivalCounts, partner.name) >= maxCopies) continue;
+    if (usedPairs?.has(pairKey(card.name, partner.name))) continue;
     candidates.push([card, partner]);
   }
   const picked = choice(candidates);
@@ -93,6 +99,7 @@ export async function rollMirroredPair(
   const [card, partner] = picked;
   addCopy(ownerCounts, card.name);
   addCopy(rivalCounts, partner.name);
+  usedPairs?.add(pairKey(card.name, partner.name));
   return {
     slot,
     rarity,
