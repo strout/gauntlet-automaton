@@ -35,7 +35,11 @@ export interface MirroredCardRow {
   readonly slot: number;
   readonly rarity: EchoedRarity;
   readonly card: string;
+  /** The other half of the pair (what the rival received). */
+  readonly counterpart: string;
   readonly delivered: boolean;
+  /** Pack (SealedDeck ID) the owner received this card in, once delivered. */
+  readonly poolId: string;
 }
 
 export interface MirroredPairToStore {
@@ -62,8 +66,24 @@ export async function readMirroredCards(
     slot: r.Slot,
     rarity: r.Rarity as EchoedRarity,
     card: r.Card,
+    counterpart: r.Counterpart ?? "",
     delivered: r.Delivered,
+    poolId: r["Pool ID"] ?? "",
   }));
+}
+
+/** Owner's mirrored cards delivered in a specific pack, by slot. */
+export function mirroredCardsInPack(
+  rows: readonly MirroredCardRow[],
+  owner: string,
+  poolId: string,
+  samePlayer: SamePlayer,
+): readonly MirroredCardRow[] {
+  return rows
+    .filter((r) =>
+      r.delivered && r.poolId === poolId && samePlayer(r.owner, owner)
+    )
+    .sort((a, b) => a.slot - b.slot);
 }
 
 /** Pack # used for mirrored pairs rolled into starting pools. */

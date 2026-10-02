@@ -1,4 +1,4 @@
-import { type LeagueSheet, liveSheet } from "../../standings.ts";
+import { type LeagueSheet, liveSheet } from "../../../standings.ts";
 
 export const MATCH_ANNOUNCED_COLUMN = "Match Announced";
 

@@ -1,16 +1,16 @@
 import { delay } from "@std/async";
 import { Client, TextChannel } from "discord.js";
 import { z } from "zod";
-import { CONFIG } from "../../config.ts";
-import { getEntropyAnnouncer } from "../../entropy.ts";
-import { getMatchAnnouncer } from "../../match_announcer.ts";
-import { waitForBoosterTutor } from "../../pending.ts";
+import { CONFIG } from "../../../config.ts";
+import { getEntropyAnnouncer } from "../../../entropy.ts";
+import { getMatchAnnouncer } from "../../../match_announcer.ts";
+import { waitForBoosterTutor } from "../../../pending.ts";
 import {
   type LeagueSheet,
   MATCHTYPE,
   parseTable,
   ROWNUM,
-} from "../../standings.ts";
+} from "../../../standings.ts";
 import {
   comebackPackCommand,
   MATCH_ANNOUNCED_COLUMN,

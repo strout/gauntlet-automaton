@@ -18,6 +18,7 @@ import {
   readMirroredCards,
   storeMirroredPairs,
 } from "./mirrored-cards.ts";
+import { empowerJace, holdFracturePack } from "./jace.ts";
 import { imageAttachment, poolAccentColor } from "./posting.ts";
 import { findRival, getRivalPairs, playerMatcher } from "./rivals.ts";
 import {
@@ -179,6 +180,20 @@ export const fracturePackHandler: Handler<djs.Message> = async (
   using _ = await fraRollLock();
 
   try {
+    const held = await holdFracturePack(sheet, targetId).catch((e) => {
+      console.error("[fra] Couldn't check for a pending Jace choice:", e);
+      return undefined;
+    });
+    if (held) {
+      await packGen.send(held);
+      return;
+    }
+  } catch (e) {
+    console.error("[fra] Failed to post held Fracture pack notice:", e);
+    return;
+  }
+
+  try {
     const mirroredRows = await readMirroredCards(sheet);
     const packNumber = nextPackNumber(
       mirroredRows,
@@ -281,6 +296,24 @@ export const fracturePackHandler: Handler<djs.Message> = async (
       embeds: [embed],
       files: image ? [image] : [],
     });
+
+    // Jace's abilities target this pack's Pool Changes row, so skip him if
+    // recording failed.
+    if (combinedPoolId) {
+      try {
+        await empowerJace(message.client, sheet, targetId, {
+          poolId: packPoolId,
+          label: `Fracture pack #${packNumber}`,
+        });
+      } catch (e) {
+        console.error("[fra] Empower Jace failed:", e);
+        await message.reply(
+          `Pack rolled, but Empower Jace failed for <@${targetId}>: ${
+            e instanceof Error ? e.message : e
+          }. CC <@${CONFIG.OWNER_ID}>`,
+        );
+      }
+    }
   } catch (e) {
     console.error("[fra] !fracture failed:", e);
     await message.reply("Failed to roll Fracture pack. Check logs.");

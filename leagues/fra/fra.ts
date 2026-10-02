@@ -3,20 +3,19 @@ import { getMatchAnnouncer } from "../../match_announcer.ts";
 import { LeagueSetup } from "../setup.ts";
 import { fraSheet } from "./constants.ts";
 import { fracturePackHandler } from "./fracture-pack.ts";
+import { jaceInteractionHandler, jaceResendHandler } from "./jace.ts";
+import { watchFraMatches } from "./match-watch.ts";
 import { fraPoolHandler } from "./pool-command.ts";
 import { watchFraRivals } from "./rival-watch.ts";
 
-/**
- * Reality Fracture background watches (rivals now; matches later).
- */
+/** Reality Fracture background watches: rival pairings, matches, entropy. */
 async function watchFra(client: Client): Promise<void> {
-  await watchFraRivals(client);
+  await Promise.all([watchFraRivals(client), watchFraMatches(client)]);
 }
 
 /**
- * Reality Fracture (FRA) — upcoming league.
- * Rival pairing uses the registration sheet; standings sheet is optional via
- * UPCOMING_SHEET_ID when match features are needed.
+ * Reality Fracture (FRA) — live league. Rival announcements use the
+ * registration sheet; everything else uses the FRA league sheet.
  */
 export function setup(): Promise<LeagueSetup> {
   const sheet = fraSheet();
@@ -26,7 +25,7 @@ export function setup(): Promise<LeagueSetup> {
     sheet,
     announcer,
     watch: watchFra,
-    messageHandlers: [fraPoolHandler, fracturePackHandler],
-    interactionHandlers: [],
+    messageHandlers: [fraPoolHandler, fracturePackHandler, jaceResendHandler],
+    interactionHandlers: [jaceInteractionHandler],
   });
 }
