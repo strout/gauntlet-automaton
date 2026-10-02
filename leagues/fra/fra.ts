@@ -7,6 +7,7 @@ import { jaceInteractionHandler, jaceResendHandler } from "./jace.ts";
 import { watchFraMatches } from "./match-watch.ts";
 import { fraPoolHandler } from "./pool-command.ts";
 import { watchFraRivals } from "./rival-watch.ts";
+import { undoLossHandler, undoLossInteractionHandler } from "./undo-loss.ts";
 
 /** Reality Fracture background watches: rival pairings, matches, entropy. */
 async function watchFra(client: Client): Promise<void> {
@@ -25,7 +26,12 @@ export function setup(): Promise<LeagueSetup> {
     sheet,
     announcer,
     watch: watchFra,
-    messageHandlers: [fraPoolHandler, fracturePackHandler, jaceResendHandler],
-    interactionHandlers: [jaceInteractionHandler],
+    messageHandlers: [
+      fraPoolHandler,
+      fracturePackHandler,
+      jaceResendHandler,
+      undoLossHandler,
+    ],
+    interactionHandlers: [jaceInteractionHandler, undoLossInteractionHandler],
   });
 }

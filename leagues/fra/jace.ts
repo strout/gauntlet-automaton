@@ -15,6 +15,7 @@ import {
   makeSealedDeck,
   type SealedDeckPool,
 } from "../../sealeddeck.ts";
+import { sheets, sheetsWrite } from "../../sheets.ts";
 import { type LeagueSheet, ROWNUM } from "../../standings.ts";
 import { resolveFraSheet } from "./constants.ts";
 import { isLeagueCommittee, resolveDiscordId } from "./discord-utils.ts";
@@ -42,7 +43,10 @@ export const JACE_LOYALTY_COLUMN = "Jace Loyalty Score";
 export const JACE_PENDING_COLUMN = "Jace Pending Pack";
 /** Player Database column (AG): comeback packs held until Jace's choice. */
 export const JACE_HELD_COLUMN = "Jace Held Packs";
-const EMPOWER_AMOUNT = 3;
+/** Loyalty gained per loss. */
+export const EMPOWER_AMOUNT = 3;
+/** Appended to Pool Changes comments of rows reverted by `!undoloss`. */
+export const UNDONE_TAG = "Undone by !undoloss";
 const JACE_COLOR = 0x0e68ab;
 const BOOSTER_TUTOR_TIMEOUT_MS = 3 * 60_000;
 
@@ -59,10 +63,14 @@ interface JaceAbility {
   readonly flavor: string;
 }
 
+/** e.g. `SOS, ECL, EOE, TDM, DFT or DSK` */
+const JACE_SET_LIST = UW_SETS.map((s) => s.toUpperCase()).join(", ")
+  .replace(/, (?=[^,]+$)/, " or ");
+
 const PARALLEL_PROOF: JaceAbility = {
   cost: 8,
   name: "Parallel Proof",
-  rules: "Open 2 packs from random Universes Within sets; keep one.",
+  rules: `Open 2 different packs from ${JACE_SET_LIST}; choose one to keep.`,
   flavor: "Two realities, two outcomes. Only one survives the experiment.",
 };
 
@@ -70,7 +78,7 @@ const JACE_ABILITIES: readonly JaceAbility[] = [
   {
     cost: 1,
     name: "Stray Thought",
-    rules: "Add a random Universes Within uncommon to your pool.",
+    rules: `Add a random uncommon from ${JACE_SET_LIST} to your pool.`,
     flavor:
       "Jace reaches across the fracture and pockets an idea that was never his.",
   },
@@ -78,7 +86,7 @@ const JACE_ABILITIES: readonly JaceAbility[] = [
     cost: 2,
     name: "Revise the Variables",
     rules:
-      "Reroll this pack's commons (1 of each color + 2 any) from Universes Within sets. The land stays.",
+      `Reroll this pack's nonland commons into commons from ${JACE_SET_LIST}.`,
     flavor: "A sound theory survives revision. A great one demands it.",
   },
   {
@@ -93,6 +101,18 @@ const JACE_ABILITIES: readonly JaceAbility[] = [
 ];
 
 const abilityLabel = (a: JaceAbility) => `−${a.cost}: ${a.name}`;
+
+/**
+ * Cost of the Jace ability recorded on a comeback pack's Pool Changes comment
+ * (`… · Jace −1`, or `… — Unused: replaced by Jace −2`), if any.
+ */
+export function jaceCostOnPack(comment: string): JaceCost | undefined {
+  const cost = comment.match(/Jace −(\d+)/)?.[1];
+  return JACE_ABILITIES.find((a) => String(a.cost) === cost)?.cost;
+}
+
+const isUndone = (row: PoolChangeRow): boolean =>
+  (row.Comment ?? "").includes(UNDONE_TAG);
 
 /** Opening narration for an Empower Jace prompt. */
 const EMPOWER_FLAVOR: readonly string[] = [
@@ -134,7 +154,7 @@ const jaceExtras = {
   [JACE_HELD_COLUMN]: z.unknown().transform(parseCount),
 };
 
-async function loadJacePlayers(sheet: LeagueSheet) {
+export async function loadJacePlayers(sheet: LeagueSheet) {
   try {
     return await sheet.getPlayers(jaceExtras);
   } catch (e) {
@@ -153,17 +173,32 @@ async function loadJacePlayers(sheet: LeagueSheet) {
     throw e;
   }
 }
-type JacePlayers = Awaited<ReturnType<typeof loadJacePlayers>>;
-type JacePlayer = JacePlayers["rows"][number];
+export type JacePlayers = Awaited<ReturnType<typeof loadJacePlayers>>;
+export type JacePlayer = JacePlayers["rows"][number];
 
 function loadPoolChanges(sheet: LeagueSheet) {
   return sheet.getPoolChanges();
 }
-type PoolChangeRow = Awaited<
+export type PoolChangeRow = Awaited<
   ReturnType<typeof loadPoolChanges>
 >["rows"][number];
 
-function setJaceCell(
+/** Records which Jace ability was used on a comeback pack's row. */
+function markJaceUsed(
+  sheet: LeagueSheet,
+  packRow: PoolChangeRow,
+  cost: JaceCost,
+): Promise<unknown> {
+  return sheetsWrite(
+    sheets,
+    sheet.sheetId,
+    `Pool Changes!E${packRow[ROWNUM]}`,
+    [[`${packRow.Comment?.trim() ?? ""} · Jace −${cost}`]],
+    "RAW",
+  );
+}
+
+export function setJaceCell(
   sheet: LeagueSheet,
   players: JacePlayers,
   player: JacePlayer,
@@ -366,9 +401,9 @@ async function jacePrompt(
       [
         narrate(choice(EMPOWER_FLAVOR) ?? EMPOWER_FLAVOR[0]),
         "",
-        `Choose one for your [${pack.label}](${
-          sealedDeckUrl(pack.poolId)
-        }) before your next match (new comeback packs are held until you do):`,
+        `Choose one for your [${
+          pack.label.replace(/^Fracture pack/, "Comeback Pack")
+        }](${sealedDeckUrl(pack.poolId)}) **before** your next match:`,
         "",
         ...JACE_ABILITIES.map((a) => `**${abilityLabel(a)}** — ${a.rules}`),
       ].join("\n"),
@@ -561,6 +596,20 @@ async function loadContext(
   if (!player) {
     return { failed: "You're not on the Reality Fracture Player Database." };
   }
+  const samePlayer = playerMatcher(players.rows.map((p) => p.Identification));
+  const playerChanges = poolChanges.rows.filter((c) =>
+    samePlayer(c.Name, player.Identification)
+  );
+  const packRow = playerChanges.findLast((c) => c.Value === req.packPoolId);
+  if (!packRow) {
+    return {
+      failed:
+        "I couldn't find that pack on your Pool Changes. Ask League Committee for help.",
+    };
+  }
+  if (isUndone(packRow)) {
+    return { failed: "League Committee undid the loss this pack came from." };
+  }
   const pending = player[JACE_PENDING_COLUMN];
   if (pending !== req.packPoolId) {
     return {
@@ -575,17 +624,6 @@ async function loadContext(
       retry: `Jace only has **${loyalty}** loyalty, not enough for ${
         abilityLabel(req.ability)
       }. Pick another ability.`,
-    };
-  }
-  const samePlayer = playerMatcher(players.rows.map((p) => p.Identification));
-  const playerChanges = poolChanges.rows.filter((c) =>
-    samePlayer(c.Name, player.Identification)
-  );
-  const packRow = playerChanges.findLast((c) => c.Value === req.packPoolId);
-  if (!packRow) {
-    return {
-      failed:
-        "I couldn't find that pack on your Pool Changes. Ask League Committee for help.",
     };
   }
   return {
@@ -607,6 +645,7 @@ async function loadContext(
         loyalty - req.ability.cost,
       );
       await setJaceCell(sheet, players, player, JACE_PENDING_COLUMN, "");
+      await markJaceUsed(sheet, packRow, req.ability.cost);
       const held = player[JACE_HELD_COLUMN];
       if (held > 0) {
         await setJaceCell(sheet, players, player, JACE_HELD_COLUMN, held - 1);
@@ -827,7 +866,7 @@ async function activateMinus8(
     await sendToPlayer(
       client,
       req.discordId,
-      await packChoicePrompt(req.discordId, packs),
+      await packChoicePrompt(req.discordId, req.packPoolId, packs),
       "choose your Jace −8 pack here",
     );
   } catch (e) {
@@ -861,6 +900,7 @@ interface PackOption {
 
 async function packChoicePrompt(
   discordId: string,
+  targetPackPoolId: string,
   [first, second]: readonly PackOption[],
 ): Promise<djs.MessageCreateOptions> {
   const options = [first, second];
@@ -882,6 +922,7 @@ async function packChoicePrompt(
             o.set,
             o.pack.poolId,
             options[1 - i].pack.poolId,
+            targetPackPoolId,
           ].join(":"),
         )
         .setLabel(`Choose reality ${i + 1} (${o.set.toUpperCase()})`)
@@ -910,13 +951,16 @@ interface PackPick {
   readonly set: UwSet;
   readonly packPoolId: string;
   readonly otherPackPoolId: string;
+  /** The comeback pack Jace −8 was activated on (absent on older prompts). */
+  readonly targetPackPoolId?: string;
 }
 
 function parsePackPick(parts: readonly string[]): PackPick | undefined {
-  const [discordId, setCode, packPoolId, otherPackPoolId] = parts;
+  const [discordId, setCode, packPoolId, otherPackPoolId, targetPackPoolId] =
+    parts;
   const set = UW_SETS.find((s) => s === setCode);
   return discordId && set && packPoolId && otherPackPoolId
-    ? { discordId, set, packPoolId, otherPackPoolId }
+    ? { discordId, set, packPoolId, otherPackPoolId, targetPackPoolId }
     : undefined;
 }
 
@@ -945,6 +989,15 @@ async function pickPack(
   ) {
     return { failed: "You've already chosen a pack from this Jace −8." };
   }
+  const targetRow = pick.targetPackPoolId
+    ? playerChanges.findLast((c) => c.Value === pick.targetPackPoolId)
+    : undefined;
+  if (targetRow && isUndone(targetRow)) {
+    return {
+      failed: "League Committee undid the loss this Jace −8 came from.",
+    };
+  }
+  const targetLabel = targetRow?.Comment?.match(/Fracture pack #\d+/)?.[0];
   const setLabel = pick.set.toUpperCase();
   const pack = await fetchSealedDeck(pick.packPoolId);
   const currentPoolId =
@@ -963,7 +1016,9 @@ async function pickPack(
         player.Identification,
         "add pack",
         pick.packPoolId,
-        `Jace −8 (${setLabel})`,
+        targetLabel
+          ? `Jace −8 (${setLabel}) for ${targetLabel}`
+          : `Jace −8 (${setLabel})`,
         poolId,
       );
       return [
