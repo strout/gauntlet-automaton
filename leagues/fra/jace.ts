@@ -54,52 +54,40 @@ type JaceCost = 1 | 2 | 5 | 8;
 interface JaceAbility {
   readonly cost: JaceCost;
   readonly name: string;
-  /** Flavor shown on the prompt. */
-  readonly flavor: string;
   readonly rules: string;
-  /** Narration once the ability resolves. */
-  readonly resolution: string;
+  /** Narration shown once the ability has been chosen. */
+  readonly flavor: string;
 }
 
 const PARALLEL_PROOF: JaceAbility = {
   cost: 8,
   name: "Parallel Proof",
+  rules: "Open 2 packs from random Universes Within sets; keep one.",
   flavor: "Two realities, two outcomes. Only one survives the experiment.",
-  rules:
-    "Open packs from 2 random Universes Within sets and add the one you choose to your pool.",
-  resolution:
-    "Jace splits the moment in two. Two packs arrive from two Universes Within, but only one reality can be kept.",
 };
 
 const JACE_ABILITIES: readonly JaceAbility[] = [
   {
     cost: 1,
     name: "Stray Thought",
+    rules: "Add a random Universes Within uncommon to your pool.",
     flavor:
       "Jace reaches across the fracture and pockets an idea that was never his.",
-    rules:
-      "Add a random uncommon from the last 6 Universes Within sets to your pool.",
-    resolution:
-      "Jace plucks a stray thought from a neighboring universe and slips it into your pool.",
   },
   {
     cost: 2,
     name: "Revise the Variables",
-    flavor: "A sound theory survives revision. A great one demands it.",
     rules:
-      "Replace this pack's commons with 1 common of each color and 2 any commons from the last 6 Universes Within sets. The land stays.",
-    resolution:
-      "Jace strikes out the old variables and writes new ones in from other worlds.",
+      "Reroll this pack's commons (1 of each color + 2 any) from Universes Within sets. The land stays.",
+    flavor: "A sound theory survives revision. A great one demands it.",
   },
   {
     cost: 5,
     name: "Inverted Reflection",
+    rules:
+      "Swap this pack's 3 Mirrored Pair cards for their counterparts. Your Rival isn't affected.",
     flavor:
       "Every mirror has two sides. Jace simply decides which one you stand on.",
-    rules:
-      "Replace the 3 Mirrored Pair cards in this pack with their exact Mirrored Pair cards. Your Rival isn't affected.",
-    resolution:
-      "Jace turns the mirror around. You now hold the reflections your Rival was dealt.",
   },
   PARALLEL_PROOF,
 ];
@@ -378,17 +366,11 @@ async function jacePrompt(
       [
         narrate(choice(EMPOWER_FLAVOR) ?? EMPOWER_FLAVOR[0]),
         "",
-        `Activate one ability for your [${pack.label}](${
+        `Choose one for your [${pack.label}](${
           sealedDeckUrl(pack.poolId)
-        }) before your next match. Until you do, any new comeback packs are held.`,
+        }) before your next match (new comeback packs are held until you do):`,
         "",
-        ...JACE_ABILITIES.flatMap((a) => [
-          `**${abilityLabel(a)}**`,
-          narrate(a.flavor),
-          a.rules,
-          "",
-        ]),
-        "Abilities that would drop Jace below 0 loyalty are greyed out.",
+        ...JACE_ABILITIES.map((a) => `**${abilityLabel(a)}** — ${a.rules}`),
       ].join("\n"),
     );
   if (art) embed.setThumbnail(art);
@@ -681,7 +663,7 @@ async function activateMinus1(
         poolId,
       );
       return [
-        narrate(ctx.req.ability.resolution),
+        narrate(ctx.req.ability.flavor),
         `**${
           abilityLabel(ctx.req.ability)
         }:** added **${card.name}** (${card.set.toUpperCase()}) to your pool.`,
@@ -696,7 +678,7 @@ async function activateMinus1(
       discordId: ctx.req.discordId,
       ability: ctx.req.ability,
       identification: ctx.identification,
-      narration: ctx.req.ability.resolution,
+      narration: ctx.req.ability.flavor,
       details: `Added **${card.name}** (${card.set.toUpperCase()}).`,
       cards: [card],
       poolId,
@@ -771,7 +753,7 @@ async function replacePack(
       newPoolId,
     );
     return [
-      narrate(ctx.req.ability.resolution),
+      narrate(ctx.req.ability.flavor),
       `**${abilityLabel(ctx.req.ability)}** applied to your ${packName}.`,
       `Jace's loyalty is now **${ctx.loyalty - ctx.req.ability.cost}**.`,
       `[New pack](${sealedDeckUrl(newPackId)}) · [Your pool](${
@@ -784,7 +766,7 @@ async function replacePack(
       discordId: ctx.req.discordId,
       ability: ctx.req.ability,
       identification: ctx.identification,
-      narration: ctx.req.ability.resolution,
+      narration: ctx.req.ability.flavor,
       details: formatPool({ sideboard: rebuilt.entries }),
       cards: await cardsForImage(rebuilt.entries, rebuilt.added).catch(
         () => [],
@@ -861,7 +843,7 @@ async function activateMinus8(
   }
   return {
     done: [
-      narrate(PARALLEL_PROOF.resolution),
+      narrate(PARALLEL_PROOF.flavor),
       `**${abilityLabel(PARALLEL_PROOF)}:** opened **${
         sets[0].toUpperCase()
       }** and **${
@@ -1007,18 +989,23 @@ async function pickPack(
   return outcome;
 }
 
+/** Disables every button, highlighting `chosenId` if given. */
 function disabledButtons(
   message: djs.Message,
+  chosenId?: string,
 ): djs.ActionRowBuilder<djs.ButtonBuilder>[] {
   return message.components.flatMap((row) =>
     row.type === djs.ComponentType.ActionRow
       ? [
         new djs.ActionRowBuilder<djs.ButtonBuilder>().addComponents(
-          row.components.flatMap((c) =>
-            c.type === djs.ComponentType.Button
-              ? [djs.ButtonBuilder.from(c).setDisabled(true)]
-              : []
-          ),
+          row.components.flatMap((c) => {
+            if (c.type !== djs.ComponentType.Button) return [];
+            const button = djs.ButtonBuilder.from(c).setDisabled(true);
+            if (chosenId && c.customId === chosenId) {
+              button.setStyle(djs.ButtonStyle.Success);
+            }
+            return [button];
+          }),
         ),
       ]
       : []
@@ -1085,12 +1072,16 @@ export const jaceInteractionHandler: Handler<djs.Interaction> = async (
       };
     }
     await interaction.editReply({
+      components: "retry" in outcome
+        ? original
+        : disabledButtons(interaction.message, interaction.customId),
+    });
+    await interaction.followUp({
       content: "done" in outcome
         ? outcome.done
         : "retry" in outcome
         ? outcome.retry
         : outcome.failed,
-      components: "retry" in outcome ? original : [],
     });
   } catch (e) {
     console.error("[fra] Jace interaction failed:", e);
