@@ -6,18 +6,14 @@ import { fracturePackHandler } from "./fracture-pack.ts";
 import { jaceInteractionHandler, jaceResendHandler } from "./jace.ts";
 import { watchFraMatches } from "./match-watch.ts";
 import { fraPoolHandler } from "./pool-command.ts";
-import { watchFraRivals } from "./rival-watch.ts";
 import { undoLossHandler, undoLossInteractionHandler } from "./undo-loss.ts";
 
-/** Reality Fracture background watches: rival pairings, matches, entropy. */
+/** Reality Fracture background watches: matches and entropy. */
 async function watchFra(client: Client): Promise<void> {
-  await Promise.all([watchFraRivals(client), watchFraMatches(client)]);
+  await watchFraMatches(client);
 }
 
-/**
- * Reality Fracture (FRA) — live league. Rival announcements use the
- * registration sheet; everything else uses the FRA league sheet.
- */
+/** Reality Fracture (FRA) — live league, backed by the FRA league sheet. */
 export function setup(): Promise<LeagueSetup> {
   const sheet = fraSheet();
   const announcer = getMatchAnnouncer(sheet, "fra");
