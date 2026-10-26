@@ -377,8 +377,9 @@ export class LeagueSheet {
   /** Gets quota information for different weeks. */
   async getQuotas() {
     if (this.#quotas) return this.#quotas;
-    // Header at row 7; data rows 8–11 cover a 3-week league (+ spare).
-    const table = await this.readTable("Quotas!A7:E11", 7);
+    // Header on row 7. Week 0 (registration) and each league week follow.
+    // Rows 8–11 only covered a 3-week league, so week 4+ never loaded.
+    const table = await this.readTable("Quotas!A7:E", 7);
     // Skip leftover notes / blank rows under the quota block.
     const filtered = {
       ...table,
