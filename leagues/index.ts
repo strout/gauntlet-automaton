@@ -1,10 +1,14 @@
 import { setup as setupFra } from "./fra/fra.ts";
+import { setup as setupTrk } from "./trk/trk.ts";
 import { CombinedLeagueSetup, combineSetups } from "./setup.ts";
 
 export type { CombinedLeagueSetup, LeagueSetup } from "./setup.ts";
 export { combineSetups, leagueByName } from "./setup.ts";
 
-/** Active live league (Reality Fracture). NXT 2026 is archived under `archive/leagues/nxt-2026/`. */
+/**
+ * Active leagues. Reality Fracture is live. TRK watches the upcoming sheet
+ * and does not roll packs yet.
+ */
 export async function setupLeagues(): Promise<CombinedLeagueSetup> {
-  return combineSetups([await setupFra()]);
+  return combineSetups([await setupFra(), await setupTrk()]);
 }
