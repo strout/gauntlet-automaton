@@ -4,19 +4,16 @@ import { liveSheet } from "../../standings.ts";
 import { LeagueSetup } from "../setup.ts";
 import { trkSheet } from "./constants.ts";
 import { watchTrkMatches } from "./match-watch.ts";
-import { watchTrkStartingPools } from "./starting-pool.ts";
+import { trekPoolHandler } from "./pool-command.ts";
 
-/** TRK background watches: match reports, and the starting-pool stub. */
-async function watchTrk(client: Client): Promise<void> {
-  await Promise.all([
-    watchTrkMatches(client),
-    watchTrkStartingPools(client),
-  ]);
+/** TRK background watch: match reports on the upcoming sheet. */
+function watchTrk(client: Client): Promise<void> {
+  return watchTrkMatches(client);
 }
 
 /**
- * TRK. Match reports run against the upcoming sheet. Starting pools and
- * comeback packs are stubs.
+ * TRK. Match reports and `!trekpool` use the upcoming sheet. Comeback packs
+ * are still a stub.
  */
 export function setup(): Promise<LeagueSetup> {
   const upcoming = trkSheet();
@@ -26,7 +23,7 @@ export function setup(): Promise<LeagueSetup> {
     sheet,
     announcer: upcoming ? getMatchAnnouncer(upcoming, "trk") : undefined,
     watch: watchTrk,
-    messageHandlers: [],
+    messageHandlers: [trekPoolHandler],
     interactionHandlers: [],
   });
 }
