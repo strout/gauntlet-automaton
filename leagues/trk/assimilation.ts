@@ -12,6 +12,7 @@ const ASSIMILATION_SHEET = "Assimilation";
 const PLAYER_COLUMN = "Your Name";
 const CARD_COLUMN = "Card to be added to Borg pool upon assimilation";
 const VALID_COLUMN = "Valid?";
+const MARKED_COLUMN = "Marked for pool";
 
 const SHAMES = [
   "Your compliance has been found wanting. The Collective is disappointed.",
@@ -21,6 +22,10 @@ const SHAMES = [
   "Your biological distinctiveness is no excuse for such a failure.",
   "The Collective has detected a defect. Your shame will be remembered across all drones.",
 ] as const;
+
+type AssimilationRow = Awaited<
+  ReturnType<LeagueSheet["readTable"]>
+>["rows"][number];
 
 /** Poll Assimilation rows whose Valid? cell is still empty. */
 export async function watchTrkAssimilation(client: Client): Promise<never> {
@@ -45,8 +50,8 @@ export async function watchTrkAssimilation(client: Client): Promise<never> {
 
 /**
  * An empty Valid? cell is checked against that player's starting pool.
- * A card that is not in the pool is marked false and shamed in general chat.
- * A card that is in the pool is marked true.
+ * The latest checked row is their current submission: Marked for pool is
+ * true on that row when the card is valid, and empty on their other rows.
  */
 export async function checkTrkAssimilation(
   client: Client,
@@ -54,13 +59,17 @@ export async function checkTrkAssimilation(
 ): Promise<void> {
   console.log("[trk] Checking assimilation submissions…");
   const [table, players, poolChanges] = await Promise.all([
-    sheet.readTable(`${ASSIMILATION_SHEET}!A:E`),
+    sheet.readTable(`${ASSIMILATION_SHEET}!A:F`),
     sheet.getPlayers(),
     sheet.getPoolChanges(),
   ]);
   const validColumn = table.headerColumns[VALID_COLUMN];
+  const markedColumn = table.headerColumns[MARKED_COLUMN];
   if (validColumn === undefined) {
     throw new Error(`Assimilation tab has no "${VALID_COLUMN}" column`);
+  }
+  if (markedColumn === undefined) {
+    throw new Error(`Assimilation tab has no "${MARKED_COLUMN}" column`);
   }
 
   for (const row of table.rows) {
@@ -104,21 +113,55 @@ export async function checkTrkAssimilation(
     }
 
     const valid = cardInPool(pool, card);
-    if (valid) {
-      await markValid(sheet, row[ROWNUM], validColumn, true);
-      continue;
+    if (!valid) {
+      const channel = await client.channels.fetch(
+        CONFIG.GENERAL_CHAT_CHANNEL_ID,
+      );
+      if (!(channel instanceof TextChannel)) {
+        console.error("[trk] Could not find general chat");
+        return;
+      }
+      const line = choice(SHAMES) ?? SHAMES[0];
+      await channel.send(
+        `<@${discordId}> ${line}\nYou did not select a card that is in your starting pool. (**${card}**)`,
+      );
     }
+    await writeCell(sheet, row[ROWNUM], validColumn, valid);
+    row[VALID_COLUMN] = valid;
+  }
 
-    const channel = await client.channels.fetch(CONFIG.GENERAL_CHAT_CHANNEL_ID);
-    if (!(channel instanceof TextChannel)) {
-      console.error("[trk] Could not find general chat");
-      return;
+  await syncMarkedForPool(sheet, table.rows, markedColumn);
+}
+
+/**
+ * One marked card per player: the latest checked submission, when it is valid.
+ * A newer submission clears the previous mark.
+ */
+async function syncMarkedForPool(
+  sheet: LeagueSheet,
+  rows: readonly AssimilationRow[],
+  markedColumn: number,
+): Promise<void> {
+  const byPlayer = new Map<string, AssimilationRow[]>();
+  for (const row of rows) {
+    const name = cellText(row[PLAYER_COLUMN]);
+    if (!name) continue;
+    const group = byPlayer.get(name) ?? [];
+    group.push(row);
+    byPlayer.set(name, group);
+  }
+
+  for (const group of byPlayer.values()) {
+    const checked = group.filter((row) => !isBlank(row[VALID_COLUMN]));
+    const latest = checked.at(-1);
+    if (!latest) continue;
+    const keep = isTrue(latest[VALID_COLUMN]) ? latest : undefined;
+    for (const row of group) {
+      const want = row === keep;
+      if (isTrue(row[MARKED_COLUMN]) === want) continue;
+      await writeCell(sheet, row[ROWNUM], markedColumn, want ? true : "");
+      row[MARKED_COLUMN] = want ? true : "";
     }
-    const line = choice(SHAMES) ?? SHAMES[0];
-    await channel.send(
-      `<@${discordId}> ${line}\nYou did not select a card that is in your starting pool. (**${card}**)`,
-    );
-    await markValid(sheet, row[ROWNUM], validColumn, false);
   }
 }
 
@@ -170,17 +213,21 @@ function isBlank(value: unknown): boolean {
   return false;
 }
 
-function markValid(
+function isTrue(value: unknown): boolean {
+  return value === true || String(value ?? "").trim().toUpperCase() === "TRUE";
+}
+
+function writeCell(
   sheet: LeagueSheet,
   rowNum: number,
   column: number,
-  valid: boolean,
+  value: boolean | string,
 ): Promise<unknown> {
   return sheetsWrite(
     sheets,
     sheet.sheetId,
     `${ASSIMILATION_SHEET}!R${rowNum}C${column + 1}`,
-    [[valid]],
+    [[value]],
     "RAW",
   );
 }
