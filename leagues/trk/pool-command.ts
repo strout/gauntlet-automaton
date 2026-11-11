@@ -61,6 +61,39 @@ async function rareImage(
   }
 }
 
+async function poolMessage(
+  pool: readonly ScryfallCard[],
+  poolId: string,
+  title: string,
+  content: string,
+  member?: djs.GuildMember,
+): Promise<djs.MessageCreateOptions> {
+  const list = pool.map((card) =>
+    `${card.name} (${card.set.toUpperCase()}) ${card.collector_number}`
+  ).join("\n");
+  const files: djs.AttachmentBuilder[] = [
+    new djs.AttachmentBuilder(Buffer.from(list, "utf8"), {
+      name: "pool.txt",
+      description: "Trek starting pool card list",
+    }),
+  ];
+  const rares = await rareImage(pool);
+  if (rares) files.push(rares);
+  const embed = new djs.EmbedBuilder()
+    .setTitle(title)
+    .setDescription(`${pool.length} cards`)
+    .addFields(
+      {
+        name: "Pool",
+        value: `[Pool contents](https://sealeddeck.tech/${poolId})`,
+      },
+      { name: "SealedDeck ID", value: `\`${poolId}\``, inline: true },
+    );
+  if (member) embed.setThumbnail(member.displayAvatarURL({ size: 256 }));
+  if (rares) embed.setImage("attachment://rares.png");
+  return { content, embeds: [embed], files };
+}
+
 /**
  * `!trekpool @player` — LC only. Rolls an 84-card Trek starting pool, posts
  * it in #starting-pools, and records it on Pool Changes.
@@ -154,38 +187,16 @@ export const trekPoolHandler: Handler<djs.Message> = async (
 
   const poolLink = `https://sealeddeck.tech/${poolId}`;
   try {
-    const list = pool.map((card) =>
-      `${card.name} (${card.set.toUpperCase()}) ${card.collector_number}`
-    ).join("\n");
-    const files: djs.AttachmentBuilder[] = [
-      new djs.AttachmentBuilder(Buffer.from(list, "utf8"), {
-        name: "pool.txt",
-        description: "Trek starting pool card list",
-      }),
-    ];
-    const rares = await rareImage(pool);
-    if (rares) files.push(rares);
-
     const member = await message.guild.members.fetch(discordId).catch(() =>
       undefined
     );
-    const embed = new djs.EmbedBuilder()
-      .setTitle(
-        `Trek starting pool — ${member?.displayName ?? player.Identification}`,
-      )
-      .setDescription(`${pool.length} cards`)
-      .addFields(
-        { name: "Pool", value: `[Pool contents](${poolLink})` },
-        { name: "SealedDeck ID", value: `\`${poolId}\``, inline: true },
-      );
-    if (member) embed.setThumbnail(member.displayAvatarURL({ size: 256 }));
-    if (rares) embed.setImage("attachment://rares.png");
-
-    const payload = {
-      content: `Starting pool for <@${discordId}>`,
-      embeds: [embed],
-      files,
-    };
+    const payload = await poolMessage(
+      pool,
+      poolId,
+      `Trek starting pool — ${member?.displayName ?? player.Identification}`,
+      `Starting pool for <@${discordId}>`,
+      member,
+    );
     const startingPools = message.channelId === CONFIG.STARTING_POOL_CHANNEL_ID
       ? message.channel
       : await message.client.channels.fetch(CONFIG.STARTING_POOL_CHANNEL_ID);
@@ -201,5 +212,48 @@ export const trekPoolHandler: Handler<djs.Message> = async (
     await message.channel.send(
       `Starting pool for **${player.Identification}** is recorded (${poolLink}) but the Discord post failed.`,
     );
+  }
+};
+
+/**
+ * `!trektest` — LC only, bot bunker only. Rolls a Trek pool and posts it in
+ * the bunker. Nothing is written to Pool Changes or #starting-pools.
+ */
+export const trekTestPoolHandler: Handler<djs.Message> = async (
+  message,
+  handle,
+) => {
+  const command = message.content.trim().split(/\s+/)[0]?.toLowerCase();
+  if (command !== "!trektest") return;
+  handle.claim();
+
+  if (!message.inGuild() || !message.channel.isTextBased()) {
+    await message.reply("Use this command in a server channel.");
+    return;
+  }
+  if (message.channelId !== CONFIG.BOT_BUNKER_CHANNEL_ID) {
+    await message.reply("Use `!trektest` in the bot bunker.");
+    return;
+  }
+  if (!await isLeagueCommittee(message.client, message.author.id)) {
+    await message.reply("Only League Committee members can run `!trektest`.");
+    return;
+  }
+
+  await message.reply("Rolling a test Trek pool…");
+  try {
+    const pool = await rollTrkStartingPool();
+    const poolId = await makeSealedDeck({ sideboard: sealedEntries(pool) });
+    await message.channel.send(
+      await poolMessage(
+        pool,
+        poolId,
+        "Trek test pool",
+        "Test pool. Not recorded.",
+      ),
+    );
+  } catch (err) {
+    console.error("[trk] !trektest failed:", err);
+    await message.channel.send("Failed to roll a test Trek pool. Check logs.");
   }
 };

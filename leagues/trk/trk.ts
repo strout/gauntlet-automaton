@@ -4,7 +4,7 @@ import { liveSheet } from "../../standings.ts";
 import { LeagueSetup } from "../setup.ts";
 import { trkSheet } from "./constants.ts";
 import { watchTrkMatches } from "./match-watch.ts";
-import { trekPoolHandler } from "./pool-command.ts";
+import { trekPoolHandler, trekTestPoolHandler } from "./pool-command.ts";
 
 /** TRK background watch: match reports on the upcoming sheet. */
 function watchTrk(client: Client): Promise<void> {
@@ -23,7 +23,7 @@ export function setup(): Promise<LeagueSetup> {
     sheet,
     announcer: upcoming ? getMatchAnnouncer(upcoming, "trk") : undefined,
     watch: watchTrk,
-    messageHandlers: [trekPoolHandler],
+    messageHandlers: [trekPoolHandler, trekTestPoolHandler],
     interactionHandlers: [],
   });
 }
