@@ -2,13 +2,17 @@ import { Client } from "discord.js";
 import { getMatchAnnouncer } from "../../match_announcer.ts";
 import { liveSheet } from "../../standings.ts";
 import { LeagueSetup } from "../setup.ts";
+import { watchTrkAssimilation } from "./assimilation.ts";
 import { trkSheet } from "./constants.ts";
 import { watchTrkMatches } from "./match-watch.ts";
 import { trekPoolHandler, trekTestPoolHandler } from "./pool-command.ts";
 
-/** TRK background watch: match reports on the upcoming sheet. */
+/** TRK background watches: match reports and assimilation checks. */
 function watchTrk(client: Client): Promise<void> {
-  return watchTrkMatches(client);
+  return Promise.all([
+    watchTrkMatches(client),
+    watchTrkAssimilation(client),
+  ]).then(() => undefined);
 }
 
 /**
