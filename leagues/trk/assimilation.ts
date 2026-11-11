@@ -50,8 +50,8 @@ export async function watchTrkAssimilation(client: Client): Promise<never> {
 
 /**
  * An empty Valid? cell is checked against that player's starting pool.
- * The latest checked row is their current submission: Marked for pool is
- * true on that row when the card is valid, and empty on their other rows.
+ * Marked for pool stays on their latest valid card. A newer valid card
+ * replaces it. An invalid card does not.
  */
 export async function checkTrkAssimilation(
   client: Client,
@@ -134,8 +134,8 @@ export async function checkTrkAssimilation(
 }
 
 /**
- * One marked card per player: the latest checked submission, when it is valid.
- * A newer submission clears the previous mark.
+ * One marked card per player: their latest valid submission. A newer valid
+ * card clears the previous mark. An invalid card does not.
  */
 async function syncMarkedForPool(
   sheet: LeagueSheet,
@@ -152,10 +152,7 @@ async function syncMarkedForPool(
   }
 
   for (const group of byPlayer.values()) {
-    const checked = group.filter((row) => !isBlank(row[VALID_COLUMN]));
-    const latest = checked.at(-1);
-    if (!latest) continue;
-    const keep = isTrue(latest[VALID_COLUMN]) ? latest : undefined;
+    const keep = group.findLast((row) => isTrue(row[VALID_COLUMN]));
     for (const row of group) {
       const want = row === keep;
       if (isTrue(row[MARKED_COLUMN]) === want) continue;
