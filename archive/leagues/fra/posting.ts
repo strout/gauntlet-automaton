@@ -1,6 +1,6 @@
 import * as djs from "discord.js";
 import { Buffer } from "node:buffer";
-import type { ScryfallCard } from "../../scryfall.ts";
+import type { ScryfallCard } from "../../../scryfall.ts";
 
 const WUBRG = ["W", "U", "B", "R", "G"] as const;
 

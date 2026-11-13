@@ -1,12 +1,12 @@
-import { type LeagueSheet, upcomingSheet } from "../../standings.ts";
+import { type LeagueSheet, liveSheet } from "../../standings.ts";
 
 /** Column on the Matches tab set once a row has been announced. */
 export const MATCH_ANNOUNCED_COLUMN = "Match Announced";
 
-/**
- * TRK's spreadsheet. The upcoming sheet until TRK replaces the live league,
- * so this never writes to the league that is already running.
- */
-export function trkSheet(): LeagueSheet | undefined {
-  return upcomingSheet;
+/** Column on the Matches tab set once the planet menu DM has been delivered. */
+export const DM_SENT_COLUMN = "DM Sent";
+
+/** TRK's spreadsheet. TRK is the live league. */
+export function trkSheet(): LeagueSheet {
+  return liveSheet;
 }

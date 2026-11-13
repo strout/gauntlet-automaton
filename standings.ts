@@ -341,7 +341,7 @@ export class LeagueSheet {
     sheetName = POOL_CHANGES_SHEET_NAME,
     extras?: z.ZodObject<S>,
   ) {
-    const table = await this.readTable(`${sheetName}!A:F`, 1);
+    const table = await this.readTable(`${sheetName}!A:G`, 1);
     return parseTable(
       {
         Timestamp: z.union([z.string(), z.number()]),
@@ -880,7 +880,9 @@ export async function rebuildPoolContents(
   for (const e of entries) {
     switch (e[2]) {
       case "starting pool":
-      case "add pack": {
+      case "add pack":
+      case "loss pack": {
+        if (e[2] === "loss pack" && e[3] === "pending") break;
         packs.push(e[3]);
         break;
       }

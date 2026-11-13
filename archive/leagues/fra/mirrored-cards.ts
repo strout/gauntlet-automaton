@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { sheets, sheetsAppend, sheetsWrite } from "../../sheets.ts";
-import { type LeagueSheet, parseTable, ROWNUM } from "../../standings.ts";
+import { sheets, sheetsAppend, sheetsWrite } from "../../../sheets.ts";
+import { type LeagueSheet, parseTable, ROWNUM } from "../../../standings.ts";
 import type { EchoedRarity } from "./cards.ts";
 import { MIRRORED_CARDS_TAB } from "./constants.ts";
 import type { SamePlayer } from "./rivals.ts";

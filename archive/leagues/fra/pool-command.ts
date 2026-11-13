@@ -1,9 +1,9 @@
 import * as djs from "discord.js";
 import { Buffer } from "node:buffer";
-import { CONFIG } from "../../config.ts";
-import { Handler } from "../../dispatch.ts";
-import { type ScryfallCard, tileRareImages } from "../../scryfall.ts";
-import { makeSealedDeck } from "../../sealeddeck.ts";
+import { CONFIG } from "../../../config.ts";
+import { Handler } from "../../../dispatch.ts";
+import { type ScryfallCard, tileRareImages } from "../../../scryfall.ts";
+import { makeSealedDeck } from "../../../sealeddeck.ts";
 import {
   type CardCounts,
   COMMON_SLOTS,

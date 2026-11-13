@@ -1,5 +1,5 @@
 import * as djs from "discord.js";
-import { CONFIG } from "../../config.ts";
+import { CONFIG } from "../../../config.ts";
 
 export async function isLeagueCommittee(
   client: djs.Client,

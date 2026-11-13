@@ -1,5 +1,5 @@
-import { choice } from "../../random.ts";
-import { type ScryfallCard, searchCards } from "../../scryfall.ts";
+import { choice } from "../../../random.ts";
+import { type ScryfallCard, searchCards } from "../../../scryfall.ts";
 
 /** Scryfall queries for FRA starting pools and comeback packs. */
 export const FRA_QUERIES = {

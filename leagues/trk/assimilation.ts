@@ -29,20 +29,12 @@ type AssimilationRow = Awaited<
 
 /** Poll Assimilation rows whose Valid? cell is still empty. */
 export async function watchTrkAssimilation(client: Client): Promise<never> {
-  let warned = false;
+  const sheet = trkSheet();
   while (true) {
-    const sheet = trkSheet();
-    if (!sheet) {
-      if (!warned) {
-        console.log("[trk] No UPCOMING_SHEET_ID; assimilation watch is idle.");
-        warned = true;
-      }
-    } else {
-      try {
-        await checkTrkAssimilation(client, sheet);
-      } catch (err) {
-        console.error("[trk] assimilation watch error:", err);
-      }
+    try {
+      await checkTrkAssimilation(client, sheet);
+    } catch (err) {
+      console.error("[trk] assimilation watch error:", err);
     }
     await delay(POLL_MS);
   }
@@ -131,6 +123,28 @@ export async function checkTrkAssimilation(
   }
 
   await syncMarkedForPool(sheet, table.rows, markedColumn);
+}
+
+/** True when this player has a row whose Valid? cell is true. */
+export async function hasValidTrkAssimilation(
+  sheet: LeagueSheet,
+  identification: string,
+): Promise<boolean> {
+  const valid = await validTrkAssimilations(sheet);
+  return valid.has(identification);
+}
+
+/** Identifications with a Valid? assimilation row. One sheet read. */
+export async function validTrkAssimilations(
+  sheet: LeagueSheet,
+): Promise<ReadonlySet<string>> {
+  const table = await sheet.readTable(`${ASSIMILATION_SHEET}!A:F`);
+  const names = new Set<string>();
+  for (const row of table.rows) {
+    const name = cellText(row[PLAYER_COLUMN]);
+    if (name && isTrue(row[VALID_COLUMN])) names.add(name);
+  }
+  return names;
 }
 
 /**

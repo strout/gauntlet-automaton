@@ -1,12 +1,12 @@
 import { delay } from "@std/async";
 import { Client, TextChannel } from "discord.js";
-import { CONFIG } from "../../config.ts";
-import { getEntropyAnnouncer } from "../../entropy.ts";
+import { CONFIG } from "../../../config.ts";
+import { getEntropyAnnouncer } from "../../../entropy.ts";
 import {
   getMatchAnnouncer,
   type MatchAnnouncer,
-} from "../../match_announcer.ts";
-import { MATCHTYPE, ROWNUM } from "../../standings.ts";
+} from "../../../match_announcer.ts";
+import { MATCHTYPE, ROWNUM } from "../../../standings.ts";
 import { MATCH_ANNOUNCED_COLUMN, resolveFraSheet } from "./constants.ts";
 
 const POLL_MS = 30_000;
