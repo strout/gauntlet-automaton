@@ -1,4 +1,4 @@
-import { type LeagueSheet, ROW } from "../../standings.ts";
+import { type LeagueSheet, ROW } from "../../../standings.ts";
 
 export const RIVAL_PAIRINGS_TAB = "Rival Pairings";
 

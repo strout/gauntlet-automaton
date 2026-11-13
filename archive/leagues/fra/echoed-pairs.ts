@@ -1,4 +1,4 @@
-import type { ScryfallCard } from "../../scryfall.ts";
+import type { ScryfallCard } from "../../../scryfall.ts";
 import { fraCardsFor } from "./cards.ts";
 
 const CSV_URL = new URL("./echoed_pairs.csv", import.meta.url);

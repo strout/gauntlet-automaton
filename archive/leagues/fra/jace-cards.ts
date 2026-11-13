@@ -1,6 +1,6 @@
-import { choice } from "../../random.ts";
-import { type ScryfallCard, searchCards } from "../../scryfall.ts";
-import type { SealedDeckEntry, SealedDeckPool } from "../../sealeddeck.ts";
+import { choice } from "../../../random.ts";
+import { type ScryfallCard, searchCards } from "../../../scryfall.ts";
+import type { SealedDeckEntry, SealedDeckPool } from "../../../sealeddeck.ts";
 import { fraCardsFor, type FraQueryKey } from "./cards.ts";
 import type { MirroredCardRow } from "./mirrored-cards.ts";
 import { findEchoedCardByName, toSealedDeckEntries } from "./rolling.ts";

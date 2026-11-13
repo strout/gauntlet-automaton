@@ -1,4 +1,4 @@
-import { choice } from "../../random.ts";
+import { choice, weightedChoice } from "../../random.ts";
 import { type ScryfallCard, searchCards } from "../../scryfall.ts";
 
 /**
@@ -53,10 +53,14 @@ async function cardsFor(key: TrkQueryKey): Promise<readonly ScryfallCard[]> {
 function pick(
   cards: readonly ScryfallCard[],
   counts: CardCounts,
+  maxCopies = MAX_COPIES,
 ): ScryfallCard {
   const allowed = cards.filter((card) =>
-    (counts.get(card.name) ?? 0) < MAX_COPIES
+    (counts.get(card.name) ?? 0) < maxCopies
   );
+  if (allowed.length === 0 && maxCopies < MAX_COPIES) {
+    throw new Error("No card left under the copy limit");
+  }
   const picked = choice(allowed.length > 0 ? allowed : cards);
   if (!picked) throw new Error("Trek pool query returned no cards");
   counts.set(picked.name, (counts.get(picked.name) ?? 0) + 1);
@@ -66,8 +70,9 @@ function pick(
 async function pickKey(
   key: TrkQueryKey,
   counts: CardCounts,
+  maxCopies = MAX_COPIES,
 ): Promise<ScryfallCard> {
-  return pick(await cardsFor(key), counts);
+  return pick(await cardsFor(key), counts, maxCopies);
 }
 
 async function pickRareOrMythic(counts: CardCounts): Promise<ScryfallCard> {
@@ -79,9 +84,12 @@ async function pickRepeat(
   key: TrkQueryKey,
   count: number,
   counts: CardCounts,
+  maxCopies = MAX_COPIES,
 ): Promise<ScryfallCard[]> {
   const cards: ScryfallCard[] = [];
-  for (let i = 0; i < count; i++) cards.push(await pickKey(key, counts));
+  for (let i = 0; i < count; i++) {
+    cards.push(await pickKey(key, counts, maxCopies));
+  }
   return cards;
 }
 
@@ -119,4 +127,95 @@ export async function rollTrkStartingPool(): Promise<ScryfallCard[]> {
     throw new Error(`Trek starting pool has ${pool.length} cards, expected 84`);
   }
   return pool;
+}
+
+const PACK_COLORS = [
+  "white",
+  "blue",
+  "black",
+  "red",
+  "green",
+] as const satisfies readonly TrkQueryKey[];
+
+/** Any common, including basics and duals. Used by wildcard slots. */
+const ANY_COMMON = "s:trk r:c";
+/** A basic land. The starting pool has no separate basic slot. */
+const BASIC_LAND = "s:trk t:basic";
+
+const COMMON_EXCLUSIONS = "-t:basic -(t:land o:life)";
+
+/**
+ * 14 cards. One rare or mythic (mythic 1 in 6, same as a starting-pool slot),
+ * 3 uncommons, 7 commons (one of each color and two of any other common,
+ * with basics and duals removed), one land (half basic, half common dual),
+ * one common-or-uncommon wildcard, and one wildcard weighted common 25,
+ * uncommon 55, rare 17, mythic 3. Each uncommon name appears at most once.
+ */
+export async function rollTrkLossPack(): Promise<ScryfallCard[]> {
+  const counts: CardCounts = new Map();
+  const colorCommons: ScryfallCard[] = [];
+  for (const color of PACK_COLORS) {
+    colorCommons.push(
+      await pickQuery(
+        `${TRK_QUERIES[color]} ${COMMON_EXCLUSIONS}`,
+        color,
+        counts,
+      ),
+    );
+  }
+  const anyCommons = await cardsFor("anyCommon");
+  const pack = [
+    await pickRareOrMythic(counts),
+    ...await pickRepeat("uncommon", 3, counts, 1),
+    ...colorCommons,
+    pick(anyCommons, counts),
+    pick(anyCommons, counts),
+    await pickLossLand(counts),
+    await pickWeighted([
+      ["common", 1],
+      ["uncommon", 1],
+    ], counts),
+    await pickWeighted([
+      ["common", 25],
+      ["uncommon", 55],
+      ["rare", 17],
+      ["mythic", 3],
+    ], counts),
+  ];
+  if (pack.length !== 14) {
+    throw new Error(`Trek loss pack has ${pack.length} cards, expected 14`);
+  }
+  return pack;
+}
+
+async function pickLossLand(counts: CardCounts): Promise<ScryfallCard> {
+  if (Math.random() < 0.5) {
+    return await pickQuery(BASIC_LAND, "basic", counts);
+  }
+  return await pickKey("dualLand", counts);
+}
+
+type PackRarity = "common" | "uncommon" | "rare" | "mythic";
+
+async function pickWeighted(
+  weights: readonly [PackRarity, number][],
+  counts: CardCounts,
+): Promise<ScryfallCard> {
+  const rarity = weightedChoice(weights);
+  if (!rarity) throw new Error("Loss pack wildcard weights were empty");
+  if (rarity === "common") return await pickQuery(ANY_COMMON, "common", counts);
+  const maxCopies = rarity === "uncommon" ? 1 : MAX_COPIES;
+  return await pickKey(rarity, counts, maxCopies);
+}
+
+async function pickQuery(
+  query: string,
+  label: string,
+  counts: CardCounts,
+): Promise<ScryfallCard> {
+  const cards = await searchCards(query);
+  if (cards.length === 0) {
+    throw new Error(`No cards matched ${label}: ${query}`);
+  }
+  return pick(cards, counts);
 }

@@ -1,7 +1,7 @@
 import * as djs from "discord.js";
-import { CONFIG } from "../../config.ts";
-import { Handler } from "../../dispatch.ts";
-import { type LeagueSheet, ROWNUM } from "../../standings.ts";
+import { CONFIG } from "../../../config.ts";
+import { Handler } from "../../../dispatch.ts";
+import { type LeagueSheet, ROWNUM } from "../../../standings.ts";
 import { resolveFraSheet } from "./constants.ts";
 import { isLeagueCommittee, resolveDiscordId } from "./discord-utils.ts";
 import {

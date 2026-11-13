@@ -1,22 +1,22 @@
 import * as djs from "discord.js";
 import { z } from "zod";
-import { CONFIG } from "../../config.ts";
-import { Handler } from "../../dispatch.ts";
-import { waitForBoosterTutor } from "../../pending.ts";
-import { choice } from "../../random.ts";
+import { CONFIG } from "../../../config.ts";
+import { Handler } from "../../../dispatch.ts";
+import { waitForBoosterTutor } from "../../../pending.ts";
+import { choice } from "../../../random.ts";
 import {
   type ScryfallCard,
   searchCards,
   tileCardImages,
-} from "../../scryfall.ts";
+} from "../../../scryfall.ts";
 import {
   fetchSealedDeck,
   formatPool,
   makeSealedDeck,
   type SealedDeckPool,
-} from "../../sealeddeck.ts";
-import { sheets, sheetsWrite } from "../../sheets.ts";
-import { type LeagueSheet, ROWNUM } from "../../standings.ts";
+} from "../../../sealeddeck.ts";
+import { sheets, sheetsWrite } from "../../../sheets.ts";
+import { type LeagueSheet, ROWNUM } from "../../../standings.ts";
 import { resolveFraSheet } from "./constants.ts";
 import { isLeagueCommittee, resolveDiscordId } from "./discord-utils.ts";
 import {

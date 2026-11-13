@@ -1,7 +1,7 @@
-import { mutex } from "../../mutex.ts";
-import { choice } from "../../random.ts";
-import { type ScryfallCard, searchCards } from "../../scryfall.ts";
-import type { SealedDeckEntry } from "../../sealeddeck.ts";
+import { mutex } from "../../../mutex.ts";
+import { choice } from "../../../random.ts";
+import { type ScryfallCard, searchCards } from "../../../scryfall.ts";
+import type { SealedDeckEntry } from "../../../sealeddeck.ts";
 import {
   addCopy,
   type CardCounts,

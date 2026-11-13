@@ -331,12 +331,15 @@ export async function searchCards(
  * Does not use the Scryfall response cache (each call should yield a new random card).
  *
  * @param query - Scryfall `q` search string
+ * @param unique - Scryfall `unique` mode. `cards` rolls each name once.
  * @returns A card, or `null` if nothing matches (Scryfall 404 / empty search)
  */
 export async function fetchRandomCardForQuery(
   query: string,
+  unique?: "cards" | "art" | "prints",
 ): Promise<ScryfallCard | null> {
   const params = new URLSearchParams({ q: query });
+  if (unique) params.set("unique", unique);
   const url = `https://api.scryfall.com/cards/random?${params.toString()}`;
 
   return await withRetry(

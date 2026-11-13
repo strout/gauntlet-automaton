@@ -12,17 +12,29 @@ export type Sheets = sheets_v4.Sheets;
 function withSmartRetry<T>(
   operation: (disable: () => void) => Promise<T>,
 ): Promise<T> {
-  return withRetry(async (disable) => {
-    try {
-      return await operation(disable);
-    } catch (e: any) {
-      if (e.code === 400) {
-        // This won't succeed on a retry, so disable retries
-        disable();
+  return withRetry(
+    async (disable) => {
+      try {
+        return await operation(disable);
+      } catch (e: any) {
+        if (e.code === 400) {
+          // This won't succeed on a retry, so disable retries
+          disable();
+        }
+        throw e;
       }
-      throw e;
-    }
-  });
+    },
+    128_000,
+    64,
+    sheetsRetryDelay,
+  );
+}
+
+/** Sheets read quota is per minute. Retrying a 429 inside that minute spends it. */
+function sheetsRetryDelay(error: unknown): number | undefined {
+  const code = (error as { code?: number; status?: number }).code ??
+    (error as { status?: number }).status;
+  return code === 429 ? 60_000 : undefined;
 }
 
 /**

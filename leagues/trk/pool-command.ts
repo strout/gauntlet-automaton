@@ -128,11 +128,6 @@ export const trekPoolHandler: Handler<djs.Message> = async (
   }
 
   const sheet = trkSheet();
-  if (!sheet) {
-    await message.reply("UPCOMING_SHEET_ID is not configured.");
-    return;
-  }
-
   const players = await sheet.getPlayers().catch((err) => {
     console.error("[trk] !trekpool failed to read players:", err);
     return undefined;

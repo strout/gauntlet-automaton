@@ -7,7 +7,12 @@ import {
   type MatchAnnouncer,
 } from "../../match_announcer.ts";
 import { MATCHTYPE, ROWNUM } from "../../standings.ts";
-import { grantTrkComebackPack } from "./comeback.ts";
+import {
+  offerTrkPlanet,
+  remindTrkBorgCard,
+  resumeTrkPlanets,
+  trkNeedsBorgCardReminder,
+} from "./comeback.ts";
 import { MATCH_ANNOUNCED_COLUMN, trkSheet } from "./constants.ts";
 
 const POLL_MS = 30_000;
@@ -26,22 +31,14 @@ const playerExtras = {
   }),
 };
 
-/** Poll TRK matches on the upcoming sheet. Losses call the comeback stub. */
+/** Poll TRK matches. Losses offer a planet to station. */
 export async function watchTrkMatches(client: Client): Promise<never> {
-  let warned = false;
+  const announcer = getMatchAnnouncer(trkSheet(), "trk");
   while (true) {
-    const sheet = trkSheet();
-    if (!sheet) {
-      if (!warned) {
-        console.log("[trk] No UPCOMING_SHEET_ID; match watch is idle.");
-        warned = true;
-      }
-    } else {
-      try {
-        await announceTrkMatches(client, getMatchAnnouncer(sheet, "trk"));
-      } catch (err) {
-        console.error("[trk] match watch error:", err);
-      }
+    try {
+      await announceTrkMatches(client, announcer);
+    } catch (err) {
+      console.error("[trk] match watch error:", err);
     }
     await delay(POLL_MS);
   }
@@ -49,7 +46,9 @@ export async function watchTrkMatches(client: Client): Promise<never> {
 
 /**
  * Unannounced match losses: announce the result and, unless the loser is
- * eliminated, hand off to {@link grantTrkComebackPack}.
+ * eliminated, ask them to station a planet once they have a valid Borg card.
+ * A first loss with no valid Assimilation row asks them to pick that card,
+ * and the planet and pack stay held until they do.
  */
 export async function announceTrkMatches(
   client: Client,
@@ -88,6 +87,8 @@ export async function announceTrkMatches(
       console.error("[trk] Could not find pack generation channel");
       return;
     }
+
+    await resumeTrkPlanets(client, sheet, packGenChannel);
 
     for (const match of matches.rows) {
       if (match[MATCHTYPE] !== "match") continue;
@@ -206,6 +207,11 @@ export async function announceTrkMatches(
       }
 
       const eliminated = loserInfo.Losses >= CONFIG.MAX_LOSSES;
+      const remindBorg = await trkNeedsBorgCardReminder(
+        sheet,
+        loserName,
+        loserInfo.Losses,
+      );
       let message = eliminated
         ? `${loserMention} was eliminated by ${winnerMention}.`
         : `${loserMention} was defeated ${match.Result} by ${winnerMention}.`;
@@ -231,12 +237,18 @@ export async function announceTrkMatches(
       try {
         await packGenChannel.send(message);
         if (!eliminated) {
-          await grantTrkComebackPack({
+          await offerTrkPlanet({
+            client,
             channel: packGenChannel,
             sheet,
             identification: loserName,
-            comment: `Loss against ${winnerName}`,
+            discordId: loserId,
+            opponent: winnerName,
+            matchRow: match[ROWNUM],
           });
+        }
+        if (remindBorg) {
+          await remindTrkBorgCard(client, loserId, packGenChannel);
         }
       } catch (err) {
         console.error("[trk] Failed to send match announcement:", err);

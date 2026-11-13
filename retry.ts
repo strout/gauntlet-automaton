@@ -48,10 +48,11 @@ export async function withRetry<T>(
 
       await delay(actualDelay + Math.random() * jitter);
 
-      // Only double the base delay if not using a custom delay
-      if (customDelay === undefined) {
-        retryDelay *= 2;
-      }
+      // A custom delay, such as a quota window, still has to advance the
+      // budget. Otherwise a 429 retries once a second until the minute ends.
+      retryDelay = customDelay === undefined
+        ? retryDelay * 2
+        : Math.max(retryDelay * 2, customDelay);
     }
   }
   throw lastError;

@@ -1,14 +1,18 @@
-import { sheets, sheetsTabTitles } from "../../sheets.ts";
-import { type LeagueSheet, liveSheet } from "../../standings.ts";
+import { sheets, sheetsTabTitles } from "../../../sheets.ts";
+import { archiveSheets, type LeagueSheet } from "../../../standings.ts";
 
 export const MATCH_ANNOUNCED_COLUMN = "Match Announced";
 
 /** FRA-only tab; its presence identifies the FRA league spreadsheet. */
 export const MIRRORED_CARDS_TAB = "Mirrored Cards";
 
-/** FRA's league spreadsheet (FRA is the live league). */
+/** FRA's archived spreadsheet. */
 export function fraSheet(): LeagueSheet {
-  return liveSheet;
+  const sheet = archiveSheets[0];
+  if (!sheet) {
+    throw new Error("FRA spreadsheet is not in ARCHIVE_SHEET_IDS");
+  }
+  return sheet;
 }
 
 let verifiedFraSheet: LeagueSheet | undefined;
@@ -17,7 +21,7 @@ let verifiedFraSheet: LeagueSheet | undefined;
  * {@link fraSheet}, after checking it has FRA's Mirrored Cards tab so FRA
  * never writes to another league's sheet.
  *
- * @throws if LIVE_SHEET_ID has no Mirrored Cards tab
+ * @throws if the archived sheet has no Mirrored Cards tab
  */
 export async function resolveFraSheet(): Promise<LeagueSheet> {
   if (verifiedFraSheet) return verifiedFraSheet;
@@ -25,8 +29,7 @@ export async function resolveFraSheet(): Promise<LeagueSheet> {
   const tabs = await sheetsTabTitles(sheets, sheet.sheetId);
   if (!tabs.includes(MIRRORED_CARDS_TAB)) {
     throw new Error(
-      `LIVE_SHEET_ID ${sheet.sheetId} has no "${MIRRORED_CARDS_TAB}" tab; ` +
-        `is it the FRA spreadsheet?`,
+      `Archived FRA sheet ${sheet.sheetId} has no "${MIRRORED_CARDS_TAB}" tab.`,
     );
   }
   verifiedFraSheet = sheet;
