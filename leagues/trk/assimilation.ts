@@ -1,13 +1,10 @@
-import { delay } from "@std/async";
 import { Client, TextChannel } from "discord.js";
 import { CONFIG } from "../../config.ts";
 import { choice } from "../../random.ts";
 import { fetchSealedDeck, type SealedDeckPool } from "../../sealeddeck.ts";
 import { sheets, sheetsWrite } from "../../sheets.ts";
 import { type LeagueSheet, ROWNUM } from "../../standings.ts";
-import { trkSheet } from "./constants.ts";
 
-const POLL_MS = 60_000;
 const ASSIMILATION_SHEET = "Assimilation";
 const PLAYER_COLUMN = "Your Name";
 const CARD_COLUMN = "Card to be added to Borg pool upon assimilation";
@@ -27,19 +24,6 @@ type AssimilationRow = Awaited<
   ReturnType<LeagueSheet["readTable"]>
 >["rows"][number];
 
-/** Poll Assimilation rows whose Valid? cell is still empty. */
-export async function watchTrkAssimilation(client: Client): Promise<never> {
-  const sheet = trkSheet();
-  while (true) {
-    try {
-      await checkTrkAssimilation(client, sheet);
-    } catch (err) {
-      console.error("[trk] assimilation watch error:", err);
-    }
-    await delay(POLL_MS);
-  }
-}
-
 /**
  * An empty Valid? cell is checked against that player's starting pool.
  * Marked for pool stays on their latest valid card. A newer valid card
@@ -49,7 +33,6 @@ export async function checkTrkAssimilation(
   client: Client,
   sheet: LeagueSheet,
 ): Promise<void> {
-  console.log("[trk] Checking assimilation submissions…");
   const [table, players, poolChanges] = await Promise.all([
     sheet.readTable(`${ASSIMILATION_SHEET}!A:F`),
     sheet.getPlayers(),

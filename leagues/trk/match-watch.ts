@@ -7,6 +7,7 @@ import {
   type MatchAnnouncer,
 } from "../../match_announcer.ts";
 import { MATCHTYPE, ROWNUM } from "../../standings.ts";
+import { checkTrkAssimilation } from "./assimilation.ts";
 import {
   offerTrkPlanet,
   remindTrkBorgCard,
@@ -16,6 +17,8 @@ import {
 import { MATCH_ANNOUNCED_COLUMN, trkSheet } from "./constants.ts";
 
 const POLL_MS = 30_000;
+/** Assimilation is checked on every other match poll, so about once a minute. */
+const ASSIMILATION_EVERY = 2;
 
 /** Player Database column: matches still allowed under this week's max. */
 const MATCHES_UNDER_MAX = "MATCHES <Max";
@@ -31,15 +34,31 @@ const playerExtras = {
   }),
 };
 
-/** Poll TRK matches. Losses offer a planet to station. */
+/** Poll TRK matches, and assimilation on every other pass. */
 export async function watchTrkMatches(client: Client): Promise<never> {
-  const announcer = getMatchAnnouncer(trkSheet(), "trk");
+  const sheet = trkSheet();
+  const announcer = getMatchAnnouncer(sheet, "trk");
+  let polls = 0;
   while (true) {
+    const assimilation = polls % ASSIMILATION_EVERY === 0;
+    console.log(
+      assimilation
+        ? "[trk] Checking matches and assimilation…"
+        : "[trk] Checking matches…",
+    );
     try {
       await announceTrkMatches(client, announcer);
     } catch (err) {
       console.error("[trk] match watch error:", err);
     }
+    if (assimilation) {
+      try {
+        await checkTrkAssimilation(client, sheet);
+      } catch (err) {
+        console.error("[trk] assimilation watch error:", err);
+      }
+    }
+    polls++;
     await delay(POLL_MS);
   }
 }
@@ -54,8 +73,6 @@ export async function announceTrkMatches(
   client: Client,
   announcer: MatchAnnouncer,
 ): Promise<void> {
-  console.log("[trk] Checking for matches to announce…");
-
   try {
     const sheet = announcer.sheet;
     const [players, quotas, matchTable] = await Promise.all([
