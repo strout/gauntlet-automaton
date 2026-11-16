@@ -307,6 +307,9 @@ export const trkPlanetHandler: Handler<djs.Interaction> = async (
       click.kind !== "preview" &&
       await earlierLossInProgress(sheet, click.matchRow)
     ) {
+      console.log(
+        `[trk] match ${click.matchRow} planet click ignored; an earlier loss is still open`,
+      );
       await interaction.reply({
         content:
           "Your earlier loss still needs its planet and pack. Finish that one first.",
@@ -510,6 +513,11 @@ async function deliverPlanetOffer(request: PlanetOfferRequest): Promise<void> {
   );
   await deliver(request.client, request.discordId, request.channel, view);
   await markDmSent(request.sheet, request.matchRow);
+  console.log(
+    `[trk] offered planets to ${key.identification} for ${
+      lossLabel(key.loss)
+    } (match ${key.matchRow})`,
+  );
 }
 
 async function resumeMatch(
@@ -635,6 +643,11 @@ async function applyPlanetChoice(
   const chosen = chosenPlanet(loaded.changes, loaded);
   if (!chosen) {
     if (!await hasValidTrkAssimilation(sheet, loaded.identification)) {
+      console.log(
+        `[trk] ${loaded.identification} ${
+          lossLabel(loaded.loss)
+        } (match ${loaded.matchRow}) planet submit rejected: no valid Borg card`,
+      );
       await present(plainView(
         [
           "Choose a Borg card before you station a planet.",
@@ -645,6 +658,11 @@ async function applyPlanetChoice(
     }
     const planet = planetByName(selected);
     if (!planet) {
+      console.log(
+        `[trk] ${loaded.identification} ${
+          lossLabel(loaded.loss)
+        } (match ${loaded.matchRow}) planet submit rejected: "${selected}"`,
+      );
       await present(
         await menuView(
           sheet,
@@ -656,6 +674,11 @@ async function applyPlanetChoice(
       );
       return;
     }
+    console.log(
+      `[trk] ${loaded.identification} chose ${planet.name} for ${
+        lossLabel(loaded.loss)
+      } (match ${loaded.matchRow})`,
+    );
     const counts = chargeCounts(loaded.changes);
     const picks = picksForNewStation(counts, planet.name);
     let cards: readonly ScryfallCard[];
@@ -679,6 +702,18 @@ async function applyPlanetChoice(
     await syncCharges(sheet);
     const rolled = cards[0];
     if (!rolled) throw new Error(`No card for ${planet.name}`);
+    const where = `${loaded.identification} stationed ${planet.name} for ${
+      lossLabel(loaded.loss)
+    } (match ${loaded.matchRow})`;
+    if (cards.length >= 2) {
+      console.log(
+        `[trk] ${where}; offered ${
+          cards.map((card) => card.name).join(" or ")
+        }`,
+      );
+    } else {
+      console.log(`[trk] ${where}; granted ${rolled.name}`);
+    }
     const view = cards.length >= 2
       ? await offeredChoice(sheet, loaded, planet, cards)
       : await grantedCard(client, sheet, loaded, planet, rolled, picks === 2);
@@ -739,6 +774,11 @@ async function applyCardChoice(
     );
     return;
   }
+  console.log(
+    `[trk] ${loaded.identification} chose ${card.name} from ${planet.name} for ${
+      lossLabel(loaded.loss)
+    } (match ${loaded.matchRow})`,
+  );
   const view = await grantedCard(client, sheet, loaded, planet, card);
   await present(view);
   if (view.markSent) {
