@@ -26,6 +26,7 @@ import {
 import { ScryfallCard, scryfallFetch } from "./scryfall.ts";
 import { handleGuildMemberAdd, manageRoles } from "./role_management.ts";
 import { setupLeagues } from "./leagues/index.ts";
+import { startMatchmaking } from "./matchmaking.ts";
 
 export { CONFIG };
 
@@ -42,7 +43,8 @@ if (args.help) {
    or: deno run main.ts <command> [options]
 
 Commands:
-  bot             Run the Discord bot
+  bot             Run the pack-generation Discord bot (DISCORD_TOKEN)
+  matchmaking     Run the looking-for-match bot (MATCHMAKING_DISCORD_TOKEN)
   pop [live|upcoming]  Populate starting pools (default: live)
   check           Check pools
   rebuild         Rebuild pools
@@ -239,6 +241,25 @@ if (import.meta.main) {
     );
 
     await djs_client.login(DISCORD_TOKEN);
+  }
+  if (command === "matchmaking") {
+    const token = env["MATCHMAKING_DISCORD_TOKEN"];
+    if (!token) {
+      console.error(
+        "MATCHMAKING_DISCORD_TOKEN is not set. The pack-generation bot keeps using DISCORD_TOKEN.",
+      );
+      Deno.exit(1);
+    }
+    if (!CONFIG.LFM_CHANNEL_ID) {
+      console.error("LFM_CHANNEL_ID is not set in private/config.json.");
+      Deno.exit(1);
+    }
+    await initSheets();
+    const djs_client = makeClient();
+    djs_client.once(djs.Events.ClientReady, (client) => {
+      startMatchmaking(client);
+    });
+    await djs_client.login(token);
   }
   if (command === "pop") {
     console.log("init sheets");

@@ -11,6 +11,8 @@ export interface Config {
   readonly OWNER_ID: string;
   readonly GUILD_ID: string;
   readonly PACKGEN_CHANNEL_ID: string;
+  /** Channel where `!challenge` accepts an anonymous looking-for-match post. */
+  readonly LFM_CHANNEL_ID?: string;
   readonly DRAGON_GAUNTLET_CHANNEL_ID: string;
   readonly STARTING_POOL_CHANNEL_ID: string;
   readonly GENERAL_CHAT_CHANNEL_ID: string;
