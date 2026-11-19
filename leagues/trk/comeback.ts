@@ -1165,7 +1165,7 @@ function doneView(args: {
     args.onlyCard
       ? "That search only produced one card, so it was added directly."
       : undefined,
-    `Added **${args.cardName}**${
+    `Added ${linkedCard(args.cardName, args.card)}${
       args.card ? ` (${args.card.set.toUpperCase()})` : ""
     } to your pool.`,
     pool,
@@ -1175,9 +1175,9 @@ function doneView(args: {
     components: [],
     embeds: args.card ? [cardEmbed(args.card)] : [],
     publicNote: args.announce
-      ? `<@${args.discordId}> stationed **${args.planet.name}** and added **${args.cardName}**.${
-        pool ? ` ${pool}` : ""
-      }`
+      ? `<@${args.discordId}> stationed **${args.planet.name}** and added ${
+        linkedCard(args.cardName, args.card)
+      }.${pool ? ` ${pool}` : ""}`
       : undefined,
     markSent: args.markSent,
   };
@@ -1204,15 +1204,22 @@ function buttonLabel(name: string): string {
   return name.length <= 80 ? name : `${name.slice(0, 79)}…`;
 }
 
+function linkedCard(name: string, card?: ScryfallCard): string {
+  const url = card ? scryfallCardUrl(card) : undefined;
+  return url ? `**[${name}](${url})**` : `**${name}**`;
+}
+
+function scryfallCardUrl(card: ScryfallCard): string {
+  return card.scryfall_uri ??
+    `https://scryfall.com/card/${card.set}/${card.collector_number}`;
+}
+
 function cardEmbed(card: ScryfallCard): djs.EmbedBuilder {
   const image = card.image_uris?.normal ??
     card.card_faces?.[0]?.image_uris?.normal;
   const embed = new djs.EmbedBuilder()
     .setTitle(card.name)
-    .setURL(
-      card.scryfall_uri ??
-        `https://scryfall.com/card/${card.set}/${card.collector_number}`,
-    );
+    .setURL(scryfallCardUrl(card));
   if (image) embed.setImage(image);
   return embed;
 }
