@@ -138,6 +138,7 @@ export function getLeagueSheet(sheetId: string): LeagueSheet {
 export class LeagueSheet {
   #quotas: QuotaInfo[] | undefined;
   #matchHeaders: any | null = null;
+  #entropyColumns: { announced: string; dmSent: string } | null = null;
 
   constructor(readonly sheetId: string) {}
 
@@ -251,6 +252,68 @@ export class LeagueSheet {
         announced,
         serialDate,
       ]],
+      "RAW",
+    );
+  }
+
+  /** Appends every entropy loss for a week in one request. */
+  async addEntropyRows(
+    entries: readonly { readonly playerName: string; readonly week: number }[],
+    announced = true,
+  ) {
+    if (entries.length === 0) return;
+    const offsetMs = await getSheetTimeZoneOffsetMs(this.sheetId);
+    const serialDate = writeSheetsDate(new Date(), offsetMs);
+    await sheetsAppend(
+      sheets,
+      this.sheetId,
+      "Entropy!A:I",
+      entries.map((entry) => [
+        0,
+        entry.week,
+        "ENTROPY",
+        entry.playerName,
+        "2",
+        "0",
+        "",
+        announced,
+        serialDate,
+      ]),
+      "RAW",
+    );
+  }
+
+  /**
+   * Writes Match Announced or DM Sent on an Entropy row. The header is read
+   * once per process.
+   */
+  async setEntropyCell(
+    rowNum: number,
+    column: "Match Announced" | "DM Sent",
+    value: boolean | string,
+  ) {
+    if (!this.#entropyColumns) {
+      const table = await this.readTable("Entropy!A4:Z4", 4);
+      const announced = table.headerColumns["Match Announced"];
+      const dmSent = table.headerColumns["DM Sent"];
+      if (announced === undefined || dmSent === undefined) {
+        throw new Error(
+          "Entropy tab is missing Match Announced or DM Sent",
+        );
+      }
+      this.#entropyColumns = {
+        announced: this.indexToColumnLetter(announced),
+        dmSent: this.indexToColumnLetter(dmSent),
+      };
+    }
+    const letter = column === "Match Announced"
+      ? this.#entropyColumns.announced
+      : this.#entropyColumns.dmSent;
+    await sheetsWrite(
+      sheets,
+      this.sheetId,
+      `Entropy!${letter}${rowNum}`,
+      [[value]],
       "RAW",
     );
   }
