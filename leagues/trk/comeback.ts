@@ -17,6 +17,12 @@ import {
 } from "./assimilation.ts";
 import { DM_SENT_COLUMN, trkSheet } from "./constants.ts";
 import {
+  countsAsLoss,
+  lossOrdinals,
+  type TrkLoss,
+  trkLossRows,
+} from "./losses.ts";
+import {
   ensureTrkLossPack,
   lossPackRolled,
   recordedLoss,
@@ -236,11 +242,11 @@ export async function resumeTrkPlanets(
       );
     }
   }
-  let matches: Awaited<ReturnType<LeagueSheet["getMatches"]>>;
+  let matches: readonly TrkLoss[];
   try {
-    matches = await sheet.getMatches({ "Match Announced": z.unknown() });
+    matches = await trkLossRows(sheet);
   } catch (err) {
-    console.error("[trk] planet resume could not read Matches:", err);
+    console.error("[trk] planet resume could not read losses:", err);
     return;
   }
   const matchRows = new Set<number>();
@@ -251,11 +257,11 @@ export async function resumeTrkPlanets(
       row.Type !== CARD_OFFER && row.Type !== ADD_CARD &&
       row.Type !== LOSS_PACK
     ) continue;
-    const matchRow = linkedMatch(row, matches.rows);
+    const matchRow = linkedMatch(row, matches);
     if (matchRow !== undefined) matchRows.add(matchRow);
   }
   for (const matchRow of matchRows) {
-    const key = lossKey(matches.rows, matchRow);
+    const key = lossKey(matches, matchRow);
     if (!key || !needsResume(rows, key)) continue;
     try {
       using _lock = await acquirePlanetLock();
@@ -412,13 +418,10 @@ async function menusWaiting(
   rows: readonly ChangeRow[],
 ): Promise<PlanetOfferRequest[]> {
   const [matches, players] = await Promise.all([
-    sheet.getMatches({
-      "Match Announced": z.unknown(),
-      [DM_SENT_COLUMN]: z.unknown(),
-    }),
+    trkLossRows(sheet),
     sheet.getPlayers(),
   ]);
-  const ordinals = lossOrdinals(matches.rows);
+  const ordinals = lossOrdinals(matches);
   let validBorg: ReadonlySet<string> | undefined;
   try {
     validBorg = await validTrkAssimilations(sheet);
@@ -426,7 +429,7 @@ async function menusWaiting(
     console.error("[trk] could not read Assimilation:", err);
   }
   const waiting: PlanetOfferRequest[] = [];
-  for (const match of matches.rows) {
+  for (const match of matches) {
     if (!cellIsTrue(matchCell(match, "Match Announced"))) continue;
     const matchRow = match[ROWNUM];
     const ordinal = ordinals.get(matchRow);
@@ -459,7 +462,7 @@ async function menusWaiting(
       continue;
     }
     if (validBorg && !validBorg.has(identification)) continue;
-    const open = earliestOpenLoss(matches.rows, rows, identification);
+    const open = earliestOpenLoss(matches, rows, identification);
     if (open !== matchRow) continue;
     waiting.push({
       client,
@@ -477,12 +480,12 @@ async function menusWaiting(
 async function deliverPlanetOffer(request: PlanetOfferRequest): Promise<void> {
   const [changes, matches] = await Promise.all([
     trkPoolChanges(request.sheet),
-    request.sheet.getMatches({ "Match Announced": z.unknown() }),
+    trkLossRows(request.sheet),
   ]);
-  const key = lossKey(matches.rows, request.matchRow);
+  const key = lossKey(matches, request.matchRow);
   if (!key) return;
   const open = earliestOpenLoss(
-    matches.rows,
+    matches,
     changes.rows,
     request.identification,
   );
@@ -528,12 +531,12 @@ async function resumeMatch(
 ): Promise<void> {
   const [changes, matches] = await Promise.all([
     trkPoolChanges(sheet),
-    sheet.getMatches({ "Match Announced": z.unknown() }),
+    trkLossRows(sheet),
   ]);
   const rows = changes.rows;
-  const key = lossKey(matches.rows, matchRow);
+  const key = lossKey(matches, matchRow);
   if (!key) return;
-  const open = earliestOpenLoss(matches.rows, rows, key.identification);
+  const open = earliestOpenLoss(matches, rows, key.identification);
   if (open !== matchRow) return;
   const chosen = chosenPlanet(rows, key);
   const card = findChange(rows, ADD_CARD, key);
@@ -947,12 +950,12 @@ async function loadMatch(
   matchRow: number,
   discordId: string,
 ): Promise<LoadedMatch | { error: string }> {
-  const matches = await sheet.getMatches({ "Match Announced": z.unknown() });
+  const matches = await trkLossRows(sheet);
   const players = await sheet.getPlayers();
   const changes = await trkPoolChanges(sheet);
-  const match = matches.rows.find((row) => row[ROWNUM] === matchRow);
+  const match = matches.find((row) => row[ROWNUM] === matchRow);
   if (!match) return { error: "I can't find that loss anymore." };
-  if (!matchOpen(match["Match Announced"])) {
+  if (!countsAsLoss(match["Match Announced"])) {
     return {
       error: "That match was rejected, so there's no planet to station.",
     };
@@ -963,7 +966,7 @@ async function loadMatch(
   if (!player || `${player["Discord ID"] ?? ""}`.trim() !== discordId) {
     return { error: "This choice belongs to another player." };
   }
-  const key = lossKey(matches.rows, matchRow);
+  const key = lossKey(matches, matchRow);
   if (!key) return { error: "That match is not a counted loss." };
   return {
     changes: changes.rows,
@@ -1507,6 +1510,16 @@ async function markDmSent(
   sheet: LeagueSheet,
   matchRow: number,
 ): Promise<void> {
+  if (matchRow < 0) {
+    await sheet.updateTabCell(
+      "Entropy",
+      4,
+      -matchRow,
+      DM_SENT_COLUMN,
+      true,
+    );
+    return;
+  }
   await sheet.updateMatchCell(matchRow, DM_SENT_COLUMN, true);
 }
 
@@ -1514,16 +1527,9 @@ async function dmWasSent(
   sheet: LeagueSheet,
   matchRow: number,
 ): Promise<boolean> {
-  const matches = await sheet.getMatches({ [DM_SENT_COLUMN]: z.unknown() });
-  const match = matches.rows.find((row) => row[ROWNUM] === matchRow);
-  return cellIsTrue(match ? matchCell(match, DM_SENT_COLUMN) : undefined);
-}
-
-interface CountedMatch {
-  readonly [ROWNUM]: number;
-  readonly Timestamp: number;
-  readonly "Loser Name": string;
-  readonly "Match Announced": unknown;
+  const matches = await trkLossRows(sheet);
+  const match = matches.find((row) => row[ROWNUM] === matchRow);
+  return cellIsTrue(match ? match["DM Sent"] : undefined);
 }
 
 /** Planet chosen, card granted, and the loss pack rolled. */
@@ -1542,7 +1548,7 @@ function lossSettled(
  * Later losses wait so each full pool is written onto the latest row.
  */
 function earliestOpenLoss(
-  matches: readonly CountedMatch[],
+  matches: readonly TrkLoss[],
   rows: readonly ChangeRow[],
   identification: string,
 ): number | undefined {
@@ -1574,12 +1580,12 @@ async function earlierLossInProgress(
 ): Promise<boolean> {
   const [changes, matches] = await Promise.all([
     trkPoolChanges(sheet),
-    sheet.getMatches({ "Match Announced": z.unknown() }),
+    trkLossRows(sheet),
   ]);
-  const key = lossKey(matches.rows, matchRow);
+  const key = lossKey(matches, matchRow);
   if (!key) return false;
   const open = earliestOpenLoss(
-    matches.rows,
+    matches,
     changes.rows,
     key.identification,
   );
@@ -1587,7 +1593,7 @@ async function earlierLossInProgress(
 }
 
 function lossKey(
-  rows: readonly CountedMatch[],
+  rows: readonly TrkLoss[],
   matchRow: number,
 ): LossKey | undefined {
   const match = rows.find((row) => row[ROWNUM] === matchRow);
@@ -1597,7 +1603,7 @@ function lossKey(
 }
 
 function matchForLoss(
-  rows: readonly CountedMatch[],
+  rows: readonly TrkLoss[],
   identification: string,
   loss: number,
 ): number | undefined {
@@ -1611,39 +1617,12 @@ function matchForLoss(
 
 function linkedMatch(
   row: ChangeRow,
-  matches: readonly CountedMatch[],
+  matches: readonly TrkLoss[],
 ): number | undefined {
   const text = row.Type === PLANET_OFFER ? row.Value : (row.Comment ?? "");
   const loss = recordedLoss(text);
   if (loss !== undefined) return matchForLoss(matches, row.Name, loss);
   return trackedMatch(row);
-}
-
-function lossOrdinals(
-  rows: readonly CountedMatch[],
-): Map<number, number> {
-  const byLoser = new Map<string, typeof rows[number][]>();
-  for (const row of rows) {
-    if (!matchOpen(row["Match Announced"])) continue;
-    const group = byLoser.get(row["Loser Name"]) ?? [];
-    group.push(row);
-    byLoser.set(row["Loser Name"], group);
-  }
-  const ordinals = new Map<number, number>();
-  for (const group of byLoser.values()) {
-    group.sort((a, b) => a.Timestamp - b.Timestamp || a[ROWNUM] - b[ROWNUM]);
-    group.forEach((row, index) => ordinals.set(row[ROWNUM], index + 1));
-  }
-  return ordinals;
-}
-
-function matchOpen(value: unknown): boolean {
-  if (
-    value === true || value === false || value === undefined ||
-    value === null ||
-    value === ""
-  ) return true;
-  return typeof value === "string" && value.trim().toUpperCase() === "TRUE";
 }
 
 function parseClick(interaction: djs.Interaction): PlanetClick | undefined {
@@ -1674,7 +1653,8 @@ function parseClick(interaction: djs.Interaction): PlanetClick | undefined {
 }
 
 function parseRow(value: string | undefined): number | undefined {
-  if (!value || !/^\d+$/.test(value)) return undefined;
+  if (!value || !/^-?\d+$/.test(value)) return undefined;
   const row = Number(value);
-  return Number.isSafeInteger(row) ? row : undefined;
+  if (!Number.isSafeInteger(row) || row === 0) return undefined;
+  return row;
 }

@@ -229,7 +229,11 @@ export class LeagueSheet {
   }
 
   /** Records an entropy loss in the Entropy sheet. */
-  async addEntropyRow(playerName: string, week: number) {
+  async addEntropyRow(
+    playerName: string,
+    week: number,
+    announced = true,
+  ) {
     const offsetMs = await getSheetTimeZoneOffsetMs(this.sheetId);
     const serialDate = writeSheetsDate(new Date(), offsetMs);
     await sheetsAppend(
@@ -244,9 +248,34 @@ export class LeagueSheet {
         "2",
         "0",
         "", // RESULT is vestigial
-        true,
+        announced,
         serialDate,
       ]],
+      "RAW",
+    );
+  }
+
+  /** Writes one cell on a tab, resolving the column from that tab's header row. */
+  async updateTabCell(
+    sheetName: string,
+    headerRow: number,
+    rowNum: number,
+    colName: string,
+    value: string | boolean | number,
+  ) {
+    const table = await this.readTable(
+      `${sheetName}!A${headerRow}:Z${headerRow}`,
+      headerRow,
+    );
+    const colIdx = table.headerColumns[colName];
+    if (colIdx === undefined) {
+      throw new Error(`Column ${colName} not found on ${sheetName}`);
+    }
+    await sheetsWrite(
+      sheets,
+      this.sheetId,
+      `${sheetName}!${this.indexToColumnLetter(colIdx)}${rowNum}`,
+      [[value]],
       "RAW",
     );
   }
@@ -543,7 +572,8 @@ export class LeagueSheet {
         ...r,
         "Your Name": r["PLAYER 1"],
         "Loser Name": r["PLAYER 2"],
-        "Match Announced": true,
+        // Sheets that don't track this column are already finished announcing.
+        "Match Announced": "Match Announced" in r ? r["Match Announced"] : true,
         "Result": r["RESULT"],
         [MATCHTYPE]: "entropy" as const,
       })),

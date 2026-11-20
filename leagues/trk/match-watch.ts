@@ -15,6 +15,8 @@ import {
   trkNeedsBorgCardReminder,
 } from "./comeback.ts";
 import { MATCH_ANNOUNCED_COLUMN, trkSheet } from "./constants.ts";
+import { assignTrkEntropy } from "./entropy.ts";
+import { lossAnnounced, lossOrdinals, trkLossRows } from "./losses.ts";
 
 const POLL_MS = 30_000;
 /** Assimilation is checked on every other match poll, so about once a minute. */
@@ -46,6 +48,11 @@ export async function watchTrkMatches(client: Client): Promise<never> {
         ? "[trk] Checking matches and assimilation…"
         : "[trk] Checking matches…",
     );
+    try {
+      await assignTrkEntropy(sheet);
+    } catch (err) {
+      console.error("[trk] entropy assignment error:", err);
+    }
     try {
       await announceTrkMatches(client, announcer);
     } catch (err) {
@@ -279,8 +286,92 @@ export async function announceTrkMatches(
         true,
       );
     }
+    await announceTrkEntropy(client, sheet, packGenChannel, players.rows);
   } catch (e) {
     console.error("[trk] Error in announceTrkMatches:", e);
+  }
+}
+
+/**
+ * Unannounced Entropy rows. The loss counts in the same odd/even pack order
+ * as a match, and a non-eliminating loss gets a planet menu.
+ */
+async function announceTrkEntropy(
+  client: Client,
+  sheet: ReturnType<typeof trkSheet>,
+  channel: TextChannel,
+  players: readonly {
+    Identification: string;
+    Losses: number;
+    "Discord ID": string;
+  }[],
+): Promise<void> {
+  const losses = await trkLossRows(sheet);
+  const ordinals = lossOrdinals(losses);
+  for (const loss of losses) {
+    if (loss[ROWNUM] >= 0) continue;
+    if (lossAnnounced(loss["Match Announced"])) continue;
+    const sheetRow = -loss[ROWNUM];
+    const loserName = loss["Loser Name"];
+    const ordinal = ordinals.get(loss[ROWNUM]);
+    const loserInfo = players.find((player) =>
+      player.Identification === loserName
+    );
+    const loserId = `${loserInfo?.["Discord ID"] ?? ""}`.trim();
+    if (!loserInfo || !loserId || ordinal === undefined) {
+      console.warn(
+        `[trk] Entropy row ${sheetRow}: missing player info for ${loserName}`,
+      );
+      await channel.send(
+        `Error (Entropy row ${sheetRow}): could not find standings info for ${loserName}. CC: <@!${CONFIG.OWNER_ID}>`,
+      );
+      await sheet.updateTabCell(
+        "Entropy",
+        4,
+        sheetRow,
+        MATCH_ANNOUNCED_COLUMN,
+        "Error: Missing Player Info",
+      );
+      continue;
+    }
+
+    const mention = `<@!${loserId}>`;
+    const eliminated = ordinal >= CONFIG.MAX_LOSSES;
+    const message = eliminated
+      ? `${mention} was eliminated by ENTROPY.`
+      : `${mention} was defeated by ENTROPY.`;
+    try {
+      await channel.send(message);
+      if (!eliminated) {
+        await offerTrkPlanet({
+          client,
+          channel,
+          sheet,
+          identification: loserName,
+          discordId: loserId,
+          opponent: "ENTROPY",
+          matchRow: loss[ROWNUM],
+        });
+      }
+      if (ordinal === 1) {
+        const remind = await trkNeedsBorgCardReminder(
+          sheet,
+          loserName,
+          ordinal,
+        );
+        if (remind) await remindTrkBorgCard(client, loserId, channel);
+      }
+    } catch (err) {
+      console.error("[trk] Failed to send entropy announcement:", err);
+      continue;
+    }
+    await sheet.updateTabCell(
+      "Entropy",
+      4,
+      sheetRow,
+      MATCH_ANNOUNCED_COLUMN,
+      true,
+    );
   }
 }
 

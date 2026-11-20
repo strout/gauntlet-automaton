@@ -1,6 +1,5 @@
 import * as djs from "discord.js";
 import { Buffer } from "node:buffer";
-import { z } from "zod";
 import { CONFIG } from "../../config.ts";
 import { extractPool, waitForBoosterTutor } from "../../pending.ts";
 import { type ScryfallCard, tileCardImages } from "../../scryfall.ts";
@@ -21,6 +20,7 @@ import {
   ROWNUM,
 } from "../../standings.ts";
 import { rollTrkLossPack } from "./cards.ts";
+import { lossOrdinals, trkLossRows } from "./losses.ts";
 
 const PENDING = "pending";
 const EOE_COMMAND = "!eoe";
@@ -485,27 +485,11 @@ async function lossOrdinal(
   sheet: LeagueSheet,
   matchRow: number,
 ): Promise<number> {
-  const matches = await sheet.getMatches({ "Match Announced": z.unknown() });
-  const match = matches.rows.find((row) => row[ROWNUM] === matchRow);
-  if (!match) throw new Error(`Match ${matchRow} is not on the Matches tab`);
-  const losses = matches.rows.filter((row) =>
-    row["Loser Name"] === match["Loser Name"] &&
-    countsAsLoss(row["Match Announced"])
-  );
-  losses.sort((a, b) => a.Timestamp - b.Timestamp || a[ROWNUM] - b[ROWNUM]);
-  const index = losses.findIndex((row) => row[ROWNUM] === matchRow);
-  if (index < 0) {
+  const loss = lossOrdinals(await trkLossRows(sheet)).get(matchRow);
+  if (loss === undefined) {
     throw new Error(`Match ${matchRow} is not a counted loss`);
   }
-  return index + 1;
-}
-
-function countsAsLoss(value: unknown): boolean {
-  if (
-    value === true || value === false || value === undefined ||
-    value === null || value === ""
-  ) return true;
-  return typeof value === "string" && value.trim().toUpperCase() === "TRUE";
+  return loss;
 }
 
 function sealedEntries(cards: readonly ScryfallCard[]): SealedDeckEntry[] {
