@@ -131,6 +131,8 @@ interface PlanetOfferRequest {
   readonly discordId: string;
   readonly opponent: string;
   readonly matchRow: number;
+  /** Reuse the poll's loss list instead of reading both sheets again. */
+  readonly losses?: readonly TrkLoss[];
 }
 
 interface PlanetClick {
@@ -214,6 +216,7 @@ export async function resumeTrkPlanets(
   client: djs.Client,
   sheet: LeagueSheet,
   channel: djs.TextChannel,
+  losses?: readonly TrkLoss[],
 ): Promise<void> {
   let rows: readonly ChangeRow[];
   let waiting: readonly PlanetOfferRequest[];
@@ -222,7 +225,7 @@ export async function resumeTrkPlanets(
     const synced = await syncCharges(sheet);
     rows = synced.rows;
     try {
-      waiting = await menusWaiting(client, sheet, channel, rows);
+      waiting = await menusWaiting(client, sheet, channel, rows, losses);
     } catch (err) {
       console.error("[trk] could not read DM Sent:", err);
       waiting = [];
@@ -244,7 +247,7 @@ export async function resumeTrkPlanets(
   }
   let matches: readonly TrkLoss[];
   try {
-    matches = await trkLossRows(sheet);
+    matches = losses ?? await trkLossRows(sheet);
   } catch (err) {
     console.error("[trk] planet resume could not read losses:", err);
     return;
@@ -265,7 +268,7 @@ export async function resumeTrkPlanets(
     if (!key || !needsResume(rows, key)) continue;
     try {
       using _lock = await acquirePlanetLock();
-      await resumeMatch(client, sheet, channel, matchRow);
+      await resumeMatch(client, sheet, channel, matchRow, matches);
     } catch (err) {
       console.error(`[trk] planet resume failed for match ${matchRow}:`, err);
     }
@@ -416,9 +419,10 @@ async function menusWaiting(
   sheet: LeagueSheet,
   channel: djs.TextChannel,
   rows: readonly ChangeRow[],
+  losses?: readonly TrkLoss[],
 ): Promise<PlanetOfferRequest[]> {
   const [matches, players] = await Promise.all([
-    trkLossRows(sheet),
+    losses ?? trkLossRows(sheet),
     sheet.getPlayers(),
   ]);
   const ordinals = lossOrdinals(matches);
@@ -472,6 +476,7 @@ async function menusWaiting(
       discordId,
       opponent: match["Your Name"],
       matchRow,
+      losses: matches,
     });
   }
   return waiting;
@@ -480,7 +485,7 @@ async function menusWaiting(
 async function deliverPlanetOffer(request: PlanetOfferRequest): Promise<void> {
   const [changes, matches] = await Promise.all([
     trkPoolChanges(request.sheet),
-    trkLossRows(request.sheet),
+    request.losses ?? trkLossRows(request.sheet),
   ]);
   const key = lossKey(matches, request.matchRow);
   if (!key) return;
@@ -501,7 +506,7 @@ async function deliverPlanetOffer(request: PlanetOfferRequest): Promise<void> {
     await markDmSent(request.sheet, request.matchRow);
     return;
   }
-  if (await dmWasSent(request.sheet, request.matchRow)) return;
+  if (await dmWasSent(request.sheet, request.matchRow, matches)) return;
   if (!await hasValidTrkAssimilation(request.sheet, request.identification)) {
     console.log(
       `[trk] holding the planet and pack for ${request.identification} match ${request.matchRow} until a Borg card is valid`,
@@ -528,10 +533,11 @@ async function resumeMatch(
   sheet: LeagueSheet,
   channel: djs.TextChannel,
   matchRow: number,
+  losses?: readonly TrkLoss[],
 ): Promise<void> {
   const [changes, matches] = await Promise.all([
     trkPoolChanges(sheet),
-    trkLossRows(sheet),
+    losses ?? trkLossRows(sheet),
   ]);
   const rows = changes.rows;
   const key = lossKey(matches, matchRow);
@@ -1511,13 +1517,7 @@ async function markDmSent(
   matchRow: number,
 ): Promise<void> {
   if (matchRow < 0) {
-    await sheet.updateTabCell(
-      "Entropy",
-      4,
-      -matchRow,
-      DM_SENT_COLUMN,
-      true,
-    );
+    await sheet.setEntropyCell(-matchRow, "DM Sent", true);
     return;
   }
   await sheet.updateMatchCell(matchRow, DM_SENT_COLUMN, true);
@@ -1526,8 +1526,9 @@ async function markDmSent(
 async function dmWasSent(
   sheet: LeagueSheet,
   matchRow: number,
+  losses?: readonly TrkLoss[],
 ): Promise<boolean> {
-  const matches = await trkLossRows(sheet);
+  const matches = losses ?? await trkLossRows(sheet);
   const match = matches.find((row) => row[ROWNUM] === matchRow);
   return cellIsTrue(match ? match["DM Sent"] : undefined);
 }

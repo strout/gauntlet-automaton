@@ -29,7 +29,7 @@ export async function assignTrkEntropy(sheet: LeagueSheet): Promise<void> {
   }
 
   const players = await sheet.getPlayers();
-  let added = 0;
+  const entries: { playerName: string; week: number }[] = [];
   for (const player of players.rows) {
     if (CONFIG.WAIVE_ENTROPY.includes(player.Identification)) continue;
     const played = player.Wins + player.Losses;
@@ -38,18 +38,22 @@ export async function assignTrkEntropy(sheet: LeagueSheet): Promise<void> {
       currentQuota.matchesMin - played,
       CONFIG.MAX_LOSSES - player.Losses,
     );
-    if (toAdd <= 0) continue;
     for (let i = 0; i < toAdd; i++) {
-      await sheet.addEntropyRow(player.Identification, entropyWeek, false);
-      added++;
+      entries.push({
+        playerName: player.Identification,
+        week: entropyWeek,
+      });
     }
-    console.log(
-      `[trk] entropy week ${entropyWeek}: ${player.Identification} +${toAdd}`,
-    );
+    if (toAdd > 0) {
+      console.log(
+        `[trk] entropy week ${entropyWeek}: ${player.Identification} +${toAdd}`,
+      );
+    }
   }
+  await sheet.addEntropyRows(entries, false);
   await sheet.setEntropyWeek(entropyWeek + 1);
   console.log(
-    `[trk] Entropy for week ${entropyWeek} recorded (${added} losses). Next: ${
+    `[trk] Entropy for week ${entropyWeek} recorded (${entries.length} losses). Next: ${
       entropyWeek + 1
     }.`,
   );

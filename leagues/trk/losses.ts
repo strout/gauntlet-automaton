@@ -20,16 +20,39 @@ const lossExtras = {
   [DM_SENT_COLUMN]: z.unknown().optional(),
 };
 
-/** Matches and entropy losses for pack order, planets, and announcements. */
-export async function trkLossRows(sheet: LeagueSheet): Promise<TrkLoss[]> {
+/** One read of Matches and one read of Entropy. */
+export async function readTrkLossSheets(sheet: LeagueSheet) {
   const [matches, entropy] = await Promise.all([
     sheet.getMatches(lossExtras),
     sheet.getEntropy(lossExtras),
   ]);
+  return {
+    matches,
+    losses: combineTrkLosses(matches.rows, entropy.rows),
+  };
+}
+
+/** Matches and entropy losses for pack order, planets, and announcements. */
+export function trkLossRows(sheet: LeagueSheet): Promise<TrkLoss[]> {
+  return readTrkLossSheets(sheet).then((loaded) => loaded.losses);
+}
+
+export function combineTrkLosses(
+  matches: readonly LossSource[],
+  entropy: readonly LossSource[],
+): TrkLoss[] {
   return [
-    ...matches.rows.map((row) => lossFrom(row, row[ROWNUM])),
-    ...entropy.rows.map((row) => lossFrom(row, -row[ROWNUM])),
+    ...matches.map((row) => lossFrom(row, row[ROWNUM])),
+    ...entropy.map((row) => lossFrom(row, -row[ROWNUM])),
   ];
+}
+
+interface LossSource {
+  readonly [ROWNUM]: number;
+  readonly Timestamp: number;
+  readonly "Your Name": string;
+  readonly "Loser Name": string;
+  readonly "Match Announced": unknown;
 }
 
 function lossFrom(

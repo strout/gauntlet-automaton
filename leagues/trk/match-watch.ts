@@ -16,11 +16,14 @@ import {
 } from "./comeback.ts";
 import { MATCH_ANNOUNCED_COLUMN, trkSheet } from "./constants.ts";
 import { assignTrkEntropy } from "./entropy.ts";
-import { lossAnnounced, lossOrdinals, trkLossRows } from "./losses.ts";
+import { lossAnnounced, lossOrdinals, readTrkLossSheets } from "./losses.ts";
+import type { TrkLoss } from "./losses.ts";
 
 const POLL_MS = 30_000;
 /** Assimilation is checked on every other match poll, so about once a minute. */
 const ASSIMILATION_EVERY = 2;
+/** Entropy week check. Weeks end on a clock, so this does not need the match poll. */
+const ENTROPY_EVERY = 20;
 
 /** Player Database column: matches still allowed under this week's max. */
 const MATCHES_UNDER_MAX = "MATCHES <Max";
@@ -48,10 +51,12 @@ export async function watchTrkMatches(client: Client): Promise<never> {
         ? "[trk] Checking matches and assimilation…"
         : "[trk] Checking matches…",
     );
-    try {
-      await assignTrkEntropy(sheet);
-    } catch (err) {
-      console.error("[trk] entropy assignment error:", err);
+    if (polls % ENTROPY_EVERY === 0) {
+      try {
+        await assignTrkEntropy(sheet);
+      } catch (err) {
+        console.error("[trk] entropy assignment error:", err);
+      }
     }
     try {
       await announceTrkMatches(client, announcer);
@@ -82,11 +87,13 @@ export async function announceTrkMatches(
 ): Promise<void> {
   try {
     const sheet = announcer.sheet;
-    const [players, quotas, matchTable] = await Promise.all([
+    const [players, quotas, loaded] = await Promise.all([
       sheet.getPlayers(playerExtras),
       sheet.getQuotas(),
-      sheet.getMatches(),
+      readTrkLossSheets(sheet),
     ]);
+    const matchTable = loaded.matches;
+    const losses = loaded.losses;
 
     const matches = {
       rows: matchTable.rows,
@@ -112,7 +119,7 @@ export async function announceTrkMatches(
       return;
     }
 
-    await resumeTrkPlanets(client, sheet, packGenChannel);
+    await resumeTrkPlanets(client, sheet, packGenChannel, losses);
 
     for (const match of matches.rows) {
       if (match[MATCHTYPE] !== "match") continue;
@@ -269,6 +276,7 @@ export async function announceTrkMatches(
             discordId: loserId,
             opponent: winnerName,
             matchRow: match[ROWNUM],
+            losses,
           });
         }
         if (remindBorg) {
@@ -286,7 +294,13 @@ export async function announceTrkMatches(
         true,
       );
     }
-    await announceTrkEntropy(client, sheet, packGenChannel, players.rows);
+    await announceTrkEntropy(
+      client,
+      sheet,
+      packGenChannel,
+      players.rows,
+      losses,
+    );
   } catch (e) {
     console.error("[trk] Error in announceTrkMatches:", e);
   }
@@ -305,8 +319,8 @@ async function announceTrkEntropy(
     Losses: number;
     "Discord ID": string;
   }[],
+  losses: readonly TrkLoss[],
 ): Promise<void> {
-  const losses = await trkLossRows(sheet);
   const ordinals = lossOrdinals(losses);
   for (const loss of losses) {
     if (loss[ROWNUM] >= 0) continue;
@@ -325,11 +339,9 @@ async function announceTrkEntropy(
       await channel.send(
         `Error (Entropy row ${sheetRow}): could not find standings info for ${loserName}. CC: <@!${CONFIG.OWNER_ID}>`,
       );
-      await sheet.updateTabCell(
-        "Entropy",
-        4,
+      await sheet.setEntropyCell(
         sheetRow,
-        MATCH_ANNOUNCED_COLUMN,
+        "Match Announced",
         "Error: Missing Player Info",
       );
       continue;
@@ -351,6 +363,7 @@ async function announceTrkEntropy(
           discordId: loserId,
           opponent: "ENTROPY",
           matchRow: loss[ROWNUM],
+          losses,
         });
       }
       if (ordinal === 1) {
@@ -365,13 +378,7 @@ async function announceTrkEntropy(
       console.error("[trk] Failed to send entropy announcement:", err);
       continue;
     }
-    await sheet.updateTabCell(
-      "Entropy",
-      4,
-      sheetRow,
-      MATCH_ANNOUNCED_COLUMN,
-      true,
-    );
+    await sheet.setEntropyCell(sheetRow, "Match Announced", true);
   }
 }
 
